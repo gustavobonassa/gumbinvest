@@ -221,12 +221,17 @@ for macOS (Apple Silicon). Each release is built automatically on GitHub's
 servers from the tagged source
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
 
-The builds are not code-signed, so the OS warns on first run: on Windows,
-SmartScreen — "Mais informações" → "Executar assim mesmo"; on macOS,
-right-click the app → "Abrir" (or `xattr -dr com.apple.quarantine
-/Applications/GumbInvest.app`). The macOS build shares all the code but is
-newer and less battle-tested than the Windows one; its data lives in
-`~/Library/Application Support/GumbInvest`.
+The builds are not notarized with Apple / signed for Windows, so the OS pushes
+back once on first run:
+
+- **Windows** — SmartScreen: "Mais informações" → "Executar assim mesmo".
+- **macOS** — after dragging the app to Applications, clear the download
+  quarantine once: `xattr -d com.apple.quarantine /Applications/GumbInvest.app`
+  (or System Settings → Privacy & Security → "Open Anyway" after the first
+  blocked attempt).
+
+The macOS build shares all the code but is newer and less battle-tested than
+the Windows one; its data lives in `~/Library/Application Support/GumbInvest`.
 
 Or build it yourself:
 

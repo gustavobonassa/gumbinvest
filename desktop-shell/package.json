@@ -19,6 +19,7 @@
   "build": {
     "appId": "dev.gumbinvest.app",
     "productName": "GumbInvest",
+    "afterPack": "scripts/afterPack.js",
     "directories": {
       "output": "out"
     },

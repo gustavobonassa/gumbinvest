@@ -58,4 +58,6 @@ def test_public_shape_never_carries_values(db: Session) -> None:
     openai = next(p for p in public["providers"] if p["id"] == "openai")
     assert openai["key_configured"] is True
     assert "sk-oai-test" not in str(public)
-    assert any(p["free_tier"] for p in public["providers"])
+    # The catalogue says where to get a key and nothing about what it costs:
+    # whose plan is free changes faster than a released build can.
+    assert not any("gratuit" in str(p).lower() for p in public["providers"])

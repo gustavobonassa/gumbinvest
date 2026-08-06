@@ -759,7 +759,6 @@ export interface AiProviderInfo {
   models: string[];
   key_setting: string;
   key_hint: string;
-  free_tier: boolean;
   key_configured: boolean;
 }
 

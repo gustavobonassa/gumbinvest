@@ -8,8 +8,11 @@ search, prompt caching) the chat was built on.
 
 Model names are free text on purpose: providers ship new models faster than
 this table could chase them. ``default_model`` is only what an empty model
-field means. Groq and Gemini both have generous free tiers, which is what the
-Configurações screen recommends to users without a paid key.
+field means.
+
+``key_hint`` is where to get a key, and nothing else: whose plan is free, and
+how generously, changes faster than a released build can — a screen that
+promises a free tier is a screen that will one day be lying to someone.
 """
 from __future__ import annotations
 
@@ -28,7 +31,6 @@ AI_PROVIDERS: dict[str, dict] = {
         "key_setting": "anthropic_api_key",
         "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"],
         "key_hint": "console.anthropic.com",
-        "free_tier": False,
     },
     "openai": {
         "label": "OpenAI (GPT)",
@@ -37,7 +39,6 @@ AI_PROVIDERS: dict[str, dict] = {
         "key_setting": "openai_api_key",
         "models": ["gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4o"],
         "key_hint": "platform.openai.com",
-        "free_tier": False,
     },
     "gemini": {
         "label": "Google (Gemini)",
@@ -56,8 +57,7 @@ AI_PROVIDERS: dict[str, dict] = {
             "gemini-2.5-pro",
             "gemini-2.5-flash-lite",
         ],
-        "key_hint": "aistudio.google.com — tem nível gratuito generoso",
-        "free_tier": True,
+        "key_hint": "aistudio.google.com",
     },
     "grok": {
         "label": "xAI (Grok)",
@@ -66,7 +66,6 @@ AI_PROVIDERS: dict[str, dict] = {
         "key_setting": "grok_api_key",
         "models": ["grok-4", "grok-3", "grok-3-mini"],
         "key_hint": "console.x.ai — exige créditos pagos na conta",
-        "free_tier": False,
     },
     "groq": {
         "label": "Groq (modelos abertos)",
@@ -74,8 +73,7 @@ AI_PROVIDERS: dict[str, dict] = {
         "base_url": "https://api.groq.com/openai/v1",
         "key_setting": "groq_api_key",
         "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b"],
-        "key_hint": "console.groq.com — tem nível gratuito",
-        "free_tier": True,
+        "key_hint": "console.groq.com",
     },
 }
 
@@ -120,7 +118,6 @@ def providers_public(db: Session) -> dict:
                 "models": entry["models"],
                 "key_setting": entry["key_setting"],
                 "key_hint": entry["key_hint"],
-                "free_tier": entry["free_tier"],
                 "key_configured": bool(getattr(settings, entry["key_setting"], "")),
             }
             for key, entry in AI_PROVIDERS.items()

@@ -479,7 +479,7 @@ function AiProviderCard({ settings: data }: { settings: AppSettings }) {
             }}
             options={data.ai.providers.map((p) => ({
               value: p.id,
-              label: p.free_tier ? `${p.label} — nível gratuito` : p.label,
+              label: p.label,
             }))}
           />
         </div>
@@ -544,8 +544,8 @@ function AiProviderCard({ settings: data }: { settings: AppSettings }) {
         ))}
       </div>
       <p className="mt-4 text-xs text-ink-muted">
-        Sem chave paga? Gemini e Groq oferecem níveis gratuitos bons — escolha um deles, crie a
-        chave gratuita no site indicado e cole aqui. As chaves ficam só neste computador.
+        Crie a chave no site indicado em cada provedor e cole aqui. As chaves ficam só neste
+        computador.
       </p>
     </Card>
   );

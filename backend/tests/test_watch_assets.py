@@ -86,11 +86,23 @@ def test_lookup_maps_b3_fii_by_name():
     assert hit.kind == "FII"
 
 
-def test_lookup_maps_us_symbols():
+def test_lookup_maps_us_symbols_to_the_offshore_families():
+    """A US listing is STOCK_INTL / ETF_INTL, never the domestic family.
+
+    The two are kept apart everywhere else in the app — different tab, different
+    colour, different bucket in the allocation — because they are not comparable
+    on currency or on tax treatment. A watch-only asset minted from a search
+    that answered ``STOCK`` would sit among the B3 shares for good: nothing
+    reclassifies it later, since ``reclassify_assets`` reads the product text of
+    a transaction and a watched asset has none.
+    """
     equity = _to_hit({"symbol": "AAPL", "shortname": "Apple Inc.", "quoteType": "EQUITY"})
     fund = _to_hit({"symbol": "VOO", "shortname": "Vanguard S&P 500 ETF", "quoteType": "ETF"})
-    assert equity is not None and equity.currency == "USD" and equity.kind == "STOCK"
-    assert fund is not None and fund.kind == "ETF"
+    reit = _to_hit({"symbol": "O", "shortname": "Realty Income Corporation", "quoteType": "EQUITY"})
+    assert equity is not None and equity.currency == "USD" and equity.kind == "STOCK_INTL"
+    assert fund is not None and fund.kind == "ETF_INTL"
+    # The importer's REIT list comes along for free by reusing its classifier.
+    assert reit is not None and reit.kind == "REIT"
 
 
 def test_lookup_rejects_unsupported_results():

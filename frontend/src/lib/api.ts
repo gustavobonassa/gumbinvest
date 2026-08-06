@@ -1149,6 +1149,8 @@ export const api = {
     fees?: number;
     taxes?: number;
     name?: string;
+    /** Only for a ticker nobody has traded: what the market said it is. */
+    kind?: string;
     currency?: string;
     broker?: string | null;
     notes?: string | null;

@@ -131,6 +131,10 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
   // form may guess, but it may never overwrite.
   const [priceTouched, setPriceTouched] = useState(false);
   const [totalTouched, setTotalTouched] = useState(false);
+  // What the market said about a ticker the portfolio has never held. Without
+  // it a new NVDA would be created in reais and then classified by the B3
+  // rules — landing on "Outros" and quoted as NVDA.SA.
+  const [picked, setPicked] = useState<{ kind: string; currency: string } | null>(null);
 
   const chosen = (operations.data ?? []).find((item) => item.code === operation);
   const needs = chosen?.needs ?? "trade";
@@ -156,10 +160,14 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
       label: asset.name,
       hint: kindLabel(asset.kind),
     }));
+    // The class, not the exchange. "São Paulo" says where a ticker trades;
+    // "Ação" says what it is — which is what decides the tab it lands in, the
+    // colour it gets and the bucket it is counted in. The exchange only shows
+    // when the class could not be worked out.
     const remote = (market.data?.items ?? []).map((item) => ({
       value: item.ticker,
       label: item.name,
-      hint: item.exchange || kindLabel(item.kind),
+      hint: item.kind && item.kind !== "OTHER" ? kindLabel(item.kind) : item.exchange,
     }));
     const seen = new Set(local.map((item) => item.value));
     return [...local, ...remote.filter((item) => !seen.has(item.value))];
@@ -212,6 +220,8 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
         ticker: cleanTicker,
         date: when,
         name: name.trim() || undefined,
+        kind: picked?.kind,
+        currency: picked?.currency,
         quantity: needs === "amount" ? 0 : parseAmount(qty),
         unit_price: needs === "trade" ? parseAmount(price) : 0,
         amount: parseAmount(amount) || null,
@@ -269,12 +279,14 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
               onChange={(next) => {
                 setTicker(next);
                 setPriceTouched(false);
+                setPicked(null);
               }}
-              onPick={(picked) => {
-                const match =
-                  (held.data ?? []).find((asset) => asset.ticker === picked) ??
-                  (market.data?.items ?? []).find((item) => item.ticker === picked);
+              onPick={(code) => {
+                const local = (held.data ?? []).find((asset) => asset.ticker === code);
+                const remote = (market.data?.items ?? []).find((item) => item.ticker === code);
+                const match = local ?? remote;
                 if (match && !name.trim()) setName(match.name);
+                setPicked(remote && !local ? { kind: remote.kind, currency: remote.currency } : null);
               }}
               options={suggestions}
               emptyHint="Nenhum ativo encontrado — continue digitando para criar um novo."

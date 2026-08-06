@@ -77,7 +77,19 @@ def _to_hit(item: dict) -> MarketHit | None:
     elif "." not in symbol and "-" not in symbol:
         ticker = symbol
         currency = "USD"
-        kind = AssetKind.ETF.value if item.get("quoteType") == "ETF" else AssetKind.STOCK.value
+        # Offshore families, never the domestic ones: a US share is STOCK_INTL
+        # and a US fund ETF_INTL. Returning STOCK here put Nike in the same
+        # bucket as Petrobras — wrong tab, wrong colour, and counted as
+        # domestic in the allocation. The importer's own offshore classifier
+        # knows the REIT list too, so reuse it rather than guess from
+        # ``quoteType`` alone.
+        from app.importer.service import classify_us_asset_kind
+
+        kind = (
+            AssetKind.ETF_INTL.value
+            if item.get("quoteType") == "ETF"
+            else classify_us_asset_kind(ticker, name).value
+        )
     else:
         return None  # other exchanges: unknown currency, see module docstring
 

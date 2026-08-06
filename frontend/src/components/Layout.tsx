@@ -58,13 +58,27 @@ type NavLeaf = { to: string; label: string; icon: LucideIcon; end?: boolean };
 type NavGroupEntry = { label: string; icon: LucideIcon; children: NavLeaf[] };
 type NavEntry = NavLeaf | NavGroupEntry;
 
+/**
+ * Ordered by how far the reader is zoomed in, not by when each page was built.
+ *
+ * The whole portfolio first — how much there is, then how it did — because
+ * those are the two questions anyone opens the app to answer. Then what it is
+ * made of, from the broadest cut to the narrowest: every asset, the income they
+ * pay, and the one class with rules of its own. Then the ledger the three of
+ * them are derived from. Tools and the ways data gets in come after all of
+ * that: they are things you do, not things you look at.
+ */
 const NAV: NavEntry[] = [
+  // The portfolio as one thing
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/rentabilidade", label: "Rentabilidade", icon: BarChart3 },
+  // What it is made of
   { to: "/ativos", label: "Ativos", icon: Wallet },
   { to: "/proventos", label: "Proventos", icon: Coins },
   { to: "/renda-fixa", label: "Renda fixa", icon: Landmark },
+  // Where all of the above comes from
   { to: "/transacoes", label: "Transações", icon: ArrowUpDown },
-  { to: "/rentabilidade", label: "Rentabilidade", icon: BarChart3 },
+  // Things you do
   {
     label: "Ferramentas",
     icon: Wrench,

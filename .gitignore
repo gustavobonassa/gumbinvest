@@ -1,0 +1,40 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.env
+# Real financial exports live under data/ — only the scaffolding (README and
+# the per-source folder placeholders) is tracked; every user file is ignored.
+data/*
+!data/.gitkeep
+!data/README.md
+!data/b3
+data/b3/*
+!data/b3/.gitkeep
+!data/avenue
+data/avenue/*
+!data/avenue/.gitkeep
+!data/nomad
+data/nomad/*
+!data/nomad/.gitkeep
+!data/binance
+data/binance/*
+!data/binance/.gitkeep
+movimentacao.csv
+backups/*
+!backups/.gitkeep
+.DS_Store
+
+# Desktop packaging outputs (packaging/build.ps1)
+packaging/build/
+packaging/out/
+packaging/.venv-build/
+packaging/assets/gumbinvest.ico
+desktop-shell/out/
+desktop-shell/build/icon.ico
+desktop-shell/assets/tray.png

@@ -1,0 +1,99 @@
+# Builds the desktop installers (Windows .exe, macOS .dmg) and attaches them
+# to a GitHub Release.
+#
+# Trigger: push a version tag —
+#   git tag v1.0.0 && git push origin v1.0.0
+# The release is created automatically with the installers attached, which is
+# what the README's download links point at.
+#
+# `workflow_dispatch` runs the same builds without a release (the installers
+# land in the run's artifacts) — useful to validate packaging on a PR.
+name: Release desktop installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release and upload the installer
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The script is the same one used locally: frontend build, PyInstaller
+      # server bundle, electron-builder installer.
+      - name: Build installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File packaging/build.ps1
+
+      - name: Locate installer
+        id: installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "desktop-shell/out" -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "no installer produced under desktop-shell/out" }
+          "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gumbinvest-setup
+          path: ${{ steps.installer.outputs.path }}
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.installer.outputs.path }}
+          generate_release_notes: true
+
+  build-macos:
+    runs-on: macos-latest # Apple Silicon; the dmg is arm64
+    # After Windows on purpose: both jobs attach to the same release, and
+    # letting the first one create it avoids a creation race.
+    needs: build-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build dmg
+        run: bash packaging/build.sh
+
+      - name: Locate dmg
+        id: installer
+        run: |
+          dmg=$(ls desktop-shell/out/*.dmg | head -1)
+          if [ -z "$dmg" ]; then echo "no dmg produced" >&2; exit 1; fi
+          echo "path=$dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gumbinvest-dmg
+          path: ${{ steps.installer.outputs.path }}
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.installer.outputs.path }}
+          generate_release_notes: true

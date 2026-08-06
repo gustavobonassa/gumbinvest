@@ -1,0 +1,55 @@
+{
+  "name": "gumbinvest-desktop",
+  "version": "1.0.0",
+  "description": "GumbInvest — gerenciador de carteira de investimentos",
+  "author": "Gustavo Bonassa",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron . --dev",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "build": {
+    "appId": "dev.gumbinvest.app",
+    "productName": "GumbInvest",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "main.js",
+      "loading.html",
+      "error.html",
+      "qr.html",
+      "assets/**",
+      "node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../packaging/dist/gumbinvest-server",
+        "to": "server"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "icon": "build/icon.png",
+      "category": "public.app-category.finance"
+    }
+  }
+}

@@ -1,0 +1,107 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gumbinvest-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gumbinvest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gumbinvest}
+      POSTGRES_DB: ${POSTGRES_DB:-gumbinvest}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gumbinvest} -d ${POSTGRES_DB:-gumbinvest}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: gumbinvest-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: gumbinvest-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-gumbinvest}:${POSTGRES_PASSWORD:-gumbinvest}@db:5432/${POSTGRES_DB:-gumbinvest}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  worker:
+    build:
+      context: ./backend
+    container_name: gumbinvest-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-gumbinvest}:${POSTGRES_PASSWORD:-gumbinvest}@db:5432/${POSTGRES_DB:-gumbinvest}
+      REDIS_URL: redis://redis:6379/0
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+
+  beat:
+    build:
+      context: ./backend
+    container_name: gumbinvest-beat
+    restart: unless-stopped
+    command: ["celery", "-A", "app.workers.celery_app.celery_app", "beat", "--loglevel=info", "-s", "/tmp/celerybeat-schedule"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-gumbinvest}:${POSTGRES_PASSWORD:-gumbinvest}@db:5432/${POSTGRES_DB:-gumbinvest}
+      REDIS_URL: redis://redis:6379/0
+      RUN_MIGRATIONS: "false"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
+    container_name: gumbinvest-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,6 @@
+# Everything needed to produce the Windows desktop server bundle.
+-r requirements-desktop.txt
+pyinstaller>=6.10
+pyinstaller-hooks-contrib>=2024.8
+# Build-time only: packaging/make_icon.py draws the .ico.
+Pillow>=10.0

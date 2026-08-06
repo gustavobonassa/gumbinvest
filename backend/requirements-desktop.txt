@@ -1,0 +1,21 @@
+# Desktop (no-Docker) build: the Python server the Electron shell spawns.
+# Same pins as requirements.txt minus the infrastructure that build replaces:
+# psycopg2 (SQLite instead), celery/redis (in-process APScheduler instead),
+# yfinance (optional provider that drags in pandas/numpy — the default
+# `yahoo` provider is plain httpx), pytest.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+alembic==1.14.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-multipart==0.0.20
+httpx==0.28.1
+python-dateutil==2.9.0.post0
+orjson==3.10.13
+pdfplumber==0.11.10
+anthropic>=0.79.0
+openpyxl==3.1.5
+
+# Desktop-only: the in-process scheduler replacing Celery beat.
+apscheduler==3.10.4

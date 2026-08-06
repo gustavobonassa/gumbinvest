@@ -1,0 +1,261 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Chart surface the categorical palette was validated against. */
+    --chart-surface: #12141a;
+  }
+
+  /* Electron desktop window: the title bar strip is 36px tall. #root becomes
+     the scroll container starting below it, so content, scrollbar and the
+     sticky page header never run underneath; only the viewport-fixed sidebar
+     needs an explicit offset. TitleBar.tsx toggles `desktop-shell`; browsers
+     never get it. */
+  html.desktop-shell body {
+    overflow: hidden;
+  }
+  html.desktop-shell #root {
+    position: fixed;
+    inset: 36px 0 0 0;
+    /* `#root { height: 100% }` below resolves against the viewport, not against
+       this box's own inset — it would make the scroll container a full 100vh
+       tall starting 36px down, so its last 36px (the page's bottom padding, and
+       a sliver of the final card) sat under the window edge, unreachable. */
+    height: auto;
+    overflow-y: auto;
+    /* Only the vertical axis may scroll. Declaring one axis makes the other
+       compute to `auto`, which would let anything wider than the window scroll
+       the *whole shell* sideways — sticky header and all — instead of scrolling
+       inside the table that overflowed. Mirrors `body { overflow-x: clip }` in
+       the browser. */
+    overflow-x: clip;
+    scrollbar-gutter: stable;
+  }
+  /* The shell uses min-h-screen (100vh), 36px taller than #root — without
+     this it leaves a permanent 36px of phantom scroll. */
+  html.desktop-shell #root > .min-h-screen {
+    min-height: 100%;
+  }
+  html.desktop-shell .desktop-shell-anchored {
+    top: 36px;
+  }
+  /* Viewport-fixed panels that sit below the 64px page header (top-16 on the
+     web) — inside the desktop window the header itself sits 36px lower. */
+  html.desktop-shell .desktop-shell-below-topbar {
+    top: calc(4rem + 36px);
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Reserve the scrollbar's track whether or not it is showing. Without this,
+     a class with two rows fits the window and one with twelve does not, so
+     switching tabs takes 10px off the viewport and slides the whole layout —
+     the sticky page header included — sideways. A gutter that is always there
+     costs 10px of width and buys a layout that never jumps.
+
+     Declared on both because the viewport's scrollbar behaviour is inherited
+     from `body` here: `html` has `overflow: visible`, so the used value comes
+     from `body` (which sets `overflow-x: clip` below). */
+  html,
+  body {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    /* The page never scrolls sideways. Real overflow is handled where it
+       happens (tables get their own scroll containers); this is the backstop
+       that keeps one long ticker from giving the whole app a horizontal
+       scrollbar on a phone. `clip`, not `hidden`: it does not create a new
+       scroll container, so position: sticky keeps working. */
+    overflow-x: clip;
+    font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+    background-image:
+      radial-gradient(900px 600px at 12% -10%, rgba(57, 135, 229, 0.09), transparent 60%),
+      radial-gradient(700px 500px at 95% 0%, rgba(25, 158, 112, 0.07), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-line-strong;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-muted;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-canvas;
+  }
+
+  /* Numbers must line up in tables and stat tiles. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface/80 shadow-card backdrop-blur-xl;
+    /* Cards live as grid/flex items whose default min-width is `auto`: one
+       unbreakable ticker or an SVG with an explicit width would otherwise set
+       the whole column's minimum and push the page past the viewport on
+       mobile. Content that is genuinely wider than the card must scroll
+       inside its own overflow-x-auto wrapper instead. */
+    min-width: 0;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 ease-premium hover:border-line-strong hover:shadow-raised;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs font-medium text-ink-secondary;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium
+      transition-all duration-200 ease-premium disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:brightness-110 active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface-raised text-ink-secondary hover:border-line-strong hover:text-ink;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface-raised px-3 py-2 text-sm text-ink
+      placeholder:text-ink-muted transition-colors focus:border-accent/60;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-lg bg-surface-raised;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+
+  .table-row {
+    @apply border-b border-line/70 transition-colors hover:bg-surface-hover/60;
+  }
+
+  /* Container-query root: children can size type in cqw units against THIS
+     element's width. Media queries can't help here — docking the AI chat
+     narrows the content column without changing the viewport, so a tile in an
+     xl:grid-cols-4 row can be 220px wide on a 1440px screen. */
+  .cq {
+    container-type: inline-size;
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Recharts: keep the default focus rectangles out of the way.
+   A focus ring on an SVG shape is drawn around its bounding box, which on a pie
+   arc or a rounded bar reads as a stray square. Mouse focus loses the ring;
+   keyboard focus (:focus-visible) keeps it, so the charts stay navigable. */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+.recharts-wrapper :focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* The donut paints its total in an overlay on top of the plot; without this the
+   tooltip renders behind that number. Recharts owns the wrapper's inline style,
+   so the stacking order is set here rather than through `wrapperStyle`. */
+.recharts-tooltip-wrapper {
+  z-index: 20;
+}
+
+/* AssetChat docked: push the page content aside instead of covering it.
+   The panel is max-w-md (28rem); 29rem leaves a small gap. Mobile keeps the
+   overlay, so the padding only applies from lg up. The header stays put —
+   only <main> narrows, which is where all the readable content lives. */
+main {
+  /* Same duration and curve as the panel's slide (animate-chat-in), so the
+     page making room and the chat arriving read as one gesture. */
+  transition: padding-right 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (min-width: 1024px) {
+  html.asset-chat-open main {
+    padding-right: 29rem;
+  }
+}
+
+/* With the chat docked the content column loses 29rem while the viewport —
+   and therefore every xl: breakpoint — stays put, so xl grids keep column
+   counts sized for space that is no longer there. Until the screen is wide
+   enough to afford both, docked mode steps each grid down one notch: 4-up
+   stat rows become 2×2, chart pairs stack. */
+@media (min-width: 1280px) and (max-width: 1919px) {
+  html.asset-chat-open main .xl\:grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) and (max-width: 1699px) {
+  html.asset-chat-open main .xl\:grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Honour the OS "reduce motion" setting for decorative entrances and the
+   docked-chat push. Durations collapse to near-zero instead of `animation:
+   none` so `animationend` still fires — the chat panel unmounts on it. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-fade-in,
+  .animate-fade-out,
+  .animate-scale-in,
+  .animate-toast-in,
+  .animate-toast-out,
+  .animate-chat-in,
+  .animate-chat-out {
+    animation-duration: 0.01ms !important;
+  }
+  main {
+    transition-duration: 0.01ms !important;
+  }
+  /* Loading placeholders hold still; their shape already says "loading". */
+  .skeleton::after {
+    animation: none;
+  }
+}
+
+/* Scrollable single-row strips (tab bars): keep the overflow scrollable but
+   without a visible scrollbar — on Windows the classic scrollbar otherwise
+   renders inside the strip whenever the page narrows (e.g. chat docked). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

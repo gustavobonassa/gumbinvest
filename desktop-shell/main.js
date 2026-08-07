@@ -8,7 +8,7 @@
  * serves API + SPA on 0.0.0.0 — which is why the same app keeps working in
  * any browser and on the phone while the desktop app runs.
  */
-const { app, BrowserWindow, Tray, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Tray, Menu, dialog, shell, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
@@ -102,6 +102,130 @@ async function waitForServer(deadlineMs = 300000) {
   return null;
 }
 
+// ---------------------------------------------------------------- updates
+
+/**
+ * Update state, mirrored to the renderer.
+ *
+ * One object rather than a stream of events, because the settings screen can
+ * open at any point in the process: it asks for the current state once and
+ * then subscribes to changes, instead of trying to reconstruct where things
+ * stand from events it wasn't listening for.
+ *
+ * `status`: idle | checking | available | downloading | downloaded | current | error
+ */
+let updateState = { status: "idle", version: null, percent: 0, error: null };
+let autoUpdater = null;
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("update:state", updateState);
+  }
+}
+
+/** Why in-app updating is unavailable here, or null when it works. */
+function updaterUnavailableReason() {
+  if (!app.isPackaged) return "Atualizações só funcionam no app instalado.";
+  // Squirrel.Mac refuses to swap an unsigned bundle, so on macOS the download
+  // would succeed and the install would silently do nothing. Better to say so
+  // and send the user to the release page than to fake a working button.
+  if (process.platform === "darwin") {
+    return "No macOS a atualização automática exige app assinado. Baixe a nova versão em github.com/gustavobonassa/gumbinvest/releases.";
+  }
+  return null;
+}
+
+/** Loaded lazily: an unpackaged dev run has no update feed to talk to. */
+function getUpdater() {
+  if (updaterUnavailableReason()) return null;
+  if (autoUpdater) return autoUpdater;
+
+  autoUpdater = require("electron-updater").autoUpdater;
+  // The user decides when to spend the bandwidth — checking is silent, the
+  // download is a button.
+  autoUpdater.autoDownload = false;
+  // Installing on quit would surprise someone who just wanted to close the
+  // app; the restart is an explicit action in the settings screen.
+  autoUpdater.autoInstallOnAppQuit = false;
+
+  autoUpdater.on("update-available", (info) =>
+    setUpdateState({ status: "available", version: info.version, percent: 0, error: null }),
+  );
+  autoUpdater.on("update-not-available", () =>
+    setUpdateState({ status: "current", version: app.getVersion(), percent: 0, error: null }),
+  );
+  autoUpdater.on("download-progress", (progress) =>
+    setUpdateState({ status: "downloading", percent: Math.round(progress.percent) }),
+  );
+  autoUpdater.on("update-downloaded", (info) =>
+    setUpdateState({ status: "downloaded", version: info.version, percent: 100 }),
+  );
+  autoUpdater.on("error", (error) =>
+    setUpdateState({ status: "error", error: String(error?.message || error) }),
+  );
+  return autoUpdater;
+}
+
+function registerUpdateIpc() {
+  ipcMain.handle("app:version", () => app.getVersion());
+  ipcMain.handle("update:state", () => updateState);
+
+  ipcMain.handle("update:check", async () => {
+    const updater = getUpdater();
+    if (!updater) {
+      // A dev run or an unsigned mac reports why rather than pretending to be
+      // up to date.
+      setUpdateState({ status: "error", error: updaterUnavailableReason() });
+      return updateState;
+    }
+    setUpdateState({ status: "checking", error: null });
+    try {
+      await updater.checkForUpdates();
+    } catch (error) {
+      setUpdateState({ status: "error", error: String(error?.message || error) });
+    }
+    return updateState;
+  });
+
+  ipcMain.handle("update:download", async () => {
+    const updater = getUpdater();
+    if (!updater) return updateState;
+    setUpdateState({ status: "downloading", percent: 0, error: null });
+    try {
+      await updater.downloadUpdate();
+    } catch (error) {
+      setUpdateState({ status: "error", error: String(error?.message || error) });
+    }
+    return updateState;
+  });
+
+  ipcMain.handle("update:install", () => {
+    const updater = getUpdater();
+    if (!updater) return updateState;
+    // The Python server holds the SQLite file; stop it before the installer
+    // replaces the files underneath it.
+    quitting = true;
+    stopServer();
+    // isSilent=false so the NSIS progress is visible; isForceRunAfter=true
+    // brings the app back on the new version.
+    updater.quitAndInstall(false, true);
+    return updateState;
+  });
+}
+
+/** One quiet check a little after launch, so the badge is already right when
+ *  the user wanders into Configurações. Never downloads on its own. */
+function scheduleStartupCheck() {
+  const updater = getUpdater();
+  if (!updater) return;
+  setTimeout(() => {
+    updater.checkForUpdates().catch(() => {
+      /* offline is not worth an error banner on startup */
+    });
+  }, 15000);
+}
+
 // ---------------------------------------------------------------- window
 
 function createWindow() {
@@ -120,6 +244,7 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
@@ -191,9 +316,11 @@ if (!hasLock) {
   app.on("second-instance", showWindow);
 
   app.whenReady().then(async () => {
+    registerUpdateIpc();
     startServer();
     createTray();
     createWindow();
+    scheduleStartupCheck();
 
     const port = await waitForServer();
     if (!mainWindow) return;

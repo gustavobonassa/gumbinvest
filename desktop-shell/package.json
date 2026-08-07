@@ -7,13 +7,15 @@
   "private": true,
   "scripts": {
     "start": "electron . --dev",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
   },
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "qrcode": "^1.5.4"
   },
   "build": {
@@ -25,11 +27,19 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "loading.html",
       "error.html",
       "qr.html",
       "assets/**",
       "node_modules/**"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "gustavobonassa",
+        "repo": "gumbinvest"
+      }
     ],
     "extraResources": [
       {
@@ -39,7 +49,8 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,
@@ -48,9 +59,17 @@
       "runAfterFinish": true
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "icon": "build/icon.png",
-      "category": "public.app-category.finance"
+      "category": "public.app-category.finance",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
   }
 }

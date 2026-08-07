@@ -217,7 +217,7 @@ Docker, no infrastructure. The window is just a viewer: the same local
 server stays reachable from any browser on the machine and from the phone.
 
 **[⬇ Download the latest installer](https://github.com/gustavobonassa/gumbinvest/releases/latest)**
-— `GumbInvest Setup <version>.exe` for Windows, `GumbInvest-<version>-arm64.dmg`
+— `GumbInvest-Setup-<version>.exe` for Windows, `GumbInvest-<version>-arm64.dmg`
 for macOS (Apple Silicon). Each release is built automatically on GitHub's
 servers from the tagged source
 ([`.github/workflows/release.yml`](.github/workflows/release.yml)).
@@ -239,7 +239,7 @@ Or build it yourself:
 ```powershell
 # needs Node and Python 3.11+
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
-# output: desktop-shell\out\GumbInvest Setup <version>.exe
+# output: desktop-shell\out\GumbInvest-Setup-<version>.exe
 ```
 
 What the installed app does:
@@ -257,8 +257,21 @@ What the installed app does:
   again.
 - The scheduled jobs (quote refresh, FX/index/treasury sync, nightly snapshot
   and backup) run inside the app — same schedule as the Celery beat.
+- **Updates itself**: Configurações → Geral shows the installed version and
+  checks GitHub Releases for a newer one (also once, quietly, ~15s after
+  launch). Downloading and restarting into the new version are two explicit
+  buttons — nothing is downloaded or installed behind your back, and your
+  data, keys and backups are untouched by the swap. Windows only: an unsigned
+  macOS app cannot self-update, so that build points you at the releases page
+  instead.
 - `DATABASE_URL` still wins if set, so a desktop install can be pointed at an
   existing Postgres.
+
+Releasing a new version (for maintainers): bump `version` in
+`desktop-shell/package.json`, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+The workflow builds both installers and attaches them — plus `latest.yml`,
+which is the feed installed apps poll — to the GitHub Release. Apps already
+out there see it on their next check.
 
 Desktop and Docker are separate instances with separate data — there is no
 live sync between a desktop SQLite and a server Postgres. To move a history

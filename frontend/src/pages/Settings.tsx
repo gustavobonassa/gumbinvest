@@ -18,6 +18,7 @@ import { useSearchParams } from "react-router-dom";
 import AiSettings from "@/components/AiSettings";
 import CloudBackupCard from "@/components/CloudBackupCard";
 import CorporateActions from "@/components/CorporateActions";
+import UpdateCard from "@/components/UpdateCard";
 import SecretField from "@/components/SecretField";
 import { useToast } from "@/components/Toast";
 import { Badge, Card, ErrorState, SectionTitle, Select, Skeleton, Tabs } from "@/components/ui";
@@ -115,7 +116,13 @@ export default function Settings() {
   if (settings.isError) return <ErrorState error={settings.error} retry={() => settings.refetch()} />;
   if (settings.isLoading || !settings.data) return <Skeleton className="h-80 w-full" />;
 
-  const update = (key: string, value: unknown) => setValues((current) => ({ ...current, [key]: value }));
+  // Preferences save on change, not through a separate button: a dropdown is
+  // already a commit, and there is nothing else on this card to batch it with.
+  const updatePreference = (key: string, value: unknown) => {
+    const next = { ...values, [key]: value };
+    setValues(next);
+    save.mutate(next);
+  };
 
   return (
     <div className="space-y-6">
@@ -145,7 +152,7 @@ export default function Settings() {
               <Select
                 ariaLabel="Moeda"
                 value={String(values.currency ?? "BRL")}
-                onChange={(next) => update("currency", next)}
+                onChange={(next) => updatePreference("currency", next)}
                 options={CURRENCIES.map((item) => ({ value: item, label: item }))}
               />
             </div>
@@ -154,7 +161,7 @@ export default function Settings() {
               <Select
                 ariaLabel="Fuso horário"
                 value={String(values.timezone ?? "America/Sao_Paulo")}
-                onChange={(next) => update("timezone", next)}
+                onChange={(next) => updatePreference("timezone", next)}
                 options={TIMEZONES.map((item) => ({ value: item, label: item }))}
               />
             </div>
@@ -163,14 +170,11 @@ export default function Settings() {
               <Select
                 ariaLabel="Formato numérico"
                 value={String(values.number_format ?? "pt-BR")}
-                onChange={(next) => update("number_format", next)}
+                onChange={(next) => updatePreference("number_format", next)}
                 options={LOCALES.map((item) => ({ value: item, label: item }))}
               />
             </div>
           </div>
-          <button type="button" className="btn-primary mt-4" onClick={() => save.mutate(values)} disabled={save.isPending}>
-            {save.isPending ? "Salvando…" : "Salvar preferências"}
-          </button>
         </Card>
 
         <Card className="p-5">
@@ -193,6 +197,8 @@ export default function Settings() {
             de lixeira remove.
           </p>
         </Card>
+
+        <UpdateCard />
 
         <Card className="p-5">
           <SectionTitle title="Ambiente" subtitle="Valores lidos das variáveis de ambiente do backend" />

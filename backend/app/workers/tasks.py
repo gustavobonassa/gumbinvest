@@ -8,7 +8,7 @@ from app.market.crypto import sync_crypto_fx
 from app.market.fixed_income import ensure_terms_for_fixed_income
 from app.market.fx import backfill_transaction_fx, sync_all_fx
 from app.market.indices import sync_all_indices
-from app.market.service import backfill_history, refresh_quotes
+from app.market.service import backfill_history, refresh_quotes, retry_pending_quotes
 from app.market.treasury import sync_treasury_prices
 from app.portfolio.service import PortfolioService
 from app.services.backup import backup_database
@@ -24,6 +24,20 @@ def refresh_quotes_task(force: bool = False) -> dict:
         portfolio = get_default_portfolio(db)
         result = refresh_quotes(db, portfolio.id, force=force)
         db.add(AuditLog(action="market.refresh", detail={k: str(v) for k, v in result.items()}))
+        return {k: str(v) for k, v in result.items()}
+
+
+@celery_app.task(name="app.workers.tasks.retry_quotes_task")
+def retry_quotes_task() -> dict:
+    """Drain the retry queue. A no-op — one empty read — when nothing failed.
+
+    Deliberately not audited: it runs every minute, and a log line per minute
+    saying "nothing to do" would bury the entries that matter.
+    """
+    with session_scope() as db:
+        result = retry_pending_quotes(db)
+        if result.get("recovered"):
+            db.add(AuditLog(action="market.retry", detail={k: str(v) for k, v in result.items()}))
         return {k: str(v) for k, v in result.items()}
 
 
@@ -70,6 +84,22 @@ def sync_fx_task() -> dict:
         result["backfilled"] = backfill_transaction_fx(db)["updated"]
         db.add(AuditLog(action="market.fx", detail={k: str(v) for k, v in result.items()}))
         return {k: str(v) for k, v in result.items()}
+
+
+@celery_app.task(name="app.workers.tasks.heal_market_data_task")
+def heal_market_data_task() -> dict:
+    """Fetch series a failed bootstrap left empty (PTAX pairs, indices, Ibov).
+
+    A no-op when everything exists; an audit row is only written when it
+    actually fetched something, so an hourly heartbeat never floods the log.
+    """
+    from app.market.service import heal_market_data
+
+    with session_scope() as db:
+        healed = heal_market_data(db)
+        if healed:
+            db.add(AuditLog(action="market.heal", detail={k: str(v) for k, v in healed.items()}))
+        return {k: str(v) for k, v in healed.items()}
 
 
 @celery_app.task(name="app.workers.tasks.sync_treasury_task")

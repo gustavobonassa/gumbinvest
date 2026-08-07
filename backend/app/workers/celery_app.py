@@ -36,7 +36,14 @@ schedule: dict[str, dict] = {
     "refresh-quotes": {
         "task": "app.workers.tasks.refresh_quotes_task",
         "schedule": max(settings.price_refresh_minutes, 1) * 60.0,
-    }
+    },
+    # Drains the transient-failure queue. Runs every minute because the first
+    # retry is two minutes out and the user is watching the screen right then;
+    # it costs one read of a table that is empty whenever nothing is wrong.
+    "retry-quotes": {
+        "task": "app.workers.tasks.retry_quotes_task",
+        "schedule": 60.0,
+    },
 }
 
 # A newly imported ticker arrives with no history, and `refresh_quotes` only
@@ -67,6 +74,14 @@ schedule["sync-benchmarks"] = {
 schedule["sync-fx"] = {
     "task": "app.workers.tasks.sync_fx_task",
     "schedule": crontab(hour=14, minute=10),
+}
+
+# A cold start whose downloads failed (offline, timeout, rate limit) heals
+# within the hour instead of waiting a day for the slots above. No-op — and
+# no audit row — whenever every series already exists.
+schedule["heal-market-data"] = {
+    "task": "app.workers.tasks.heal_market_data_task",
+    "schedule": crontab(minute=25),
 }
 
 # Tesouro Transparente republishes the price file every business morning,

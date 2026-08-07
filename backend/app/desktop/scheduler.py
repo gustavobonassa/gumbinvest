@@ -12,6 +12,8 @@ separate worker process never could.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -45,10 +47,46 @@ def _refresh_quotes(db) -> dict:
     return refresh_quotes(db, get_default_portfolio(db).id)
 
 
+def _retry_quotes() -> None:
+    """Drain the quote retry queue.
+
+    Not wrapped in :func:`_audited`: this runs every minute, and an audit row
+    per minute saying "nothing was due" would drown the log. One is written
+    only when a retry actually recovered a price.
+    """
+    from app.market.service import retry_pending_quotes
+
+    try:
+        with session_scope() as db:
+            result = retry_pending_quotes(db)
+            if result.get("recovered"):
+                db.add(AuditLog(action="market.retry", detail={k: str(v) for k, v in result.items()}))
+    except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+        logger.exception("scheduled job market.retry failed")
+
+
 def _backfill_missing(db) -> dict:
     from app.market.service import backfill_history
 
     return backfill_history(db, get_default_portfolio(db).id, only_missing=True)
+
+
+def _heal_market_data() -> None:
+    """Re-fetch series a failed bootstrap left empty (see heal_market_data).
+
+    Like the quote retry, it is not `_audited`: it runs every half hour and is
+    almost always a no-op — an audit row is only worth writing when something
+    was actually missing and got fetched.
+    """
+    from app.market.service import heal_market_data
+
+    try:
+        with session_scope() as db:
+            healed = heal_market_data(db)
+            if healed:
+                db.add(AuditLog(action="market.heal", detail={k: str(v) for k, v in healed.items()}))
+    except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+        logger.exception("scheduled job market.heal failed")
 
 
 def _sync_indices(db) -> dict:
@@ -141,7 +179,21 @@ def build_scheduler() -> BackgroundScheduler:
     scheduler.add_job(
         lambda: _audited("market.refresh", _refresh_quotes),
         IntervalTrigger(minutes=max(settings.price_refresh_minutes, 1)),
+        # An interval job first fires after one full interval — on a fresh
+        # install that means the just-imported portfolio sits at cost for half
+        # an hour. Fire once shortly after boot instead (after the startup
+        # auto-import has had time to create the assets).
+        next_run_time=datetime.now() + timedelta(seconds=90),
         id="refresh-quotes",
+    )
+    scheduler.add_job(_retry_quotes, IntervalTrigger(minutes=1), id="retry-quotes")
+    # A cold start whose downloads timed out heals within the half hour rather
+    # than waiting for the next day's scheduled slot.
+    scheduler.add_job(
+        _heal_market_data,
+        IntervalTrigger(minutes=30),
+        next_run_time=datetime.now() + timedelta(minutes=3),
+        id="heal-market-data",
     )
     # Same rationale as the beat schedule (see app/workers/celery_app.py):
     # new tickers need their history; BC publishes CDI in the morning; PTAX

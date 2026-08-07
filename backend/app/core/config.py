@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     auto_import_dir: str = "/data"
     auto_import_on_startup: bool = True
 
+    # First-run downloads (PTAX, index series, Ibovespa, Tesouro) at startup.
+    # The test suite switches this off: every `with TestClient(app)` runs the
+    # lifespan, and hundreds of app starts against live BCB/Yahoo made the
+    # suite slow and rate-limit flaky. The half-hourly heal job covers a real
+    # install that boots with this off or with the network down.
+    bootstrap_market_data: bool = True
+
     # AI assistant (asset chat). Provider chosen in the UI (or AI_PROVIDER);
     # a missing key disables the endpoint gracefully. Keys can come from the
     # env or be saved per-instance through Configurações (app/services/secrets).

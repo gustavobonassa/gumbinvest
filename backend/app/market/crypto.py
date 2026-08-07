@@ -59,12 +59,63 @@ SOURCE = "crypto-close"
 #: mind about how to read a pair.
 HEADLINE_COINS: tuple[str, ...] = ("BTC",)
 
+#: In-process cache for headline coins nobody holds: symbol -> (QuoteData|None,
+#: fetched_at, expires_at). The sidebar polls /market/status every five
+#: minutes; without this every poll would call the provider. A *failed* fetch
+#: (timeout, HTTP 429) is cached too, for a shorter window, so an outage backs
+#: off instead of retrying on every poll — and while it lasts, the previous
+#: price keeps being served rather than the row blinking out.
+_UNHELD_CACHE: dict[str, tuple[object, "datetime", float]] = {}
+_UNHELD_FAILURE_TTL = 300.0
+
+#: The one place a *request* path is allowed to reach the network — and
+#: therefore the one the test suite must be able to switch off (see conftest):
+#: every test that renders /market/status would otherwise call the provider.
+UNHELD_FETCH_ENABLED = True
+
+
+def _unheld_quote(symbol: str):
+    """Provider quote for a headline coin with no asset row behind it."""
+    import time
+    from datetime import datetime, timezone
+
+    from app.core.config import settings
+    from app.market.providers import get_provider  # local import avoids a cycle
+
+    if not UNHELD_FETCH_ENABLED:
+        return None, datetime.now(timezone.utc)
+
+    now = time.time()
+    cached = _UNHELD_CACHE.get(symbol)
+    if cached and now < cached[2]:
+        return cached[0], cached[1]
+
+    market_symbol = f"{symbol}-USD"
+    try:
+        quote = get_provider().get_quotes([market_symbol]).get(market_symbol)
+    except Exception as exc:  # noqa: BLE001 — a status endpoint must never 500 on a provider
+        logger.warning("headline quote fetch failed for %s: %s", market_symbol, exc)
+        quote = None
+
+    fetched_at = datetime.now(timezone.utc)
+    if quote is not None:
+        _UNHELD_CACHE[symbol] = (quote, fetched_at, now + float(settings.quote_cache_ttl))
+        return quote, fetched_at
+    if cached and cached[0] is not None:
+        # Keep the stale price on screen; try the provider again in a few minutes.
+        _UNHELD_CACHE[symbol] = (cached[0], cached[1], now + _UNHELD_FAILURE_TTL)
+        return cached[0], cached[1]
+    _UNHELD_CACHE[symbol] = (None, fetched_at, now + _UNHELD_FAILURE_TTL)
+    return None, fetched_at
+
 
 def headline_prices(db: Session, base_currency: str = "BRL") -> list[dict]:
     """Live price of the headline coins, in the portfolio's own currency.
 
-    Empty when the coin is not held: quotes are only fetched for open positions,
-    and a price nobody's portfolio depends on is not worth a line in the UI.
+    A held coin reports its own asset's quote (refreshed with the portfolio).
+    An unheld one falls back to a provider fetch cached in-process — a fresh
+    install should still see what Bitcoin is doing, and the price the whole
+    market is read by is worth a line even before any coin is imported.
     """
     from app.market.fx import load_table  # local import avoids a cycle
 
@@ -74,6 +125,28 @@ def headline_prices(db: Session, base_currency: str = "BRL") -> list[dict]:
     for symbol in HEADLINE_COINS:
         asset = held.get(symbol)
         if asset is None:
+            fallback, fetched_at = _unheld_quote(symbol)
+            if fallback is None or fallback.price is None:
+                continue
+            quoted_in = (fallback.currency or "USD").upper()
+            if quoted_in == base_currency.upper():
+                converted = Decimal(fallback.price)
+            elif rate is None:
+                converted = None
+            else:
+                converted = Decimal(fallback.price) * rate
+            prices.append(
+                {
+                    "symbol": symbol,
+                    "name": coins.coin_name(symbol),
+                    "price": fallback.price,
+                    "currency": quoted_in,
+                    "price_base": converted,
+                    "base_currency": base_currency.upper(),
+                    "change_percent": fallback.change_percent,
+                    "fetched_at": fetched_at,
+                }
+            )
             continue
         quote = db.get(Quote, asset.id)
         if quote is None or quote.price is None:

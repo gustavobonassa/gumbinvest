@@ -45,6 +45,19 @@ def supported_pairs() -> list[tuple[str, str]]:
     return sorted(SERIES)
 
 
+def missing_pairs(db: Session) -> list[tuple[str, str]]:
+    """Supported pairs with no rows yet — what a cold start still owes.
+
+    Per pair rather than "is the table empty": a bootstrap that fetched the
+    dollar and then hit a timeout on the euro must not count as done, or the
+    euro only ever arrives with the next day's scheduled sync.
+    """
+    present = set(
+        db.execute(select(FxRate.base, FxRate.quote).distinct()).all()
+    )
+    return [pair for pair in supported_pairs() if pair not in present]
+
+
 def fetch_series(base: str, quote: str, start: date, end: date | None = None):
     """Download a PTAX series. Returns ``[(day, rate), ...]``."""
     import httpx

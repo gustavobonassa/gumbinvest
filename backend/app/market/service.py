@@ -4,17 +4,24 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import Asset, PriceHistory, Quote, Transaction
+from app.db.models import Asset, PriceHistory, Quote, QuoteAttempt, Transaction
 from app.db.upsert import dialect_insert
 from app.domain.enums import AssetKind
+from app.market.base import QuoteBatch
 from app.market.providers import get_provider
 
 logger = get_logger(__name__)
+
+#: How long to wait before each re-attempt of a transiently failed fetch.
+#: Short first, because the usual cause is one throttled window during a large
+#: first sync and the user is looking at the screen right then; longer after,
+#: because by the third failure the provider is having a bad hour.
+RETRY_SCHEDULE = (120, 480, 1800)  # 2min, 8min, 30min
 
 #: Instrument families that no public quote API covers.
 UNQUOTABLE_KINDS = {
@@ -134,6 +141,84 @@ def refresh_if_stale(db: Session, asset: Asset, portfolio_id: int | None = None)
     return True
 
 
+def _retry_delay(attempts: int) -> float:
+    """Seconds to wait after the *n*-th consecutive failure.
+
+    Past the schedule the asset simply rides the normal refresh cadence: by
+    then the user has been told it has no price, and hammering a provider that
+    has said no four times over half an hour buys nothing.
+    """
+    if attempts <= len(RETRY_SCHEDULE):
+        return float(RETRY_SCHEDULE[attempts - 1])
+    return max(settings.price_refresh_minutes, 1) * 60.0
+
+
+def is_pending(attempt: QuoteAttempt) -> bool:
+    """Whether the queue still expects this one to come good.
+
+    While pending, the asset is *not* reported to the user as unpriced — the
+    price is late, not absent. Once the schedule is spent, it is reported.
+    """
+    return attempt.attempts <= len(RETRY_SCHEDULE)
+
+
+def _store_quotes(
+    db: Session, assets: list[Asset], batch: QuoteBatch, provider_name: str, now: datetime
+) -> list[int]:
+    """Persist every quote in *batch*; returns the assets that got one."""
+    priced: list[int] = []
+    for asset in assets:
+        data = batch.quotes.get(resolve_market_symbol(asset))
+        if data is None:
+            continue
+        db.merge(
+            Quote(
+                asset_id=asset.id,
+                price=data.price,
+                previous_close=data.previous_close,
+                change=data.change,
+                change_percent=data.change_percent,
+                currency=data.currency or asset.currency,
+                source=provider_name,
+                long_name=data.long_name,
+                fetched_at=now,
+            )
+        )
+        # Keep a daily close so the history chart has real data going forward.
+        _upsert_price(db, asset.id, now.date(), data.price, provider_name)
+        priced.append(asset.id)
+    return priced
+
+
+def _clear_attempts(db: Session, asset_ids: list[int]) -> None:
+    """A price arrived, so the asset is no longer owed a retry."""
+    if asset_ids:
+        db.execute(delete(QuoteAttempt).where(QuoteAttempt.asset_id.in_(asset_ids)))
+
+
+def _queue_failures(
+    db: Session, assets: list[Asset], failed: dict[str, str], now: datetime
+) -> list[str]:
+    """Schedule another attempt for each transiently failed fetch."""
+    queued: list[str] = []
+    for asset in assets:
+        symbol = resolve_market_symbol(asset)
+        reason = failed.get(symbol) or failed.get(symbol.upper())
+        if reason is None:
+            continue
+        row = db.get(QuoteAttempt, asset.id)
+        if row is None:
+            row = QuoteAttempt(asset_id=asset.id, attempts=0, first_failed_at=now)
+            db.add(row)
+        row.symbol = symbol[:32]
+        row.attempts += 1
+        row.last_error = reason[:255]
+        row.last_attempt_at = now
+        row.next_attempt_at = now + timedelta(seconds=_retry_delay(row.attempts))
+        queued.append(asset.ticker)
+    return queued
+
+
 def refresh_quotes(db: Session, portfolio_id: int | None = None, force: bool = False) -> dict:
     """Fetch and store the latest price for every held, quotable asset."""
     provider = get_provider()
@@ -153,41 +238,128 @@ def refresh_quotes(db: Session, portfolio_id: int | None = None, force: bool = F
     if not assets:
         return {"provider": provider.name, "updated": 0, "skipped": 0, "detail": "quotes are fresh"}
 
-    symbols = [resolve_market_symbol(a) for a in assets]
-    quotes = provider.get_quotes(symbols)
-    updated = 0
+    batch = provider.fetch_quotes([resolve_market_symbol(a) for a in assets])
     now = datetime.now(UTC)
 
-    for asset in assets:
-        symbol = resolve_market_symbol(asset)
-        data = quotes.get(symbol)
-        if data is None:
-            continue
-        db.merge(
-            Quote(
-                asset_id=asset.id,
-                price=data.price,
-                previous_close=data.previous_close,
-                change=data.change,
-                change_percent=data.change_percent,
-                currency=data.currency or asset.currency,
-                source=provider.name,
-                long_name=data.long_name,
-                fetched_at=now,
-            )
-        )
-        # Keep a daily close so the history chart has real data going forward.
-        _upsert_price(db, asset.id, now.date(), data.price, provider.name)
-        updated += 1
-
+    priced = _store_quotes(db, assets, batch, provider.name, now)
+    _clear_attempts(db, priced)
+    queued = _queue_failures(db, assets, batch.failed, now)
     db.commit()
-    logger.info("quotes refreshed via %s: %s/%s", provider.name, updated, len(assets))
+
+    logger.info(
+        "quotes refreshed via %s: %s/%s (%s queued for retry)",
+        provider.name,
+        len(priced),
+        len(assets),
+        len(queued),
+    )
     return {
         "provider": provider.name,
         "requested": len(assets),
-        "updated": updated,
-        "missing": [a.ticker for a in assets if resolve_market_symbol(a) not in quotes],
+        "updated": len(priced),
+        # Answered "unknown" by the provider: no price exists to fetch. Kept
+        # apart from `queued`, which is the same symptom with a different cause
+        # and a different remedy.
+        "missing": [
+            a.ticker
+            for a in assets
+            if resolve_market_symbol(a) not in batch.quotes
+            and resolve_market_symbol(a) not in batch.failed
+        ],
+        "queued": queued,
         "fetched_at": now,
+    }
+
+
+def pending_quotes(db: Session, portfolio_id: int | None = None) -> list[dict]:
+    """Assets whose price is late rather than absent, soonest first.
+
+    The source behind the "atualizando cotações" notification, and the reason
+    those tickers are kept out of the unpriced warning: telling someone their
+    asset has no price, when what happened is that Yahoo throttled a first
+    sync, is an alarm about nothing they can act on.
+    """
+    rows = db.scalars(select(QuoteAttempt)).all()
+    if not rows:
+        return []
+    wanted = {a.id: a for a in quotable_assets(db, portfolio_id)}
+    pending = [
+        {
+            "ticker": wanted[row.asset_id].ticker,
+            "symbol": row.symbol,
+            "attempts": row.attempts,
+            "last_error": row.last_error,
+            "next_attempt_at": row.next_attempt_at,
+        }
+        for row in rows
+        if row.asset_id in wanted and is_pending(row)
+    ]
+    pending.sort(key=lambda item: (item["next_attempt_at"], item["ticker"]))
+    return pending
+
+
+def pending_quote_asset_ids(db: Session) -> set[int]:
+    """Just the ids, for callers deciding whether to warn about an asset."""
+    return {row.asset_id for row in db.scalars(select(QuoteAttempt)).all() if is_pending(row)}
+
+
+def retry_pending_quotes(db: Session, limit: int = 100) -> dict:
+    """Re-attempt the fetches that failed transiently and are now due.
+
+    Runs often and cheaply: the queue is empty whenever nothing is wrong, so
+    the common case is one indexed-free scan of an empty table.
+    """
+    provider = get_provider()
+    if provider.name == "none":
+        return {"provider": "none", "retried": 0, "recovered": 0}
+
+    now = datetime.now(UTC)
+    # Compared here rather than in SQL — see QuoteAttempt.next_attempt_at.
+    due: list[QuoteAttempt] = [
+        row
+        for row in db.scalars(select(QuoteAttempt)).all()
+        if row.next_attempt_at.replace(tzinfo=row.next_attempt_at.tzinfo or UTC) <= now
+    ][:limit]
+    if not due:
+        return {"provider": provider.name, "retried": 0, "recovered": 0}
+
+    assets = [db.get(Asset, row.asset_id) for row in due]
+    stale = [
+        row.asset_id
+        for row, asset in zip(due, assets, strict=True)
+        if asset is None or asset.price_manual or asset.kind in UNQUOTABLE_KINDS
+    ]
+    # A paper that was given a manual price, or reclassified into a family with
+    # no public quote, is no longer waiting on anything.
+    _clear_attempts(db, stale)
+    assets = [a for a in assets if a is not None and a.id not in stale]
+    if not assets:
+        db.commit()
+        return {"provider": provider.name, "retried": 0, "recovered": 0}
+
+    batch = provider.fetch_quotes([resolve_market_symbol(a) for a in assets])
+    priced = _store_quotes(db, assets, batch, provider.name, now)
+    _clear_attempts(db, priced)
+    # Answered "unknown" this time: the ticker is not late, it does not exist.
+    # Dropping the row lets the asset be reported as unpriced, honestly.
+    _clear_attempts(
+        db,
+        [
+            a.id
+            for a in assets
+            if resolve_market_symbol(a) not in batch.quotes
+            and resolve_market_symbol(a) not in batch.failed
+        ],
+    )
+    _queue_failures(db, assets, batch.failed, now)
+    db.commit()
+
+    logger.info("quote retries via %s: %s/%s recovered", provider.name, len(priced), len(assets))
+    return {
+        "provider": provider.name,
+        "retried": len(assets),
+        "recovered": len(priced),
+        "recovered_tickers": [a.ticker for a in assets if a.id in set(priced)],
     }
 
 
@@ -203,22 +375,14 @@ def ensure_market_data(db: Session, asset: Asset) -> None:
     if provider.name == "none" or asset.price_manual or asset.kind in UNQUOTABLE_KINDS:
         return
     symbol = resolve_market_symbol(asset)
+    now = datetime.now(UTC)
 
-    data = provider.get_quotes([symbol]).get(symbol)
-    if data is not None:
-        db.merge(
-            Quote(
-                asset_id=asset.id,
-                price=data.price,
-                previous_close=data.previous_close,
-                change=data.change,
-                change_percent=data.change_percent,
-                currency=data.currency or asset.currency,
-                source=provider.name,
-                long_name=data.long_name,
-                fetched_at=datetime.now(UTC),
-            )
-        )
+    batch = provider.fetch_quotes([symbol])
+    priced = _store_quotes(db, [asset], batch, provider.name, now)
+    _clear_attempts(db, priced)
+    # A page opened during a throttled window queues like any other fetch, so
+    # the price turns up on its own instead of the user reloading and hoping.
+    _queue_failures(db, [asset], batch.failed, now)
 
     if provider.supports_history():
         for point in provider.get_history(symbol):
@@ -288,3 +452,47 @@ def backfill_history(
         db.commit()
     logger.info("history backfill: %s assets, %s points", covered, total_points)
     return {"provider": provider.name, "assets": covered, "points": total_points}
+
+
+def heal_market_data(db: Session) -> dict:
+    """Fetch whatever a failed bootstrap left missing.
+
+    The startup bootstraps (PTAX pairs, index series, benchmarks) swallow
+    failures on purpose — a cold start must not hang on an external API — and
+    the daily jobs only come round once a day. A first run that hit a timeout
+    or a rate limit would leave the sidebar and the return chart empty until
+    the next day's slot. This closes the gap: it runs every half hour, fetches
+    only what is *absent*, and is a complete no-op the moment everything
+    exists — so it can never hammer a provider that is rate-limiting us.
+    """
+    from app.market import benchmarks as benchmarks_module
+    from app.market import fx as fx_module
+    from app.market import indices as indices_module
+
+    healed: dict = {}
+
+    try:
+        pairs = fx_module.missing_pairs(db)
+        for base, quote in pairs:
+            fx_module.sync_fx(db, base, quote)
+        if pairs:
+            healed["fx"] = [f"{base}/{quote}" for base, quote in pairs]
+    except Exception:  # noqa: BLE001 — one group failing must not stop the others
+        logger.exception("market heal: fx sync failed")
+
+    try:
+        absent = benchmarks_module.missing(db)
+        if absent:
+            benchmarks_module.sync_benchmarks(db)
+            healed["benchmarks"] = absent
+    except Exception:  # noqa: BLE001
+        logger.exception("market heal: benchmark sync failed")
+
+    try:
+        if not indices_module.index_status(db):
+            indices_module.sync_all_indices(db)
+            healed["indices"] = True
+    except Exception:  # noqa: BLE001
+        logger.exception("market heal: index sync failed")
+
+    return healed

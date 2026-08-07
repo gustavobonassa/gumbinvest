@@ -21,6 +21,9 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL or (
 )
 # Tests own their fixtures: never let application startup import a stray CSV.
 os.environ["AUTO_IMPORT_ON_STARTUP"] = "false"
+# Nor download PTAX/index/benchmark series: every `with TestClient(app)` runs
+# the lifespan, and live BCB/Yahoo calls made the suite slow and flaky.
+os.environ["BOOTSTRAP_MARKET_DATA"] = "false"
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
@@ -165,6 +168,21 @@ def _clear_replay_cache():
     clear_replay_cache()
     yield
     clear_replay_cache()
+
+
+@pytest.fixture(autouse=True)
+def _no_unheld_headline_fetch():
+    """Keep /market/status offline: the unheld-Bitcoin fallback calls the
+    provider from the request path, and every test that renders the status
+    endpoint would otherwise reach the real network. The tests that exercise
+    the fallback re-enable it and mock the provider themselves."""
+    from app.market import crypto
+
+    crypto.UNHELD_FETCH_ENABLED = False
+    crypto._UNHELD_CACHE.clear()
+    yield
+    crypto.UNHELD_FETCH_ENABLED = True
+    crypto._UNHELD_CACHE.clear()
 
 
 @pytest.fixture

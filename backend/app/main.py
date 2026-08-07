@@ -168,21 +168,18 @@ def auto_import_initial_files() -> None:
 def bootstrap_fx() -> None:
     """Download the PTAX series once, so offshore holdings convert to reais.
 
-    Runs before the first import that needs it, and only when the series is
-    empty; the daily beat keeps it current afterwards.
+    Per pair, not "once for the table": every supported currency the sidebar
+    and the importer can need (dollar *and* euro) is fetched on the first run,
+    and a pair whose download failed is picked up again on the next start —
+    plus by the half-hourly heal job in between.
     """
     try:
         with session_scope() as db:
-            from app.market.fx import fx_status, sync_fx
+            from app.market.fx import missing_pairs, sync_fx
 
-            if not fx_status(db):
-                logger.info("downloading USD/BRL PTAX rates from Banco Central (first run)")
-                # Only the dollar series here. It is the one the first import
-                # needs — every offshore holding and every coin is booked in
-                # dollars — and a cold start should not wait on a second
-                # download for the handful of movements quoted in euros. The
-                # daily job fetches every configured pair.
-                sync_fx(db)
+            for base, quote in missing_pairs(db):
+                logger.info("downloading %s/%s PTAX rates from Banco Central (first run)", base, quote)
+                sync_fx(db, base, quote)
     except Exception:  # noqa: BLE001 — startup must not depend on an external API
         logger.exception("could not bootstrap exchange rates")
 
@@ -246,7 +243,8 @@ async def lifespan(app: FastAPI):
     # Rates first: the importer stamps each foreign movement with the rate of
     # its trade date, and a movement imported before the series exists would
     # carry no rate at all.
-    bootstrap_fx()
+    if settings.bootstrap_market_data:
+        bootstrap_fx()
     # Renames first: an import that runs before them creates the new ticker as a
     # second asset, leaving two rows to merge instead of one to rename.
     with session_scope() as db:
@@ -272,9 +270,10 @@ async def lifespan(app: FastAPI):
         sync_crypto_fx(db)
         # Movements imported before their rate was known get it filled in now.
         backfill_transaction_fx(db)
-    bootstrap_indices()
-    bootstrap_benchmarks()
-    bootstrap_treasury()
+    if settings.bootstrap_market_data:
+        bootstrap_indices()
+        bootstrap_benchmarks()
+        bootstrap_treasury()
     yield
 
 

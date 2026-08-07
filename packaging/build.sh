@@ -39,6 +39,8 @@ cd "$SHELL_DIR"
 
 echo "== 5/5 electron-builder =="
 # No signing identity in CI: build unsigned rather than fail looking for one.
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac
+# --publish never: the publish config only tells the packaged app its update
+# feed; uploading the release is the CI workflow's job (see build.ps1).
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --publish never
 
 echo "Installer at $SHELL_DIR/out/"

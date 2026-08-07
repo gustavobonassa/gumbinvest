@@ -38,8 +38,7 @@
       {
         "provider": "github",
         "owner": "gustavobonassa",
-        "repo": "gumbinvest",
-        "releaseType": "release"
+        "repo": "gumbinvest"
       }
     ],
     "extraResources": [

@@ -44,7 +44,11 @@ try {
     if (-not (Test-Path "node_modules")) { npm install; if ($LASTEXITCODE -ne 0) { throw "npm install failed" } }
 
     Write-Host "== 5/5 electron-builder =="
-    npx electron-builder --win
+    # --publish never: the publish config in package.json exists so the packaged
+    # app knows its update feed (app-update.yml); uploading the release is the
+    # CI workflow's job. Without this, a tag build in CI tries to publish
+    # itself and dies asking for GH_TOKEN.
+    npx electron-builder --win --publish never
     if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
 } finally { Pop-Location }
 

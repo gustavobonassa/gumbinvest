@@ -37,8 +37,8 @@ export default function AiChats() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <p className="text-sm text-ink-muted">Analista IA</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Conversas IA</h1>
+        <p className="text-sm text-ink-muted">IA</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Conversas</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
           Toda conversa com o analista fica salva aqui. Abra uma para reler ou continuar de onde
           parou: conversas sobre um ativo reabrem na página dele; sobre a carteira, no dashboard.

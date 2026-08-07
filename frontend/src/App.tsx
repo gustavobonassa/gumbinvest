@@ -9,6 +9,7 @@ import { configureFormatting } from "@/lib/format";
 // Lazy routes: each page (and Recharts, which only pages import) stays out of
 // the entry bundle, so the shell paints before chart code even downloads.
 const AiChats = lazy(() => import("@/pages/AiChats"));
+const AporteInteligente = lazy(() => import("@/pages/AporteInteligente"));
 const AssetDetail = lazy(() => import("@/pages/AssetDetail"));
 const Assets = lazy(() => import("@/pages/Assets"));
 const Calculadora = lazy(() => import("@/pages/Calculadora"));
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="comparador" element={<Comparador />} />
         <Route path="carteiras" element={<CarteirasPublicas />} />
         <Route path="carteira-ia" element={<CarteiraIA />} />
+        <Route path="aporte" element={<AporteInteligente />} />
         <Route path="conversas" element={<AiChats />} />
         <Route path="importar" element={<ImportPage />} />
         <Route path="configuracoes" element={<Settings />} />

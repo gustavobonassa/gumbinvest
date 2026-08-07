@@ -15,6 +15,7 @@ from app.api.routes import (
     misc,
     portfolio,
     reports,
+    smart_invest,
     transactions,
     treasury,
     universe,
@@ -33,5 +34,6 @@ api_router.include_router(treasury.router)
 api_router.include_router(corporate_actions.router)
 api_router.include_router(ai.router)
 api_router.include_router(ai_wallet.router)
+api_router.include_router(smart_invest.router)
 api_router.include_router(investors.router)
 api_router.include_router(universe.router)

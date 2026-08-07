@@ -486,6 +486,29 @@ class SuccessionAiSuggestion(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SmartInvestRun(Base):
+    """One finished aporte-inteligente analysis, kept so the advice survives.
+
+    The job registry forgets results after an hour; this is the durable copy.
+    ``payload`` is stored whole, exactly as the page renders it (money as
+    strings): the value of a run is the advice as it was given, with the
+    prices of that moment — it is never recomputed later.
+    """
+
+    __tablename__ = "smart_invest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    currency: Mapped[str] = mapped_column(String(8), default="BRL")
+    provider: Mapped[str] = mapped_column(String(24))
+    model: Mapped[str] = mapped_column(String(120))
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TreasuryPrice(Base):
     """Daily two-sided price of a Tesouro Direto title (Tesouro Transparente).
 

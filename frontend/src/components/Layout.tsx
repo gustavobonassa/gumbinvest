@@ -9,6 +9,7 @@ import {
   Calculator,
   ChevronDown,
   Coins,
+  Compass,
   GitCompareArrows,
   Landmark,
   ChartPie,
@@ -16,11 +17,12 @@ import {
   LayoutDashboard,
   Menu,
   MessagesSquare,
+  PiggyBank,
   Search,
   Settings as SettingsIcon,
+  Sparkles,
   Users,
   Wallet,
-  Wrench,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -67,8 +69,18 @@ type NavEntry = NavLeaf | NavGroupEntry;
  * those are the two questions anyone opens the app to answer. Then what it is
  * made of, from the broadest cut to the narrowest: every asset, the income they
  * pay, and the one class with rules of its own. Then the ledger the three of
- * them are derived from. Tools and the ways data gets in come after all of
- * that: they are things you do, not things you look at.
+ * them are derived from. Everything past that point is about the world outside
+ * the portfolio, or about feeding it: things you do, not things you look at.
+ *
+ * The two groups each sort by their own rule rather than by build order — a
+ * single "Ferramentas" drawer said nothing about what was in it, and grew into
+ * a list nobody could predict the order of:
+ *
+ *   IA      — by how close each page gets to your real money: one spends it,
+ *             one plays with fictional money, one is a log of things said.
+ *   Mercado — the discovery funnel: the whole universe, then what good
+ *             investors hold, then the two or three you narrowed it down to.
+ *             The calculator sits at the end as the one that owns no data.
  */
 const NAV: NavEntry[] = [
   // The portfolio as one thing
@@ -82,20 +94,42 @@ const NAV: NavEntry[] = [
   { to: "/transacoes", label: "Transações", icon: ArrowUpDown },
   // Things you do
   {
-    label: "Ferramentas",
-    icon: Wrench,
+    label: "IA",
+    icon: Sparkles,
     children: [
-      { to: "/comparador", label: "Comparador de ativos", icon: GitCompareArrows },
-      { to: "/carteiras", label: "Carteiras públicas", icon: Users },
+      { to: "/aporte", label: "Aporte inteligente", icon: PiggyBank },
       { to: "/carteira-ia", label: "Carteira IA", icon: Bot },
+      // "Conversas IA" would stutter under a heading that already says IA.
+      { to: "/conversas", label: "Conversas", icon: MessagesSquare },
+    ],
+  },
+  {
+    label: "Mercado",
+    icon: Compass,
+    children: [
       { to: "/universo", label: "Universo de ativos", icon: Radar },
+      { to: "/carteiras", label: "Carteiras públicas", icon: Users },
+      { to: "/comparador", label: "Comparador de ativos", icon: GitCompareArrows },
       { to: "/calculadora", label: "Calculadora de juros compostos", icon: Calculator },
     ],
   },
-  { to: "/conversas", label: "Conversas IA", icon: MessagesSquare },
   { to: "/importar", label: "Importar", icon: FileUp },
   { to: "/configuracoes", label: "Configurações", icon: SettingsIcon },
 ];
+
+/** Every page the menu can reach, flattened once. Grouping shortened the
+    sidebar but put seven of the pages behind a disclosure, so the search —
+    already the fastest way to a ticker — answers for pages too: reaching
+    "aporte" should not depend on remembering which group it lives in. */
+const NAV_PAGES: (NavLeaf & { group?: string })[] = NAV.flatMap((entry) =>
+  "children" in entry ? entry.children.map((child) => ({ ...child, group: entry.label })) : [entry],
+);
+
+/** Accent- and case-blind: nobody types the cedilla into a search box, so
+    "transacoes" has to find "Transações". */
+function fold(value: string) {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
 
 function SidebarLink({ item, nested = false }: { item: NavLeaf; nested?: boolean }) {
   return (
@@ -200,6 +234,13 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
   const localTickers = new Set((data?.assets ?? []).map((asset) => asset.ticker));
   const marketHits = (market.data?.items ?? []).filter((hit) => !localTickers.has(hit.ticker));
 
+  // Local and synchronous, so pages answer on the keystroke — they never wait
+  // behind the request the tickers need. The group name is part of the haystack:
+  // "mercado" should list everything filed under Mercado.
+  const folded = fold(term.trim());
+  const pageHits =
+    folded.length < 2 ? [] : NAV_PAGES.filter((page) => fold(`${page.group ?? ""} ${page.label}`).includes(folded));
+
   useEffect(() => {
     if (!open) setTerm("");
   }, [open]);
@@ -228,14 +269,34 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
         <div className="max-h-[52vh] overflow-auto p-2">
           {term.trim().length < 2 ? (
             <p className="px-3 py-6 text-center text-sm text-ink-muted">Digite ao menos 2 caracteres.</p>
-          ) : isFetching && !data ? (
-            <p className="px-3 py-6 text-center text-sm text-ink-muted">Buscando…</p>
-          ) : !data?.assets.length && !data?.transactions.length && !marketHits.length ? (
+          ) : !pageHits.length && !data?.assets.length && !data?.transactions.length && !marketHits.length ? (
             <p className="px-3 py-6 text-center text-sm text-ink-muted">
-              {market.isFetching ? "Buscando no mercado…" : "Nada encontrado."}
+              {isFetching && !data ? "Buscando…" : market.isFetching ? "Buscando no mercado…" : "Nada encontrado."}
             </p>
           ) : (
             <>
+              {pageHits.length ? (
+                <div className="mb-2">
+                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Páginas</p>
+                  {pageHits.map((page) => (
+                    <button
+                      key={page.to}
+                      type="button"
+                      onClick={() => {
+                        navigate(page.to);
+                        onClose();
+                      }}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-surface-hover"
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <page.icon size={15} className="shrink-0 text-ink-muted" aria-hidden />
+                        <span className="truncate font-medium text-ink">{page.label}</span>
+                      </span>
+                      {page.group ? <Badge>{page.group}</Badge> : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {data?.assets.length ? (
                 <div className="mb-2">
                   <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Ativos</p>

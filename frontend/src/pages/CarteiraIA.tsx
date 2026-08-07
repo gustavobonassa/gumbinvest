@@ -223,7 +223,7 @@ export default function CarteiraIA() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <p className="text-sm text-ink-muted">Ferramentas</p>
+        <p className="text-sm text-ink-muted">IA</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Carteira IA</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
           Carteiras virtuais montadas e geridas inteiramente por IA. Cada categoria recebe

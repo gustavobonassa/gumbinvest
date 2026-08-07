@@ -955,6 +955,7 @@ def _fundamentals_for(db: Session, asset: Asset) -> dict:
     if asset.kind in coins.CRYPTO_KINDS:
         return {}
     now = datetime.now(UTC)
+    collected = now
     cached = db.get(AssetFundamentals, asset.id)
     data = None
     if (
@@ -964,6 +965,7 @@ def _fundamentals_for(db: Session, asset: Asset) -> dict:
         > now - _FUNDAMENTALS_TTL
     ):
         data = cached.data
+        collected = cached.fetched_at
     if data is None:
         from app.market import fundamentals  # local: heavy module, cycle-safe
 
@@ -991,6 +993,10 @@ def _fundamentals_for(db: Session, asset: Asset) -> dict:
     dates = (data or {}).get("earnings_dates") or []
     if dates:
         subset["proximo_resultado"] = dates[0]
+    if subset:
+        # The model should know how fresh these numbers are (≤ 12 h by the TTL,
+        # but "this morning" and "just now" read differently next to news).
+        subset["fundamentos_coletados_em"] = collected.date().isoformat()
     return subset
 
 

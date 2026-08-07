@@ -280,7 +280,7 @@ export default function Comparador() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <p className="text-sm text-ink-muted">Ferramentas</p>
+        <p className="text-sm text-ink-muted">Mercado</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Comparador de ativos</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
           Compare até {MAX_TICKERS} ativos lado a lado: desempenho, valuation e dividendos. Vale

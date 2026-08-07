@@ -313,7 +313,7 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
                     type="button"
                     onClick={startNewConversation}
                     className="btn-ghost px-2 py-1.5"
-                    title="Nova conversa (a atual fica salva em Conversas IA)"
+                    title="Nova conversa (a atual fica salva em Conversas)"
                   >
                     <RotateCcw size={15} />
                   </button>

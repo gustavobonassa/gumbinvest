@@ -970,16 +970,56 @@ export interface AiWalletCompare {
 
 export type AiWalletRange = "1m" | "3m" | "6m" | "1y" | "max";
 
-/** State of a category's background generate/suggest job (poll while active). */
+/** State of a background AI job (poll while active) — shared wire shape. */
 export interface AiWalletJob {
   active: boolean;
   id: string | null;
-  kind: "generate" | "suggest" | null;
+  kind: string | null;
   status: string | null;
   error: string | null;
   result: Record<string, unknown> | null;
   finished_at: string | null;
 }
+
+// --- aporte inteligente ---------------------------------------------------
+export interface SmartInvestCategory {
+  kind: string;
+  label: string;
+  count: number;
+  value: number;
+}
+
+/** One line of the AI's split. Money figures arrive as strings (Decimal wire). */
+export interface SmartInvestAllocation {
+  ticker: string;
+  name: string;
+  kind: string;
+  label: string;
+  amount: string;
+  approx_quantity: string | null;
+  current_price: string | null;
+  price_currency: string;
+  rationale: string;
+}
+
+export interface SmartInvestResult {
+  amount: string;
+  currency: "BRL" | "USD";
+  kinds: string[];
+  categories: string[];
+  strategy: string | null;
+  allocations: SmartInvestAllocation[];
+  leftover: string;
+  skipped: string[];
+  used_search: boolean;
+  provider: string;
+  provider_label: string;
+  model: string;
+  generated_at: string;
+}
+
+/** A persisted analysis — the durable copy of a finished run. */
+export type SmartInvestRun = SmartInvestResult & { id: number; created_at: string };
 
 
 // --- universo de ativos ---------------------------------------------------
@@ -1320,6 +1360,16 @@ export const api = {
     }),
   aiWalletCompare: (range: AiWalletRange = "max") =>
     request<AiWalletCompare>(`/ai-wallets/compare${query({ range })}`),
+
+  // Aporte inteligente — the analysis runs as a backend job; poll smartInvestJob.
+  smartInvestOptions: () =>
+    request<{ categories: SmartInvestCategory[] }>("/smart-invest/options"),
+  smartInvestJob: () => request<AiWalletJob>("/smart-invest"),
+  startSmartInvest: (payload: { amount: number; currency: "BRL" | "USD"; kinds: string[] }) =>
+    request<AiWalletJob>("/smart-invest", { method: "POST", body: JSON.stringify(payload) }),
+  smartInvestHistory: () => request<SmartInvestRun[]>("/smart-invest/history"),
+  deleteSmartInvestRun: (id: number) =>
+    request<{ deleted: boolean }>(`/smart-invest/history/${id}`, { method: "DELETE" }),
 
   imports: (page = 1, pageSize = 5) =>
     request<{ total: number; page: number; page_size: number; pages: number; items: ImportBatch[] }>(

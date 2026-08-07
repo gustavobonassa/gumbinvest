@@ -189,7 +189,7 @@ export default function CarteirasPublicas() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <p className="text-sm text-ink-muted">Ferramentas</p>
+        <p className="text-sm text-ink-muted">Mercado</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Carteiras públicas</h1>
         <p className="mt-2 max-w-3xl text-sm text-ink-secondary">
           O que os maiores investidores do mundo têm em carteira, direto dos formulários 13F que

@@ -1,37 +1,56 @@
-/** Preferences, market data control, watchlist and data-quality warnings. */
+/** Preferences, market data control, AI providers, corporate actions, backup
+    and data-quality warnings — one tab each. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  Bot,
   Database,
   Download,
-  Eye,
-  Plus,
+  GitMerge,
   RefreshCw,
-  Server,
   SlidersHorizontal,
   TrendingUp,
-  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import AiSettings from "@/components/AiSettings";
+import CloudBackupCard from "@/components/CloudBackupCard";
 import CorporateActions from "@/components/CorporateActions";
-import UniverseSettings from "@/components/UniverseSettings";
+import SecretField from "@/components/SecretField";
 import { useToast } from "@/components/Toast";
 import { Badge, Card, ErrorState, SectionTitle, Select, Skeleton, Tabs } from "@/components/ui";
-import { api, type AppSettings } from "@/lib/api";
+import { api } from "@/lib/api";
 import { configureFormatting, dateTime, money, percent } from "@/lib/format";
 
+/**
+ * One tab per thing you came here to do.
+ *
+ * "Dados" used to hold four unrelated cards — corporate actions, the asset
+ * universe, database export and the data-quality report — and finding any one
+ * of them meant scrolling past the other three. They are split here, and the
+ * universe moved out entirely: its settings now sit on the Universo page's
+ * Sincronização tab, next to the button they enable. "Sistema" folded back
+ * into "Geral" for the same reason: two API-key/environment cards did not
+ * justify their own tab.
+ *
+ * Ordered from what you tune, through the data itself, to the machine.
+ */
 const TABS = [
   { value: "geral", label: "Geral", icon: SlidersHorizontal },
   { value: "cotacoes", label: "Cotações", icon: TrendingUp },
-  { value: "watchlist", label: "Watchlist", icon: Eye },
-  { value: "dados", label: "Dados", icon: Database },
-  { value: "sistema", label: "Sistema", icon: Server },
+  { value: "ia", label: "Inteligência Artificial", icon: Bot },
+  { value: "eventos", label: "Eventos corporativos", icon: GitMerge },
+  { value: "qualidade", label: "Qualidade dos dados", icon: AlertTriangle },
+  { value: "backup", label: "Backup", icon: Database },
 ] as const;
 
 type TabValue = (typeof TABS)[number]["value"];
+
+/** Links and bookmarks pointing at an old, since-merged-or-removed tab still
+    have to land somewhere sensible. */
+const LEGACY_TABS: Record<string, TabValue> = { dados: "eventos", sistema: "geral", watchlist: "geral" };
 
 const CURRENCIES = ["BRL", "USD", "EUR"];
 const TIMEZONES = ["America/Sao_Paulo", "America/New_York", "Europe/Lisbon", "UTC"];
@@ -43,10 +62,8 @@ export default function Settings() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const status = useQuery({ queryKey: ["market-status"], queryFn: api.marketStatus });
   const warnings = useQuery({ queryKey: ["portfolio-warnings"], queryFn: api.portfolioWarnings });
-  const watchlist = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
 
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [newTicker, setNewTicker] = useState("");
 
   // The tab lives in the URL, so "resolver eventos corporativos" elsewhere in
   // the app can link straight at the section that resolves them.
@@ -54,7 +71,7 @@ export default function Settings() {
   const requested = params.get("aba");
   const tab: TabValue = TABS.some((option) => option.value === requested)
     ? (requested as TabValue)
-    : "geral";
+    : (LEGACY_TABS[requested ?? ""] ?? "geral");
   const setTab = (next: TabValue) =>
     setParams(next === "geral" ? {} : { aba: next }, { replace: true });
 
@@ -95,24 +112,6 @@ export default function Settings() {
     },
     onError: (error) => toast.error("Não foi possível atualizar o câmbio.", error),
   });
-  const addWatch = useMutation({
-    mutationFn: (ticker: string) => api.addWatchlist(ticker),
-    onSuccess: (_data, ticker) => {
-      setNewTicker("");
-      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
-      toast.success(`${ticker} adicionado à watchlist.`);
-    },
-    onError: (error) => toast.error("Não foi possível adicionar à watchlist.", error),
-  });
-  const removeWatch = useMutation({
-    mutationFn: (id: number) => api.removeWatchlist(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
-      toast.success("Removido da watchlist.");
-    },
-    onError: (error) => toast.error("Não foi possível remover da watchlist.", error),
-  });
-
   if (settings.isError) return <ErrorState error={settings.error} retry={() => settings.refetch()} />;
   if (settings.isLoading || !settings.data) return <Skeleton className="h-80 w-full" />;
 
@@ -129,15 +128,12 @@ export default function Settings() {
         value={tab}
         onChange={setTab}
         options={TABS.map((option) =>
-          option.value === "watchlist"
-            ? { ...option, count: watchlist.data?.length }
-            : option.value === "dados"
-              ? { ...option, count: warnings.data?.length }
-              : { ...option },
+          option.value === "qualidade" ? { ...option, count: warnings.data?.length } : { ...option },
         )}
       />
 
       {tab === "geral" ? (
+        <>
         <Card className="p-5">
           <SectionTitle title="Preferências" subtitle="Moeda, fuso horário e formatação numérica" />
           {/* No theme picker: the app ships one (dark) theme. The old "Claro"
@@ -176,6 +172,45 @@ export default function Settings() {
             {save.isPending ? "Salvando…" : "Salvar preferências"}
           </button>
         </Card>
+
+        <Card className="p-5">
+          <SectionTitle
+            title="Chaves de API"
+            subtitle="Suas próprias chaves, guardadas apenas neste computador"
+          />
+          <div className="space-y-4">
+            <SecretField
+              label="brapi (cotações)"
+              hint="Opcional, só se usar o provedor brapi. Crie em brapi.dev."
+              placeholder="token brapi"
+              configured={Boolean(settings.data.secrets?.brapi_token)}
+              settingKey="brapi_token"
+            />
+          </div>
+          <p className="mt-4 text-xs text-ink-muted">
+            As chaves ficam no banco de dados local, nunca aparecem de volta nesta tela e não
+            saem no export .gumbinvest. A chave é salva sozinha ao terminar de digitar; o ícone
+            de lixeira remove.
+          </p>
+        </Card>
+
+        <Card className="p-5">
+          <SectionTitle title="Ambiente" subtitle="Valores lidos das variáveis de ambiente do backend" />
+          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(settings.data.env).map(([key, value]) => (
+              <div key={key} className="rounded-xl border border-line bg-surface-raised/50 p-3">
+                <dt className="flex items-center gap-1.5 text-xs text-ink-muted">
+                  <Database size={12} /> {key}
+                </dt>
+                <dd className="tnum mt-1 truncate font-medium">{String(value)}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs text-ink-muted">
+            {settings.data.known_movements.length} tipos de movimentação mapeados no importador.
+          </p>
+        </Card>
+        </>
       ) : null}
 
       {tab === "cotacoes" ? (
@@ -266,72 +301,12 @@ export default function Settings() {
         </Card>
       ) : null}
 
-      {tab === "watchlist" ? (
-        <Card className="p-5">
-          <SectionTitle title="Watchlist" subtitle="Acompanhe ativos que ainda não estão na carteira" />
-          <div className="flex flex-wrap gap-2">
-            <input
-              value={newTicker}
-              onChange={(event) => setNewTicker(event.target.value.toUpperCase())}
-              placeholder="PETR4"
-              className="input w-auto min-w-[160px]"
-            />
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={!newTicker.trim() || addWatch.isPending}
-              onClick={() => addWatch.mutate(newTicker.trim())}
-            >
-              <Plus size={15} /> Adicionar
-            </button>
-          </div>
-          {/* A failed fetch must not read as an empty watchlist — in a finance
-              app "there is nothing here" after a network error is a false
-              all-clear. */}
-          {watchlist.isError ? (
-            <div className="mt-4">
-              <ErrorState error={watchlist.error} retry={() => watchlist.refetch()} />
-            </div>
-          ) : watchlist.isLoading ? (
-            <div className="mt-4 space-y-2">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <Skeleton key={index} className="h-9 w-full" />
-              ))}
-            </div>
-          ) : watchlist.data?.length ? (
-            <ul className="mt-4 divide-y divide-line">
-              {watchlist.data.map((item) => (
-                <li key={item.id} className="flex items-center justify-between py-1.5">
-                  <span>
-                    <span className="font-medium">{item.ticker}</span>
-                    {item.note ? <span className="ml-2 text-xs text-ink-muted">{item.note}</span> : null}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="tnum text-sm text-ink-secondary">{item.price ? money(item.price) : "—"}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeWatch.mutate(item.id)}
-                      className="rounded-lg p-2.5 text-ink-muted transition-colors hover:bg-surface-hover hover:text-negative"
-                      aria-label={`Remover ${item.ticker}`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 text-sm text-ink-muted">Nenhum ativo na watchlist.</p>
-          )}
-        </Card>
-      ) : null}
+      {tab === "ia" ? <AiSettings settings={settings.data} /> : null}
 
-      {tab === "dados" ? (
-      <>
-        <CorporateActions />
+      {tab === "eventos" ? <CorporateActions /> : null}
 
-        <UniverseSettings />
-
+      {tab === "backup" ? (
+        <>
         <Card className="p-5">
           <SectionTitle
             title="Backup e migração"
@@ -343,13 +318,17 @@ export default function Settings() {
             </a>
           </div>
           <p className="mt-3 text-xs text-ink-muted">
-            O arquivo carrega tudo — carteiras, movimentações, cotações, histórico — e serve para
+            O arquivo carrega tudo (carteiras, movimentações, cotações, histórico) e serve para
             levar seus dados a outra instalação (por exemplo, do Docker para o aplicativo desktop):
             basta arrastá-lo na página Importar de uma instalação vazia. O import é recusado se o
             destino já tiver movimentações, para nunca misturar duas histórias.
           </p>
         </Card>
+        <CloudBackupCard settings={settings.data} />
+        </>
+      ) : null}
 
+      {tab === "qualidade" ? (
         <Card className="p-5">
           <SectionTitle
             title="Qualidade dos dados"
@@ -378,235 +357,8 @@ export default function Settings() {
             </ul>
           )}
         </Card>
-        </>
-      ) : null}
-
-      {tab === "sistema" ? (
-        <>
-        <AiProviderCard settings={settings.data} />
-
-        <Card className="p-5">
-          <SectionTitle
-            title="Chaves de API"
-            subtitle="Suas próprias chaves, guardadas apenas neste computador"
-          />
-          <div className="space-y-4">
-            <SecretField
-              label="brapi (cotações)"
-              hint="Opcional — só se usar o provedor brapi. Crie em brapi.dev."
-              placeholder="token brapi"
-              configured={Boolean(settings.data.secrets?.brapi_token)}
-              settingKey="brapi_token"
-            />
-          </div>
-          <p className="mt-4 text-xs text-ink-muted">
-            As chaves ficam no banco de dados local, nunca aparecem de volta nesta tela e não
-            saem no export .gumbinvest. Deixar em branco e salvar remove a chave.
-          </p>
-        </Card>
-
-        <Card className="p-5">
-          <SectionTitle title="Ambiente" subtitle="Valores lidos das variáveis de ambiente do backend" />
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {Object.entries(settings.data.env).map(([key, value]) => (
-              <div key={key} className="rounded-xl border border-line bg-surface-raised/50 p-3">
-                <dt className="flex items-center gap-1.5 text-xs text-ink-muted">
-                  <Database size={12} /> {key}
-                </dt>
-                <dd className="tnum mt-1 truncate font-medium">{String(value)}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-3 text-xs text-ink-muted">
-            {settings.data.known_movements.length} tipos de movimentação mapeados no importador.
-          </p>
-        </Card>
-        </>
       ) : null}
     </div>
   );
 }
 
-/** Provider, model and key for the AI chat — any OpenAI-compatible vendor or
- *  Anthropic. The model field is free text on purpose: vendors ship models
- *  faster than a hardcoded list could chase. */
-function AiProviderCard({ settings: data }: { settings: AppSettings }) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const [provider, setProvider] = useState(data.ai.active_provider);
-  const [model, setModel] = useState(data.ai.active_model);
-  const [customModel, setCustomModel] = useState(false);
-
-  const info = data.ai.providers.find((p) => p.id === provider) ?? data.ai.providers[0];
-  // The provider's live catalog, fetched with the user's own key — vendors
-  // retire models faster than any list shipped with the app.
-  const liveModels = useQuery({
-    queryKey: ["ai-models", provider],
-    queryFn: () => api.aiModels(provider),
-    staleTime: 5 * 60_000,
-  });
-  const knownModels = liveModels.data?.models ?? info.models;
-
-  const saveAi = useMutation({
-    mutationFn: () =>
-      api.updateSettings({ ai_provider: provider, ai_model: model.trim() || info.default_model }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      toast.success("Provedor e modelo salvos.", {
-        description: `${info.label} · ${model.trim() || info.default_model}`,
-      });
-    },
-    onError: (error) => toast.error("Não foi possível salvar o provedor.", error),
-  });
-
-  return (
-    <Card className="p-5">
-      <SectionTitle
-        title="Inteligência Artificial (chat)"
-        subtitle="Escolha o provedor e o modelo das conversas — com a sua própria chave"
-      />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Provedor</span>
-          <Select
-            ariaLabel="Provedor de IA"
-            value={provider}
-            onChange={(next) => {
-              setProvider(next);
-              setCustomModel(false);
-              const chosen = data.ai.providers.find((p) => p.id === next);
-              if (chosen) setModel(chosen.default_model);
-            }}
-            options={data.ai.providers.map((p) => ({
-              value: p.id,
-              label: p.label,
-            }))}
-          />
-        </div>
-        <div>
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Modelo</span>
-          <Select
-            ariaLabel="Modelo de IA"
-            value={customModel || !knownModels.includes(model) ? "__custom__" : model}
-            onChange={(next) => {
-              if (next === "__custom__") {
-                setCustomModel(true);
-              } else {
-                setCustomModel(false);
-                setModel(next);
-              }
-            }}
-            options={[
-              ...knownModels.map((name) => ({ value: name, label: name })),
-              { value: "__custom__", label: "Outro (digitar)…" },
-            ]}
-          />
-          {customModel || !knownModels.includes(model) ? (
-            <input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder={info.default_model}
-              className="input mt-2 w-full"
-              autoFocus
-            />
-          ) : null}
-          <p className="mt-1 text-xs text-ink-muted">
-            {liveModels.data?.live
-              ? "Lista carregada direto do provedor com a sua chave."
-              : "Lista sugerida — salve a chave do provedor para carregar a lista real."}
-          </p>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={saveAi.isPending}
-          onClick={() => saveAi.mutate()}
-        >
-          {saveAi.isPending ? "Salvando…" : "Salvar provedor e modelo"}
-        </button>
-      </div>
-      <div className="mt-5 space-y-4 border-t border-line pt-4">
-        <p className="text-xs font-medium text-ink-muted">
-          Chaves por provedor — todas ficam salvas ao mesmo tempo; trocar o provedor acima usa a
-          chave dele.
-        </p>
-        {data.ai.providers.map((p) => (
-          <SecretField
-            key={p.id}
-            label={p.label}
-            hint={`Crie a sua em ${p.key_hint}.`}
-            placeholder="chave de API"
-            configured={p.key_configured}
-            settingKey={p.key_setting}
-          />
-        ))}
-      </div>
-      <p className="mt-4 text-xs text-ink-muted">
-        Crie a chave no site indicado em cada provedor e cole aqui. As chaves ficam só neste
-        computador.
-      </p>
-    </Card>
-  );
-}
-
-/** Write-only API-key input: saves through the settings endpoint, never shows
- *  the stored value back — only whether one is configured. */
-function SecretField({
-  label,
-  hint,
-  placeholder,
-  configured,
-  settingKey,
-}: {
-  label: string;
-  hint: string;
-  placeholder: string;
-  configured: boolean;
-  settingKey: string;
-}) {
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const [value, setValue] = useState("");
-  const saveKey = useMutation({
-    mutationFn: (next: string) => api.updateSettings({ [settingKey]: next }),
-    onSuccess: (_data, next) => {
-      setValue("");
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      // Saving an empty field is how a key is deleted — say which one happened.
-      toast.success(next ? `Chave salva: ${label}.` : `Chave removida: ${label}.`);
-    },
-    onError: (error) => toast.error(`Não foi possível salvar a chave de ${label}.`, error),
-  });
-
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center gap-2">
-        <span className="text-xs font-medium text-ink-muted">{label}</span>
-        <Badge tone={configured ? "positive" : "warning"}>
-          {configured ? "configurada" : "ausente"}
-        </Badge>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <input
-          type="password"
-          autoComplete="off"
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder={configured ? "•••••• (salvar em branco remove)" : placeholder}
-          className="input min-w-0 flex-1 sm:min-w-[280px] sm:flex-none sm:w-auto"
-        />
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={saveKey.isPending}
-          onClick={() => saveKey.mutate(value.trim())}
-        >
-          {saveKey.isPending ? "Salvando…" : "Salvar"}
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-ink-muted">{hint}</p>
-    </div>
-  );
-}

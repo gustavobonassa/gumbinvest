@@ -7,6 +7,7 @@ from app.api.routes import (
     ai,
     ai_wallet,
     assets,
+    cloud_backup,
     corporate_actions,
     fixed_income,
     imports,
@@ -25,6 +26,7 @@ api_router.include_router(portfolio.router)
 api_router.include_router(assets.router)
 api_router.include_router(transactions.router)
 api_router.include_router(imports.router)
+api_router.include_router(cloud_backup.router)
 api_router.include_router(reports.router)
 api_router.include_router(fixed_income.router)
 api_router.include_router(treasury.router)

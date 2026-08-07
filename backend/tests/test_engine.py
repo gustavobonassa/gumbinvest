@@ -425,7 +425,7 @@ def test_update_is_compared_after_the_same_day_purchases():
 
 
 def test_update_on_an_empty_position_creates_it():
-    """WIZC3: shares arriving from a ticker change land as an 'Atualização'."""
+    """A ticker rename: shares from the change land as an 'Atualização'."""
     positions = build_positions([sync("2023-02-10", "672")])
     assert positions[1].quantity == D("672")
     assert positions[1].cost_basis == D("0")

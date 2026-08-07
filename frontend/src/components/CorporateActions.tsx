@@ -1,12 +1,168 @@
 /** Declaring that an asset was replaced by another (merger, rename, write-off). */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, GitMerge, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, Check, GitMerge, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { useToast } from "@/components/Toast";
 import { Badge, Card, DateField, ErrorState, Modal, SectionTitle, Select, Skeleton } from "@/components/ui";
-import { api, type SuccessionSuggestion } from "@/lib/api";
+import { api, ApiError, type CorporateAiSuggestion, type SuccessionSuggestion } from "@/lib/api";
 import { money, quantity as qty, shortDate } from "@/lib/format";
+
+const EVENT_TYPE_LABELS: Record<CorporateAiSuggestion["event_type"], string> = {
+  rename: "Mudança de ticker",
+  merger: "Incorporação",
+  delisting: "Fechamento de capital",
+  spinoff: "Cisão",
+  other: "Evento",
+};
+
+/** The AI scan: a background job proposing events for the user's own tickers. */
+function AiEventScan() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const processedJobRef = useRef<string | null>(null);
+
+  const jobQ = useQuery({
+    queryKey: ["corporate-ai-scan"],
+    queryFn: api.corporateAiScan,
+    refetchInterval: (query) => (query.state.data?.active ? 2_000 : false),
+  });
+  const job = jobQ.data;
+  const running = Boolean(job?.active);
+
+  const suggestionsQ = useQuery({
+    queryKey: ["corporate-ai-suggestions"],
+    queryFn: api.corporateAiSuggestions,
+  });
+
+  useEffect(() => {
+    if (!job || job.active || !job.id) return;
+    if (processedJobRef.current === job.id) return;
+    processedJobRef.current = job.id;
+    queryClient.invalidateQueries({ queryKey: ["corporate-ai-suggestions"] });
+  }, [job, queryClient]);
+
+  const start = useMutation({
+    mutationFn: api.startCorporateAiScan,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["corporate-ai-scan"] }),
+    onError: (error) =>
+      toast.error(
+        "Não foi possível iniciar a busca.",
+        error instanceof ApiError ? error : undefined,
+      ),
+  });
+
+  const settle = () => {
+    queryClient.invalidateQueries(); // accepting reprocesses the whole history
+  };
+  const accept = useMutation({
+    mutationFn: api.acceptCorporateAiSuggestion,
+    onSuccess: (data) => {
+      settle();
+      toast.success(
+        data.suggestion.to_ticker
+          ? `${data.suggestion.from_ticker} passou a ser ${data.suggestion.to_ticker}.`
+          : `${data.suggestion.from_ticker} baixado.`,
+        { description: "O histórico foi reprocessado com o evento." },
+      );
+    },
+    onError: (error) => toast.error("Não foi possível aplicar o evento.", error),
+  });
+  const decline = useMutation({
+    mutationFn: api.declineCorporateAiSuggestion,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["corporate-ai-suggestions"] });
+      toast.success("Sugestão recusada.", {
+        description: "Ela não volta a aparecer em buscas futuras.",
+      });
+    },
+    onError: (error) => toast.error("Não foi possível recusar.", error),
+  });
+
+  const result = job?.result as { found?: number; stored?: number } | null;
+  const items = suggestionsQ.data ?? [];
+
+  return (
+    <div className="border-t border-line pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-secondary">
+          A IA pesquisa na web eventos que afetaram os seus ativos. Cada achado vira uma
+          sugestão para você aceitar ou recusar, agora ou depois:
+        </p>
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={running || start.isPending}
+          onClick={() => start.mutate()}
+        >
+          <Sparkles size={15} /> {running ? "Buscando…" : "Buscar eventos com IA"}
+        </button>
+      </div>
+
+      {running && job?.status ? (
+        <p className="mt-2 flex items-center gap-2 text-sm text-ink-secondary">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
+          {job.status}
+          <span className="text-xs text-ink-muted">: pode levar alguns minutos; você pode navegar à vontade.</span>
+        </p>
+      ) : null}
+      {!running && job?.error ? <p className="mt-2 text-sm text-negative">{job.error}</p> : null}
+      {!running && result && !items.length ? (
+        <p className="mt-2 text-xs text-ink-muted">
+          {result.found
+            ? "Nenhuma sugestão nova. Os eventos encontrados já estavam declarados ou decididos."
+            : "Nenhum evento corporativo encontrado para os seus ativos."}
+        </p>
+      ) : null}
+
+      {items.length ? (
+        <ul className="mt-3 space-y-3">
+          {items.map((item) => (
+            <li key={item.id} className="rounded-xl border border-line bg-surface-raised/50 p-3.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="accent">{EVENT_TYPE_LABELS[item.event_type] ?? item.event_type}</Badge>
+                <Badge>{item.from_ticker}</Badge>
+                <ArrowRight size={14} className="text-ink-muted" aria-hidden />
+                {item.to_ticker ? (
+                  <Badge tone="accent">{item.to_ticker}</Badge>
+                ) : (
+                  <span className="text-sm text-ink-muted">baixado</span>
+                )}
+                <span className="text-sm text-ink-secondary">{shortDate(item.effective_date)}</span>
+                {Number(item.cash_amount) ? (
+                  <span className="tnum text-sm text-ink-secondary">caixa {money(item.cash_amount)}</span>
+                ) : null}
+                <Badge className="ml-auto">{item.model}</Badge>
+              </div>
+              {item.rationale ? (
+                <p className="mt-2 max-w-3xl text-sm text-ink-secondary">{item.rationale}</p>
+              ) : null}
+              {item.source ? <p className="mt-1 text-xs text-ink-muted">Fonte: {item.source}</p> : null}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  className="btn-primary px-3 py-1.5 text-sm"
+                  disabled={accept.isPending || decline.isPending}
+                  onClick={() => accept.mutate(item.id)}
+                >
+                  <Check size={14} /> Aceitar
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost px-3 py-1.5 text-sm"
+                  disabled={accept.isPending || decline.isPending}
+                  onClick={() => decline.mutate(item.id)}
+                >
+                  <X size={14} /> Recusar
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 const VOID = "__void__";
 
@@ -48,10 +204,10 @@ function SuggestionRow({
               ...suggestion.candidates.map((candidate) => ({
                 value: candidate.ticker,
                 label:
-                  `${candidate.ticker} — ${candidate.movement} de ${qty(candidate.quantity)} un. em ` +
+                  `${candidate.ticker}: ${candidate.movement} de ${qty(candidate.quantity)} un. em ` +
                   `${shortDate(candidate.date)}${candidate.exact_quantity_match ? " (quantidade idêntica)" : ""}`,
               })),
-              { value: VOID, label: "Nenhum — baixar o ativo" },
+              { value: VOID, label: "Nenhum: baixar o ativo" },
             ]}
           />
         </div>
@@ -84,8 +240,8 @@ function SuggestionRow({
 
       {best?.exact_quantity_match ? (
         <p className="mt-2 text-xs text-ink-muted">
-          {best.ticker} recebeu exatamente {qty(best.quantity)} unidades — a mesma posição, creditada sem
-          custo.
+          {best.ticker} recebeu exatamente {qty(best.quantity)} unidades (a mesma posição, creditada sem
+          custo).
         </p>
       ) : null}
     </li>
@@ -116,7 +272,7 @@ function ManualForm({
         <input
           className="input uppercase"
           value={from}
-          placeholder="WIZS3"
+          placeholder="SULA11"
           onChange={(event) => setFrom(event.target.value)}
         />
       </label>
@@ -127,7 +283,7 @@ function ManualForm({
         <input
           className="input uppercase"
           value={to}
-          placeholder="AURE3"
+          placeholder="RDOR3"
           onChange={(event) => setTo(event.target.value)}
         />
       </label>
@@ -199,7 +355,7 @@ export default function CorporateActions() {
     <Card className="p-5">
       <SectionTitle
         title="Eventos corporativos"
-        subtitle="O extrato credita o ativo novo e nunca debita o antigo — o vínculo é declarado aqui"
+        subtitle="O extrato credita o ativo novo e nunca debita o antigo; o vínculo é declarado aqui"
       />
 
       {isError ? (
@@ -269,10 +425,12 @@ export default function CorporateActions() {
             </p>
           )}
 
+          <AiEventScan />
+
           <div className="border-t border-line pt-4">
             <p className="mb-3 text-sm text-ink-secondary">
-              Declarar um evento que a detecção não encontrou — inclusive veículos intermediários, que o
-              extrato cria e resgata dentro da própria operação:
+              Declarar um evento que a detecção não encontrou (inclusive veículos intermediários, que o
+              extrato cria e resgata dentro da própria operação):
             </p>
             <ManualForm onSubmit={(payload) => create.mutate(payload)} pending={create.isPending} />
           </div>
@@ -293,7 +451,7 @@ export default function CorporateActions() {
       >
         <p className="text-sm text-ink-secondary">
           Todo o histórico será reprocessado sem este vínculo: a posição antiga volta a aparecer
-          em aberto e o custo carregado retorna a ela. Nada é apagado das movimentações — dá para
+          em aberto e o custo carregado retorna a ela. Nada é apagado das movimentações. Dá para
           declarar o evento de novo depois.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">

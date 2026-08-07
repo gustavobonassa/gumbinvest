@@ -9,35 +9,20 @@
     --chart-surface: #12141a;
   }
 
-  /* Electron desktop window: the title bar strip is 36px tall. #root becomes
-     the scroll container starting below it, so content, scrollbar and the
-     sticky page header never run underneath; only the viewport-fixed sidebar
-     needs an explicit offset. TitleBar.tsx toggles `desktop-shell`; browsers
-     never get it. */
-  html.desktop-shell body {
-    overflow: hidden;
-  }
+  /* Electron desktop window: the title bar strip is 36px tall, so the whole app
+     box starts 36px down. The shell inside is sized in percentages of #root
+     (see `height: 100%` below), which is why nothing else needs a 36px offset
+     except the panels pinned to the viewport rather than to the layout.
+     TitleBar.tsx toggles `desktop-shell`; browsers never get it. */
   html.desktop-shell #root {
     position: fixed;
     inset: 36px 0 0 0;
     /* `#root { height: 100% }` below resolves against the viewport, not against
-       this box's own inset — it would make the scroll container a full 100vh
-       tall starting 36px down, so its last 36px (the page's bottom padding, and
-       a sliver of the final card) sat under the window edge, unreachable. */
+       this box's own inset — it would make the app box a full 100vh tall
+       starting 36px down, so its last 36px (the page's bottom padding, and a
+       sliver of the final card) sat under the window edge, unreachable. The
+       insets already give a definite height for children to resolve against. */
     height: auto;
-    overflow-y: auto;
-    /* Only the vertical axis may scroll. Declaring one axis makes the other
-       compute to `auto`, which would let anything wider than the window scroll
-       the *whole shell* sideways — sticky header and all — instead of scrolling
-       inside the table that overflowed. Mirrors `body { overflow-x: clip }` in
-       the browser. */
-    overflow-x: clip;
-    scrollbar-gutter: stable;
-  }
-  /* The shell uses min-h-screen (100vh), 36px taller than #root — without
-     this it leaves a permanent 36px of phantom scroll. */
-  html.desktop-shell #root > .min-h-screen {
-    min-height: 100%;
   }
   html.desktop-shell .desktop-shell-anchored {
     top: 36px;
@@ -52,34 +37,23 @@
     color-scheme: light;
   }
 
+  /* The app fills its box exactly and the document itself never scrolls — the
+     shell chains these percentages down to <main>, the single scroll container
+     (Layout.tsx). Keeping the scroll off the document is what confines the
+     scrollbar to the content column: it starts under the top bar, and it is
+     absent entirely on a page that fits. */
   html,
   body,
   #root {
     height: 100%;
   }
 
-  /* Reserve the scrollbar's track whether or not it is showing. Without this,
-     a class with two rows fits the window and one with twelve does not, so
-     switching tabs takes 10px off the viewport and slides the whole layout —
-     the sticky page header included — sideways. A gutter that is always there
-     costs 10px of width and buys a layout that never jumps.
-
-     Declared on both because the viewport's scrollbar behaviour is inherited
-     from `body` here: `html` has `overflow: visible`, so the used value comes
-     from `body` (which sets `overflow-x: clip` below). */
-  html,
-  body {
-    scrollbar-gutter: stable;
-  }
-
   body {
     @apply bg-canvas text-ink antialiased;
-    /* The page never scrolls sideways. Real overflow is handled where it
-       happens (tables get their own scroll containers); this is the backstop
-       that keeps one long ticker from giving the whole app a horizontal
-       scrollbar on a phone. `clip`, not `hidden`: it does not create a new
-       scroll container, so position: sticky keeps working. */
-    overflow-x: clip;
+    /* Nothing may leak out of the viewport in either direction. Real overflow
+       is handled where it happens: vertically by <main>, sideways by the
+       tables and strips that get their own scroll containers. */
+    overflow: hidden;
     font-feature-settings: "cv02", "cv03", "cv04", "ss01";
     background-image:
       radial-gradient(900px 600px at 12% -10%, rgba(57, 135, 229, 0.09), transparent 60%),
@@ -197,16 +171,21 @@
 
 /* AssetChat docked: push the page content aside instead of covering it.
    The panel is max-w-md (28rem); 29rem leaves a small gap. Mobile keeps the
-   overlay, so the padding only applies from lg up. The header stays put —
-   only <main> narrows, which is where all the readable content lives. */
+   overlay, so this only applies from lg up. The header stays put — only <main>
+   narrows, which is where all the readable content lives.
+
+   Margin rather than padding: <main> is the scroll container, so its scrollbar
+   rides its own right edge. Padded, that edge stays under the panel and the
+   scrollbar disappears behind it; a margin moves the edge — and the scrollbar
+   with it — into the gap beside the panel. */
 main {
   /* Same duration and curve as the panel's slide (animate-chat-in), so the
      page making room and the chat arriving read as one gesture. */
-  transition: padding-right 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: margin-right 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (min-width: 1024px) {
   html.asset-chat-open main {
-    padding-right: 29rem;
+    margin-right: 29rem;
   }
 }
 

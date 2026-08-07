@@ -46,7 +46,7 @@ def start_ingest(payload: IngestPayload, db: DbSession) -> dict:
     if not state.is_enabled(db):
         raise HTTPException(
             status_code=409,
-            detail="O universo de ativos está desativado — ative-o em Configurações → Dados.",
+            detail="O universo de ativos está desativado, ative-o em Configurações → Dados.",
         )
     markets = [m.upper() for m in (payload.markets or state.markets(db))]
     unknown = [m for m in markets if m not in ("B3", "US")]
@@ -80,7 +80,7 @@ def clear_universe(db: DbSession) -> dict:
     if state.read(db)["active"]:
         raise HTTPException(
             status_code=409,
-            detail="Há uma atualização em andamento — cancele-a antes de apagar os dados.",
+            detail="Há uma atualização em andamento, cancele-a antes de apagar os dados.",
         )
     removed = db.scalar(select(func.count()).select_from(AssetUniverse)) or 0
     db.execute(sa_delete(AssetUniverse))

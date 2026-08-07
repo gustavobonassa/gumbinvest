@@ -72,7 +72,27 @@ export interface Overview {
   assets_tracked: number;
   priced_positions: number;
   unpriced_positions: string[];
+  /** Held tickers whose quote fetch failed transiently and is queued for retry. */
+  pending_quotes: string[];
   last_quote_at: string | null;
+}
+
+/**
+ * One entry in the header bell.
+ *
+ * Deliberately generic: the backend registry (app/services/notifications.py)
+ * grows new sources without this type changing, so a price-target alert renders
+ * with the same component as a queued quote refresh.
+ */
+export interface AppNotification {
+  id: string;
+  kind: string;
+  level: "info" | "success" | "warning";
+  title: string;
+  body: string;
+  progress: { done: number; total: number; label: string } | null;
+  items: string[];
+  at: string | null;
 }
 
 export interface PositionRow {
@@ -678,6 +698,22 @@ export interface SuccessionCandidate {
   exact_quantity_match: boolean;
 }
 
+/** A corporate event the AI scan proposed, stored until accepted/declined. */
+export interface CorporateAiSuggestion {
+  id: number;
+  from_ticker: string;
+  to_ticker: string | null;
+  effective_date: string;
+  cash_amount: number;
+  event_type: "rename" | "merger" | "delisting" | "spinoff" | "other";
+  rationale: string | null;
+  source: string | null;
+  status: string;
+  provider: string;
+  model: string;
+  created_at: string;
+}
+
 export interface SuccessionSuggestion {
   ticker: string;
   name: string;
@@ -771,6 +807,59 @@ export interface AppSettings {
   provider_active: string;
   known_movements: string[];
   env: Record<string, unknown>;
+}
+
+// --- cloud backup ---------------------------------------------------------
+/** State of the manual "Enviar agora" job (poll status while active). */
+export interface CloudBackupJob {
+  active: boolean;
+  id: string | null;
+  kind: string | null;
+  status: string | null;
+  error: string | null;
+  result: Record<string, unknown> | null;
+  finished_at: string | null;
+}
+
+/** Outcome of a provider's most recent upload — nightly or manual. */
+export interface CloudProviderLast {
+  state: "ok" | "error";
+  file: string | null;
+  size: number | null;
+  at: string | null;
+  message: string | null;
+  rotated?: number;
+}
+
+export interface CloudProviderStatus {
+  name: string;
+  label: string;
+  /** App credentials (client id / app key) present. */
+  configured: boolean;
+  /** Authorization completed — included in the nightly sync. */
+  connected: boolean;
+  last: CloudProviderLast | null;
+}
+
+export interface CloudBackupStatus {
+  providers: CloudProviderStatus[];
+  last_run_at: string | null;
+  encryption: { passphrase_set: boolean };
+  /** When the nightly local dump + cloud sync runs (HH:MM). */
+  backup_time: string;
+  job: CloudBackupJob;
+}
+
+export interface RemoteBackupItem {
+  id: string;
+  name: string;
+  size: number | null;
+  modified_at: string | null;
+  encrypted: boolean;
+}
+
+export interface RemoteBackupsResponse {
+  providers: Record<string, { items?: RemoteBackupItem[]; error?: string }>;
 }
 
 // --- AI wallet (Carteira IA) ---------------------------------------------
@@ -1066,6 +1155,7 @@ export interface UniverseQuery {
 // --- endpoints -----------------------------------------------------------
 export const api = {
   overview: () => request<Overview>("/portfolio/overview"),
+  notifications: () => request<{ items: AppNotification[]; count: number }>("/notifications"),
   positions: (includeClosed = false) =>
     request<PositionRow[]>(`/portfolio/positions${query({ include_closed: includeClosed })}`),
   allocation: (groupBy: "asset" | "kind" | "broker" | "currency" = "asset") =>
@@ -1162,6 +1252,36 @@ export const api = {
 
   /** Whole-database export (.gumbinvest) — for moving a history to another instance. */
   fullExportUrl: () => `${BASE}/imports/export`,
+
+  // Backup na nuvem — conexões, envio manual (job com polling) e restauração.
+  cloudBackupStatus: () => request<CloudBackupStatus>("/cloud-backup/status"),
+  gdriveDeviceStart: () =>
+    request<{ verification_url: string; user_code: string; expires_in: number; interval: number }>(
+      "/cloud-backup/gdrive/device/start",
+      { method: "POST" },
+    ),
+  gdriveDevicePoll: () =>
+    request<{ status: "pending" | "connected"; interval?: number }>("/cloud-backup/gdrive/device/poll", {
+      method: "POST",
+    }),
+  dropboxAuthorize: () =>
+    request<{ authorize_url: string }>("/cloud-backup/dropbox/authorize", { method: "POST" }),
+  dropboxComplete: (code: string) =>
+    request<{ status: string }>("/cloud-backup/dropbox/complete", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+  cloudDisconnect: (provider: string) =>
+    request<{ status: string }>(`/cloud-backup/${encodeURIComponent(provider)}/disconnect`, {
+      method: "POST",
+    }),
+  cloudBackupSend: () => request<CloudBackupJob>("/cloud-backup/send", { method: "POST" }),
+  cloudBackups: () => request<RemoteBackupsResponse>("/cloud-backup/backups"),
+  cloudRestore: (payload: { provider: string; backup_id: string; name?: string; passphrase?: string }) =>
+    request<{ status: string; rows_imported: number; rows_total: number }>("/cloud-backup/restore", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   /** Live model catalog from the provider (needs its key); curated fallback otherwise. */
   aiModels: (provider: string) =>
@@ -1308,6 +1428,19 @@ export const api = {
     source?: string;
   }) => request<Succession>("/corporate-actions", { method: "POST", body: JSON.stringify(payload) }),
   deleteSuccession: (id: number) => request(`/corporate-actions/${id}`, { method: "DELETE" }),
+  // AI event scan: background job (poll status) + stored accept/decline proposals.
+  corporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan"),
+  startCorporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan", { method: "POST" }),
+  corporateAiSuggestions: () => request<CorporateAiSuggestion[]>("/corporate-actions/ai-suggestions"),
+  acceptCorporateAiSuggestion: (id: number) =>
+    request<{ succession: Succession; suggestion: CorporateAiSuggestion }>(
+      `/corporate-actions/ai-suggestions/${id}/accept`,
+      { method: "POST" },
+    ),
+  declineCorporateAiSuggestion: (id: number) =>
+    request<{ suggestion: CorporateAiSuggestion }>(`/corporate-actions/ai-suggestions/${id}/decline`, {
+      method: "POST",
+    }),
 
   settings: () => request<AppSettings>("/settings"),
   updateSettings: (values: Record<string, unknown>) =>

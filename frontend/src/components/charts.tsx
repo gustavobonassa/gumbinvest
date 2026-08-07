@@ -382,7 +382,7 @@ export function YearlyFinancialsBars({
 }) {
   if (!data.length) return <EmptyState title="Sem resultados anuais" />;
   const fmt = (value?: number) =>
-    value === undefined ? "—" : money(value, { currency, compact: true, decimals: 0 });
+    value === undefined ? "-" : money(value, { currency, compact: true, decimals: 0 });
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="28%" barGap={2}>
@@ -1332,7 +1332,7 @@ export function IncomeMatrix({ data }: { data: { period: string; total: number }
                     style={{ background: sequentialFill(max ? value / max : 0) }}
                     title={`${month}/${year}: ${money(value)}`}
                   >
-                    {value ? money(value, { compact: true }) : <span className="text-ink-muted">—</span>}
+                    {value ? money(value, { compact: true }) : <span className="text-ink-muted">-</span>}
                   </td>
                 );
               })}

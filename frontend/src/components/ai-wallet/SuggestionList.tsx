@@ -93,7 +93,7 @@ export default function SuggestionList({
         Sugestões de {wallet.provider_label}
       </h2>
       <p className="mt-0.5 text-sm text-ink-muted">
-        Aceite ou recuse cada sugestão individualmente — os valores são aplicados a preço de
+        Aceite ou recuse cada sugestão individualmente. Os valores são aplicados a preço de
         mercado no momento do aceite.
       </p>
       <ul className="mt-4 space-y-3">

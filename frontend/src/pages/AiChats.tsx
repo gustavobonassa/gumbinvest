@@ -41,7 +41,7 @@ export default function AiChats() {
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Conversas IA</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
           Toda conversa com o analista fica salva aqui. Abra uma para reler ou continuar de onde
-          parou — conversas sobre um ativo reabrem na página dele; sobre a carteira, no dashboard.
+          parou: conversas sobre um ativo reabrem na página dele; sobre a carteira, no dashboard.
         </p>
       </header>
 
@@ -55,7 +55,7 @@ export default function AiChats() {
         <EmptyState
           icon={MessagesSquare}
           title="Nenhuma conversa ainda"
-          description="Abra um ativo e clique em “Analista IA” para começar — a conversa aparece aqui automaticamente."
+          description="Abra um ativo e clique em “Analista IA” para começar. A conversa aparece aqui automaticamente."
         />
       ) : (
         <div className="space-y-3">

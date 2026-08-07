@@ -148,7 +148,7 @@ def _parse(payload: bytes) -> dict:
         raise FullBackupError("o arquivo não é um export .gumbinvest válido")
     if document.get("format_version") != FORMAT_VERSION:
         raise FullBackupError(
-            "este export foi gerado por uma versão mais nova do GumbInvest — "
+            "este export foi gerado por uma versão mais nova do GumbInvest; "
             "atualize esta instalação antes de importar"
         )
     return document
@@ -160,7 +160,7 @@ def import_snapshot(db: Session, payload: bytes, filename: str) -> dict:
 
     if db.query(Transaction.id).first() is not None:
         raise FullBackupError(
-            "esta instalação já tem movimentações — o import completo só é "
+            "esta instalação já tem movimentações; o import completo só é "
             "permitido numa instalação vazia, para nunca misturar duas histórias"
         )
 
@@ -169,7 +169,7 @@ def import_snapshot(db: Session, payload: bytes, filename: str) -> dict:
     if source_rev and target_rev and source_rev != target_rev:
         raise FullBackupError(
             f"as versões do banco não coincidem (origem {source_rev}, destino "
-            f"{target_rev}) — atualize as duas instalações e exporte de novo"
+            f"{target_rev}); atualize as duas instalações e exporte de novo"
         )
 
     tables = document.get("tables", {})
@@ -198,7 +198,7 @@ def import_snapshot(db: Session, payload: bytes, filename: str) -> dict:
     ).scalar()
     if portfolio_id is None:
         db.rollback()
-        raise FullBackupError("o export não contém nenhuma carteira — arquivo corrompido?")
+        raise FullBackupError("o export não contém nenhuma carteira; arquivo corrompido?")
     batch = ImportBatch(
         portfolio_id=portfolio_id,
         filename=filename,

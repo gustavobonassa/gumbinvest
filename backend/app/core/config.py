@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     backup_dir: str = "/backups"
     backup_keep: int = 14
 
+    # Cloud backup (Configurações → Backup). Credentials usually arrive via
+    # the UI (app/services/secrets); env vars are the Docker-first alternative.
+    # Client ids / app keys are public identifiers, not secrets.
+    gdrive_client_id: str = ""
+    gdrive_client_secret: str = ""
+    gdrive_refresh_token: str = ""
+    dropbox_app_key: str = ""
+    dropbox_refresh_token: str = ""
+    cloud_backup_passphrase: str = ""
+
     # Importer
     auto_import_dir: str = "/data"
     auto_import_on_startup: bool = True

@@ -95,19 +95,19 @@ export default function HistoryTab({ wallet }: { wallet: AiWalletDetail }) {
                 <td className="px-3 py-3 font-medium text-ink">
                   {EVENT_LABELS[event.action] ?? event.action}
                 </td>
-                <td className="px-3 py-3 text-ink-secondary">{categoryLabel(event.category) ?? "—"}</td>
+                <td className="px-3 py-3 text-ink-secondary">{categoryLabel(event.category) ?? "-"}</td>
                 <td className="max-w-[320px] truncate px-3 py-3 text-ink-secondary" title={eventSummary(event)}>
-                  {eventSummary(event) || "—"}
+                  {eventSummary(event) || "-"}
                 </td>
                 <td className="px-3 py-3">
-                  {event.model ? <Badge tone="accent">{event.model}</Badge> : "—"}
+                  {event.model ? <Badge tone="accent">{event.model}</Badge> : "-"}
                 </td>
               </tr>
             ))}
             {events && events.items.length === 0 ? (
               <tr>
                 <td colSpan={5} className="py-8 text-center text-sm text-ink-muted">
-                  Nenhum evento ainda — gere a primeira categoria.
+                  Nenhum evento ainda, gere a primeira categoria.
                 </td>
               </tr>
             ) : null}

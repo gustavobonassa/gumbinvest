@@ -24,6 +24,12 @@ SECRET_KEYS = (
     "grok_api_key",
     "groq_api_key",
     "brapi_token",
+    # Cloud backup: tokens and the passphrase must never ride along in a
+    # .gumbinvest export — restoring on another machine means reconnecting.
+    "gdrive_client_secret",
+    "gdrive_refresh_token",
+    "dropbox_refresh_token",
+    "cloud_backup_passphrase",
 )
 
 #: What the environment provided, captured before any UI override mutates the

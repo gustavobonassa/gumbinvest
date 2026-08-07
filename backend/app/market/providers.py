@@ -8,7 +8,10 @@
 """
 from __future__ import annotations
 
+import random
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
@@ -17,12 +20,85 @@ import httpx
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.market.base import HistoricalPoint, MarketDataProvider, QuoteData
+from app.market.base import HistoricalPoint, MarketDataProvider, QuoteBatch, QuoteData
 
 logger = get_logger(__name__)
 
 #: brapi/Yahoo accept at most a handful of symbols per call.
 BATCH_SIZE = 15
+
+#: Attempts per symbol before a fetch is called a transient failure and handed
+#: to the retry queue. Three covers the usual case — a single throttled window
+#: during a large first sync — without turning one dead ticker into a stall.
+MAX_ATTEMPTS = 3
+#: First backoff step, doubled per attempt and jittered.
+RETRY_BASE_DELAY = 0.75
+#: Never wait longer than this between attempts, whatever ``Retry-After`` says.
+RETRY_MAX_DELAY = 8.0
+#: Status codes worth trying again: throttling and server-side faults.
+TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504}
+
+
+class TransientFetchError(Exception):
+    """A fetch failure worth repeating: a timeout, throttling or a 5xx.
+
+    Distinct from "the provider does not know this symbol", which is a 404 or
+    an empty result and must *not* be retried — a delisted ticker would then
+    be re-requested forever.
+    """
+
+    def __init__(self, reason: str, retry_after: float | None = None) -> None:
+        super().__init__(reason)
+        self.retry_after = retry_after
+
+
+class _Throttle:
+    """A brake shared by every worker in one batch.
+
+    The refresh fans out across threads, so a 429 seen by one of them means the
+    others are about to be throttled too. Without this each thread backs off
+    alone and keeps the pressure up — which is how a first sync of seventy
+    symbols loses a fifth of them.
+    """
+
+    def __init__(self) -> None:
+        self._until = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        while True:
+            with self._lock:
+                remaining = self._until - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(remaining, 1.0))
+
+    def brake(self, seconds: float) -> None:
+        with self._lock:
+            self._until = max(self._until, time.monotonic() + seconds)
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    """The server's own instruction, when it gives one and it is a number."""
+    raw = response.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return min(float(raw), RETRY_MAX_DELAY)
+    except ValueError:  # an HTTP-date rather than seconds — not worth parsing
+        return None
+
+
+def _backoff(attempt: int, retry_after: float | None) -> float:
+    """Exponential with jitter, unless the server named a delay.
+
+    The jitter matters: without it every worker that was throttled together
+    wakes up together and throttles again.
+    """
+    if retry_after is not None:
+        return retry_after
+    step = min(RETRY_BASE_DELAY * (2 ** (attempt - 1)), RETRY_MAX_DELAY)
+    return step * random.uniform(0.6, 1.4)
 
 
 def _dec(value: object) -> Decimal | None:
@@ -61,9 +137,13 @@ class BrapiProvider(MarketDataProvider):
         return params
 
     def get_quotes(self, symbols: list[str]) -> dict[str, QuoteData]:
+        return self.fetch_quotes(symbols).quotes
+
+    def fetch_quotes(self, symbols: list[str]) -> QuoteBatch:
         results: dict[str, QuoteData] = {}
+        failed: dict[str, str] = {}
         if not symbols:
-            return results
+            return QuoteBatch(quotes=results)
         with httpx.Client(timeout=settings.request_timeout) as client:
             for start in range(0, len(symbols), BATCH_SIZE):
                 batch = symbols[start : start + BATCH_SIZE]
@@ -73,10 +153,19 @@ class BrapiProvider(MarketDataProvider):
                     if response.status_code == 404:
                         logger.info("brapi: no data for %s", batch)
                         continue
+                    if response.status_code in TRANSIENT_STATUS:
+                        raise TransientFetchError(f"HTTP {response.status_code}")
                     response.raise_for_status()
                     payload = response.json()
-                except Exception as exc:  # noqa: BLE001 — a failed batch must not abort the refresh
+                except (TransientFetchError, httpx.HTTPError) as exc:
+                    # The whole batch went with the request, so every symbol in
+                    # it is owed a retry — none of them was answered "unknown".
                     logger.warning("brapi quote request failed for %s: %s", batch, exc)
+                    reason = str(exc) or type(exc).__name__
+                    failed.update({s.upper(): reason for s in batch})
+                    continue
+                except Exception as exc:  # noqa: BLE001 — a bad batch must not abort the refresh
+                    logger.warning("brapi returned unusable data for %s: %s", batch, exc)
                     continue
                 for item in payload.get("results", []) or []:
                     symbol = (item.get("symbol") or "").upper()
@@ -92,7 +181,8 @@ class BrapiProvider(MarketDataProvider):
                         currency=item.get("currency") or "BRL",
                         long_name=item.get("longName") or item.get("shortName"),
                     )
-        return results
+        # A symbol answered by a later batch is not owed a retry.
+        return QuoteBatch(quotes=results, failed={s: r for s, r in failed.items() if s not in results})
 
     def supports_history(self) -> bool:
         return True
@@ -136,6 +226,7 @@ class YahooChartProvider(MarketDataProvider):
     name = "yahoo"
     BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
     HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; GumbInvest/1.0)"}
+    QUOTE_PARAMS = {"range": "5d", "interval": "1d"}
 
     @staticmethod
     def market_symbol(symbol: str) -> str:
@@ -152,32 +243,81 @@ class YahooChartProvider(MarketDataProvider):
             return symbol
         return f"{symbol}.SA" if re.fullmatch(r"[A-Z]{4}\d{1,2}", symbol) else symbol
 
-    def _fetch(self, client: httpx.Client, symbol: str, params: dict) -> dict | None:
+    def _attempt(
+        self, client: httpx.Client, symbol: str, params: dict, throttle: _Throttle | None
+    ) -> dict | None:
+        """One request. ``None`` means "no such symbol"; transient faults raise."""
+        if throttle is not None:
+            throttle.wait()
         url = f"{self.BASE_URL}/{self.market_symbol(symbol)}"
         try:
             response = client.get(url, params=params, headers=self.HEADERS)
-            if response.status_code >= 400:
-                logger.info("yahoo: %s returned %s", symbol, response.status_code)
-                return None
-            results = (response.json().get("chart") or {}).get("result") or []
-            return results[0] if results else None
-        except Exception as exc:  # noqa: BLE001 — one bad symbol must not stop the batch
-            logger.warning("yahoo request failed for %s: %s", symbol, exc)
+        except httpx.HTTPError as exc:  # timeout, connection reset, DNS…
+            raise TransientFetchError(f"{type(exc).__name__}: {exc}") from exc
+        if response.status_code in TRANSIENT_STATUS:
+            pause = _retry_after(response)
+            if throttle is not None and response.status_code == 429:
+                # Everyone else in this batch is about to be throttled too.
+                throttle.brake(pause or RETRY_BASE_DELAY * 2)
+            raise TransientFetchError(f"HTTP {response.status_code}", pause)
+        if response.status_code >= 400:
+            logger.info("yahoo: %s returned %s", symbol, response.status_code)
             return None
+        try:
+            results = (response.json().get("chart") or {}).get("result") or []
+        except ValueError as exc:  # a throttle page rather than JSON
+            raise TransientFetchError(f"malformed response: {exc}") from exc
+        return results[0] if results else None
+
+    def _fetch(
+        self,
+        client: httpx.Client,
+        symbol: str,
+        params: dict,
+        throttle: _Throttle | None = None,
+    ) -> dict | None:
+        """One symbol, retried through transient faults.
+
+        Raises :class:`TransientFetchError` when every attempt failed for a
+        retryable reason — the caller turns that into a queued retry instead of
+        an asset the user is told has no price.
+        """
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                return self._attempt(client, symbol, params, throttle)
+            except TransientFetchError as exc:
+                if attempt == MAX_ATTEMPTS:
+                    logger.warning("yahoo: %s failed after %s attempts (%s)", symbol, attempt, exc)
+                    raise
+                wait = _backoff(attempt, exc.retry_after)
+                logger.info("yahoo: %s — %s, retrying in %.1fs", symbol, exc, wait)
+                time.sleep(wait)
+        return None  # pragma: no cover - the loop either returns or raises
 
     def get_quotes(self, symbols: list[str]) -> dict[str, QuoteData]:
+        return self.fetch_quotes(symbols).quotes
+
+    def fetch_quotes(self, symbols: list[str]) -> QuoteBatch:
         results: dict[str, QuoteData] = {}
+        failed: dict[str, str] = {}
         if not symbols:
-            return results
+            return QuoteBatch(quotes=results)
+        throttle = _Throttle()
+
+        def one(symbol: str) -> tuple[str, dict | None, str | None]:
+            try:
+                return symbol, self._fetch(client, symbol, self.QUOTE_PARAMS, throttle), None
+            except TransientFetchError as exc:
+                return symbol, None, str(exc)
+
         # The chart endpoint is single-symbol; fetch a handful at a time so a
         # full-portfolio refresh takes seconds, not minutes.
         with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
             with ThreadPoolExecutor(max_workers=min(8, len(symbols))) as pool:
-                payloads = pool.map(
-                    lambda s: (s, self._fetch(client, s, {"range": "5d", "interval": "1d"})),
-                    symbols,
-                )
-                for symbol, payload in payloads:
+                for symbol, payload, error in pool.map(one, symbols):
+                    if error is not None:
+                        failed[symbol.upper()] = error
+                        continue
                     if not payload:
                         continue
                     meta = payload.get("meta") or {}
@@ -195,14 +335,20 @@ class YahooChartProvider(MarketDataProvider):
                         currency=meta.get("currency") or "BRL",
                         long_name=meta.get("longName") or meta.get("shortName"),
                     )
-        return results
+        return QuoteBatch(quotes=results, failed=failed)
 
     def supports_history(self) -> bool:
         return True
 
     def get_history(self, symbol: str, start: date | None = None) -> list[HistoricalPoint]:
         with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
-            payload = self._fetch(client, symbol, {"range": "10y", "interval": "1d"})
+            try:
+                payload = self._fetch(client, symbol, {"range": "10y", "interval": "1d"})
+            except TransientFetchError as exc:
+                # History has its own nightly job; an empty list here means
+                # "not today", and the backfill picks the asset up again.
+                logger.warning("yahoo history unavailable for %s: %s", symbol, exc)
+                return []
         if not payload:
             return []
         timestamps = payload.get("timestamp") or []

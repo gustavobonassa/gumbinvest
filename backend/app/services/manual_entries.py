@@ -89,7 +89,7 @@ OPERATIONS: tuple[Operation, ...] = (
     ),
     Operation(
         "SPLIT", "Desdobramento", "Desdobro", Direction.CREDIT, "quantity",
-        "Quantidade nova sem custo — o preço médio se dilui sozinho.",
+        "Quantidade nova sem custo: o preço médio se dilui sozinho.",
     ),
     Operation("REVERSE_SPLIT", "Grupamento", "Grupamento", Direction.DEBIT, "quantity"),
     Operation("BONUS", "Bonificação", "Bonificação em Ativos", Direction.CREDIT, "quantity"),
@@ -267,7 +267,7 @@ def delete(db: Session, portfolio_id: int, transaction_id: int) -> None:
         raise ManualEntryError("lançamento não encontrado")
     if not is_manual(movement):
         raise ManualEntryError(
-            "este lançamento veio de um arquivo importado e não pode ser excluído aqui — "
+            "este lançamento veio de um arquivo importado e não pode ser excluído aqui: "
             "corrija o arquivo e reimporte, ou o histórico deixa de bater com a origem"
         )
     db.delete(movement)

@@ -130,11 +130,11 @@ def _call_anthropic(
         return ModelReply(text.strip(), search)
     except anthropic.AuthenticationError as exc:
         raise AiResearchError(
-            "Chave da Anthropic inválida — confira em Configurações → Sistema."
+            "Chave da Anthropic inválida. Confira em Configurações → Sistema."
         ) from exc
     except anthropic.RateLimitError as exc:
         raise AiResearchError(
-            "Limite de requisições da API atingido — tente novamente em instantes."
+            "Limite de requisições da API atingido. Tente novamente em instantes."
         ) from exc
     except anthropic.APIConnectionError as exc:
         raise AiResearchError("Sem conexão com a API da Anthropic.") from exc
@@ -154,7 +154,7 @@ def _post_json(url: str, headers: dict, payload: dict) -> httpx.Response:
         raise AiResearchError("Sem conexão com a API do provedor de IA.") from exc
     except httpx.TimeoutException as exc:
         raise AiResearchError(
-            "A chamada ao modelo excedeu o tempo limite — tente novamente."
+            "A chamada ao modelo excedeu o tempo limite. Tente novamente."
         ) from exc
 
 
@@ -170,7 +170,7 @@ def _error_message(label: str, model: str, response: httpx.Response) -> str:
         pass
     prefix = {
         401: f"Chave inválida para {label}",
-        403: f"Acesso negado pela {label} — verifique créditos/permissões da conta",
+        403: f"Acesso negado pela {label}; verifique créditos/permissões da conta",
         404: f"Modelo '{model}' não existe em {label}",
         429: "Limite de requisições da API atingido",
     }.get(response.status_code, f"Erro da API da {label} ({response.status_code})")
@@ -274,6 +274,42 @@ def _call_chat_completions(
     except (KeyError, IndexError, TypeError) as exc:
         raise AiResearchError(f"Resposta inesperada da API da {entry['label']}.") from exc
     return ModelReply(text.strip(), search)
+
+
+RETRY_JSON = (
+    "Sua resposta anterior não era JSON válido. Responda novamente SOMENTE com o JSON no "
+    "formato especificado, sem nenhum texto adicional."
+)
+
+
+def call_model_json(
+    provider_id: str,
+    entry: dict,
+    model: str,
+    api_key: str,
+    system: str,
+    messages: list[dict],
+    want_search: bool = True,
+) -> tuple[dict | None, bool]:
+    """One model turn expected to yield JSON, with a single corrective retry.
+
+    Returns ``(data, used_search)``; ``data`` is None when even the retry did
+    not produce a parseable object.
+    """
+    convo = list(messages)
+    used_search = False
+    for _attempt in range(2):
+        reply = call_model(provider_id, entry, model, api_key, system, convo, want_search)
+        used_search = used_search or reply.used_search
+        data = extract_json(reply.text)
+        if data is not None:
+            return data, used_search
+        convo = convo + [
+            {"role": "assistant", "content": reply.text or "(vazio)"},
+            {"role": "user", "content": RETRY_JSON},
+        ]
+        want_search = False  # the correction turn only reformats
+    return None, used_search
 
 
 # ---------------------------------------------------------------------------

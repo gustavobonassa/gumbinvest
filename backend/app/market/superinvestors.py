@@ -45,7 +45,7 @@ INVESTORS: list[dict] = [
         "fund": "Berkshire Hathaway",
         "cik": "0001067983",
         "description": "O maior investidor de valor de todos os tempos. Poucas posições, "
-        "enormes e mantidas por décadas — qualidade a preço justo.",
+        "enormes e mantidas por décadas: qualidade a preço justo.",
     },
     {
         "slug": "ackman",
@@ -61,7 +61,7 @@ INVESTORS: list[dict] = [
         "fund": "Scion Asset Management",
         "cik": "0001649339",
         "description": "O investidor de 'A Grande Aposta'. Carteira pequena, contrária e "
-        "que muda rápido — um retrato por trimestre envelhece depressa aqui.",
+        "que muda rápido: um retrato por trimestre envelhece depressa aqui.",
     },
     {
         "slug": "terry-smith",
@@ -69,7 +69,7 @@ INVESTORS: list[dict] = [
         "fund": "Fundsmith",
         "cik": "0001569205",
         "description": "O 'Buffett inglês': compre empresas excelentes, não pague caro "
-        "demais e — principalmente — não faça nada.",
+        "demais e, principalmente, não faça nada.",
     },
     {
         "slug": "li-lu",
@@ -92,7 +92,7 @@ INVESTORS: list[dict] = [
         "manager": "David Tepper",
         "fund": "Appaloosa",
         "cik": "0001656456",
-        "description": "Especialista em comprar no pânico — dívidas e ações em crise. "
+        "description": "Especialista em comprar no pânico: dívidas e ações em crise. "
         "Um dos melhores retornos da história dos hedge funds.",
     },
     {
@@ -109,7 +109,7 @@ INVESTORS: list[dict] = [
         "fund": "Bridgewater Associates",
         "cik": "0001350694",
         "description": "O maior hedge fund do mundo. Diversificação sistemática entre "
-        "centenas de posições — o oposto dos concentrados desta lista.",
+        "centenas de posições, o oposto dos concentrados desta lista.",
     },
     {
         "slug": "klarman",
@@ -330,7 +330,7 @@ def wallet(slug: str) -> dict:
         "holdings": holdings,
         "exits": exits,
         "caveats": "Retrato do último dia do trimestre, publicado com até 45 dias de atraso. "
-        "Somente posições compradas em bolsas dos EUA — sem caixa, renda fixa ou vendas a descoberto.",
+        "Somente posições compradas em bolsas dos EUA, sem caixa, renda fixa ou vendas a descoberto.",
     }
     with _LOCK:
         _CACHE[slug] = (datetime.now(UTC), payload)

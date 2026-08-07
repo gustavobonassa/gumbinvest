@@ -148,7 +148,7 @@ export default function CarteiraIA() {
     <Modal
       open={createOpen}
       title="Nova carteira IA"
-      subtitle="O modelo escolhido fica fixo na carteira — é ele quem gera e sugere mudanças."
+      subtitle="O modelo escolhido fica fixo na carteira: é ele quem gera e sugere mudanças."
       onClose={() => setCreateOpen(false)}
     >
       <form
@@ -198,7 +198,7 @@ export default function CarteiraIA() {
           </label>
         </div>
         <p className="text-xs text-ink-muted">
-          Só aparecem provedores com chave configurada em Configurações → Sistema.
+          Só aparecem provedores com chave configurada em Configurações → Inteligência Artificial.
           {modelsQ.data?.live === false ? " Lista de modelos sugerida (catálogo ao vivo indisponível)." : ""}
         </p>
         {create.isError ? (
@@ -226,7 +226,7 @@ export default function CarteiraIA() {
         <p className="text-sm text-ink-muted">Ferramentas</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Carteira IA</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Carteiras virtuais montadas e geridas inteiramente por IA — cada categoria recebe
+          Carteiras virtuais montadas e geridas inteiramente por IA. Cada categoria recebe
           R$ 10.000 fictícios e o desempenho é acompanhado no tempo. Crie uma carteira por
           modelo e compare quem investe melhor. Nada aqui usa a sua carteira real.
         </p>
@@ -240,8 +240,8 @@ export default function CarteiraIA() {
           title="Nenhuma carteira IA ainda"
           description={
             keyConfigured
-              ? "Crie a primeira carteira escolhendo o nome e o modelo de IA que vai geri-la — cada carteira fica presa ao seu modelo, ideal para competição."
-              : "Informe a chave de um provedor de IA em Configurações → Sistema para começar (Gemini e Groq têm nível gratuito)."
+              ? "Crie a primeira carteira escolhendo o nome e o modelo de IA que vai geri-la: cada carteira fica presa ao seu modelo, ideal para competição."
+              : "Informe a chave de um provedor de IA em Configurações → Inteligência Artificial para começar."
           }
           action={
             keyConfigured ? (

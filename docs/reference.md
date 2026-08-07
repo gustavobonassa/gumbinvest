@@ -61,6 +61,8 @@ All of these live in `.env` (copied from `.env.example`); every one has a workin
 | `BACKUP_DIR` / `BACKUP_KEEP` | `/backups` / `14` | Backup location and rotation |
 | `AUTO_IMPORT_DIR` | `/data` | Scanned recursively for exports on startup (any filename) |
 | `AUTO_IMPORT_ON_STARTUP` | `true` | Import those files automatically |
+| `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` | *(empty)* | Cloud backup: your own Google OAuth client (usually entered in the UI instead) |
+| `DROPBOX_APP_KEY` | *(empty)* | Cloud backup: your own Dropbox app key (usually entered in the UI instead) |
 
 AI provider keys are **not** environment variables: they are entered in
 **Configurações → Inteligência artificial**, stored in the local database and
@@ -102,6 +104,7 @@ Interactive documentation at `/api/docs`. The main endpoints:
 | `POST` | `/api/ai/chat` | AI analyst chat (SSE stream) |
 | `GET`/`DELETE` | `/api/ai/chats`, `/api/ai/chats/{id}` | Saved conversations |
 | `GET`/`POST` | `/api/ai-wallet/…` | Carteira IA wallets, generation and review jobs |
+| `GET`/`POST` | `/api/cloud-backup/…` | Cloud backup: connect Google Drive/Dropbox, send now, list, restore |
 | `GET`/`POST` | `/api/universe/…` | Asset-universe ingest, screener, portfolio fit |
 | `GET` | `/api/investors/…` | Public 13F portfolios |
 | `GET` | `/api/watchlist`, `/api/audit` | Extras |
@@ -155,4 +158,27 @@ gunzip -c backups/gumbinvest-YYYYMMDD-HHMMSS.sql.gz | \
 
 For moving a whole history between installs (Docker ↔ desktop), use the
 `.gumbinvest` export instead — **Configurações → Backup e migração**.
+
+### Cloud backup
+
+**Configurações → Backup** can also mirror the `.gumbinvest` export to your own
+Google Drive and/or Dropbox, nightly (with the local backup) and on demand. On
+another computer, connect the same account and restore from the listed backups
+— the restore uses the regular full import, so it only proceeds into an empty
+installation. An optional passphrase encrypts the file (AES-256-GCM) before it
+leaves the machine; without the passphrase the backup cannot be restored.
+
+Setup is one-time, in the UI:
+- **Google Drive** — create a free Google Cloud project, enable the Drive API,
+  create an OAuth client of type *TVs and Limited Input devices*, and publish
+  the consent screen (*In production* — in *Testing* mode Google expires the
+  connection every 7 days). Paste the client ID and secret, then authorize at
+  google.com/device with the code shown. Scope is `drive.file`: the app only
+  ever sees the files it created, in a `GumbInvest` folder.
+- **Dropbox** — create a free app at dropbox.com/developers with *App folder*
+  access, paste its app key, and authorize with the code Dropbox displays.
+  Backups live under `Apps/<your app>/`.
+
+Tokens and the passphrase are stored like AI keys: local database only, never
+echoed back, stripped from every export.
 

@@ -1013,7 +1013,7 @@ def candidate_context(
         # The asset resolved — only the quote is missing (usually a transient
         # rate limit). It stays eligible: the buy defers until priced.
         context["preco_atual"] = None
-        context["observacao"] = "sem cotação neste momento — a compra será concluída quando houver preço"
+        context["observacao"] = "sem cotação neste momento; a compra será concluída quando houver preço"
     else:
         context["preco_atual"] = _round2(price)
 
@@ -1153,7 +1153,7 @@ def suggestion_target_error(db: Session, wallet_id: int, category: str, item: di
             to_ticker = item.get("to_ticker")
             if to_ticker and _find_position(db, wallet_id, to_category, to_ticker) is None:
                 return (
-                    "ativo novo em outra categoria — essa decisão cabe às sugestões da própria categoria"
+                    "ativo novo em outra categoria; essa decisão cabe às sugestões da própria categoria"
                 )
     return None
 

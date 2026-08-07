@@ -406,7 +406,7 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
                 </button>
               </form>
               <p className="mt-2 text-[10px] leading-snug text-ink-muted">
-                Análise gerada por IA com seus dados e busca na web — educacional, não é
+                Análise gerada por IA com seus dados e busca na web. Conteúdo educacional, não é
                 recomendação de investimento.
               </p>
             </footer>

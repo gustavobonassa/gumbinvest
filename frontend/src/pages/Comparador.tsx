@@ -283,7 +283,7 @@ export default function Comparador() {
         <p className="text-sm text-ink-muted">Ferramentas</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Comparador de ativos</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Compare até {MAX_TICKERS} ativos lado a lado — desempenho, valuation e dividendos. Vale
+          Compare até {MAX_TICKERS} ativos lado a lado: desempenho, valuation e dividendos. Vale
           para qualquer papel da B3 ou dos EUA, esteja na carteira ou não.
         </p>
       </header>
@@ -324,7 +324,7 @@ export default function Comparador() {
         <EmptyState
           icon={GitCompareArrows}
           title="Escolha os ativos para comparar"
-          description="Busque acima por ticker ou nome — por exemplo PETR4 e PRIO3, ou HGLG11 e XPML11. Ativos fora da carteira também valem."
+          description="Busque acima por ticker ou nome, por exemplo PETR4 e PRIO3, ou HGLG11 e XPML11. Ativos fora da carteira também valem."
         />
       ) : (
         <>
@@ -430,7 +430,7 @@ export default function Comparador() {
                               )}
                             >
                               <span className="inline-flex items-center gap-1.5">
-                                {value === undefined ? "—" : metric.format(value, column)}
+                                {value === undefined ? "-" : metric.format(value, column)}
                                 {isBest ? (
                                   <Trophy
                                     size={13}
@@ -450,7 +450,7 @@ export default function Comparador() {
             </div>
             <p className="mt-3 text-xs text-ink-muted">
               “Melhor” segue a leitura usual de cada indicador (P/L e dívida menores, ROE e yield
-              maiores) — contexto e setor importam mais que qualquer linha isolada.
+              maiores); contexto e setor importam mais que qualquer linha isolada.
             </p>
           </Card>
         </>

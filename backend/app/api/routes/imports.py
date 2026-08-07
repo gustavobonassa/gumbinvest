@@ -54,6 +54,20 @@ async def upload(db: DbSession, portfolio: CurrentPortfolio, file: UploadFile = 
             status_code=413, detail=f"file larger than {limit // (1024 * 1024)} MB"
         )
 
+    # An encrypted cloud backup needs its passphrase, which this endpoint has
+    # no way to ask for — point at the flow that does before the CSV sniffer
+    # produces a confusing error about it.
+    from app.services.cloud_backup import is_encrypted
+
+    if is_encrypted(payload):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "este arquivo está criptografado, restaure-o pela aba Backup em "
+                "Configurações, onde a senha pode ser informada"
+            ),
+        )
+
     # A .gumbinvest file is a whole-database clone from another instance —
     # it replaces everything, so it never goes through the row importers.
     if is_full_backup(payload, filename):

@@ -1,14 +1,12 @@
 /**
- * Configurações → Dados: the asset-universe download.
- *
- * The ingest is a background job, so this component only starts it and then
- * polls — the run finishes whether or not this tab is open. Same idiom as the
- * Carteira IA job panel, with a determinate bar because the backend reports
- * counts, not just a status line.
+ * Universo de ativos → Sincronização: the switch, market selection and SEC
+ * contact e-mail. Starting and monitoring the sync itself lives in
+ * UniverseJobs, rendered right below this — a single "start sync" button
+ * shared by both the first download and later re-syncs.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, Download, X } from "lucide-react";
+import { Database } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { Card, SectionTitle, Badge } from "@/components/ui";
@@ -30,24 +28,11 @@ const MARKETS: { value: string; label: string; hint: string }[] = [
 /** The shape the SEC accepts. Any address the user controls will do. */
 const SEC_SUGGESTION = "GumbInvest/1.0 (contato: seu-email@exemplo.com)";
 
-function ProgressBar({ value }: { value: number }) {
-  return (
-    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-hover">
-      <div
-        className="h-full rounded-full bg-accent transition-[width] duration-500"
-        style={{ width: `${Math.min(Math.max(value, 0), 100)}%` }}
-      />
-    </div>
-  );
-}
-
 export default function UniverseSettings() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [markets, setMarkets] = useState<string[]>(["B3"]);
   const [secAgent, setSecAgent] = useState("");
-  const watched = useRef<string | null>(null);
-  const processed = useRef<string | null>(null);
 
   const statusQ = useQuery({
     queryKey: ["universe-status"],
@@ -66,21 +51,6 @@ export default function UniverseSettings() {
     if (status?.settings?.sec_user_agent) setSecAgent(status.settings.sec_user_agent);
   }, [status?.settings?.sec_user_agent]);
 
-  // Fire completion feedback once per run, and not for a run that had already
-  // finished before this tab was opened.
-  useEffect(() => {
-    if (!status || status.active || !status.run_id) return;
-    if (processed.current === status.run_id) return;
-    processed.current = status.run_id;
-    if (watched.current !== status.run_id) return;
-    queryClient.invalidateQueries({ queryKey: ["universe"] });
-    if (status.state === "done") toast.success(status.message ?? "Universo atualizado.");
-    else if (status.state === "cancelled") toast.info("Atualização cancelada.");
-    else toast.error("A atualização do universo não terminou.", undefined, {
-      description: status.message ?? undefined,
-    });
-  }, [status?.run_id, status?.active, status?.state]);
-
   const save = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.updateSettings(values),
     onSuccess: () => {
@@ -92,32 +62,8 @@ export default function UniverseSettings() {
     onError: (error) => toast.error("Não foi possível salvar a preferência.", error),
   });
 
-  const start = useMutation({
-    mutationFn: () => api.startUniverseIngest(markets),
-    onSuccess: (started) => {
-      watched.current = started.run_id;
-      processed.current = null;
-      queryClient.invalidateQueries({ queryKey: ["universe-status"] });
-      toast.info("Baixando o universo de ativos.", {
-        description: "Leva alguns minutos e continua em segundo plano — pode navegar à vontade.",
-      });
-    },
-    onError: (error) => toast.error("Não foi possível iniciar a atualização.", error),
-  });
-
-  const cancel = useMutation({
-    mutationFn: api.cancelUniverseIngest,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["universe-status"] });
-      toast.info("Cancelamento solicitado — a etapa atual termina e para.");
-    },
-    onError: (error) => toast.error("Não foi possível cancelar.", error),
-  });
-
   const enabled = Boolean(status?.settings?.enabled);
   const coverage = status?.coverage;
-  const percent =
-    status && status.total > 0 ? (status.processed / status.total) * 100 : running ? 4 : 0;
 
   return (
     <Card className="p-5">
@@ -194,10 +140,7 @@ export default function UniverseSettings() {
               </label>
               <p className="mt-2 text-xs text-ink-muted">
                 A SEC recusa (403) qualquer requisição sem um e-mail de contato na identificação
-                do cliente — foi testado, não há como contornar.{" "}
-                <span className="text-ink-secondary">
-                  Não precisa ser o seu e-mail principal: um alias serve.
-                </span>{" "}
+                do cliente.
                 Se preferir não informar nenhum, desmarque o mercado EUA — todo o resto do
                 universo vem da B3 e da CVM, que publicam os arquivos abertamente e não pedem
                 identificação.
@@ -206,51 +149,9 @@ export default function UniverseSettings() {
             </div>
           ) : null}
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => start.mutate()}
-              disabled={running || start.isPending || markets.length === 0}
-            >
-              <Download size={15} className={running ? "animate-pulse" : undefined} />
-              {running ? "Baixando…" : coverage?.total ? "Atualizar universo" : "Baixar universo"}
-            </button>
-            {running ? (
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => cancel.mutate()}
-                disabled={cancel.isPending}
-              >
-                <X size={15} /> Cancelar
-              </button>
-            ) : null}
-          </div>
-
-          {running ? (
-            <div className="mt-3">
-              <p className="flex items-center gap-2 text-sm text-ink-secondary">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
-                {status?.message ?? status?.stage_label ?? "Preparando…"}
-                {status && status.total > 0 ? (
-                  <span className="tnum text-xs text-ink-muted">
-                    {status.processed.toLocaleString("pt-BR")} de{" "}
-                    {status.total.toLocaleString("pt-BR")}
-                  </span>
-                ) : null}
-              </p>
-              <ProgressBar value={percent} />
-              <p className="mt-1 text-xs text-ink-muted">
-                Etapa {status ? Math.min(status.stage_index + 1, status.stage_count) : 1} de{" "}
-                {status?.stage_count ?? "…"} — pode fechar esta página, o download continua.
-              </p>
-            </div>
-          ) : null}
-
           {!running && status?.stale ? (
             <p className="mt-3 text-sm text-warning">
-              A última atualização foi interrompida. Clique em “Atualizar universo” para retomar de
+              A última atualização foi interrompida. Inicie a sincronização abaixo para retomar de
               onde parou.
             </p>
           ) : null}

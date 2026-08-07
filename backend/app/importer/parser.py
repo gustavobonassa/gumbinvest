@@ -318,7 +318,7 @@ def _build_rows(
     missing = [c for c in REQUIRED_COLUMNS if c not in headers]
     if missing:
         raise CsvFormatError(
-            "unexpected layout — missing column(s): "
+            "unexpected layout, missing column(s): "
             + ", ".join(missing)
             + f". Found: {', '.join(str(name) for name in fieldnames if name)}"
         )
@@ -442,7 +442,7 @@ def parse_xlsx(payload: bytes) -> ParseResult:
     if header_index < 0:
         found = ", ".join(_cell_text(cell) for cell in grid[0] if _cell_text(cell))
         raise CsvFormatError(
-            "unexpected spreadsheet layout — no header row with the B3 columns "
+            "unexpected spreadsheet layout, no header row with the B3 columns "
             f"in the first {XLSX_HEADER_SEARCH_ROWS} rows. First row: {found}"
         )
 

@@ -249,13 +249,13 @@ function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
                 </td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">{money(row.total)}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
-                  {row.tax ? `− ${money(row.tax)}` : "—"}
+                  {row.tax ? `− ${money(row.tax)}` : "-"}
                 </td>
                 <td className="tnum px-3 py-2 text-right font-medium text-positive">{money(row.net)}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">{percent(row.share, 1)}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">{row.payments}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
-                  {row.cost_basis ? money(row.cost_basis) : "—"}
+                  {row.cost_basis ? money(row.cost_basis) : "-"}
                 </td>
                 <td className="tnum px-3 py-2 text-right">
                   {row.yield_on_cost_net === null ? (
@@ -467,7 +467,7 @@ export default function Dividends() {
         <p className="text-sm text-ink-muted">Renda</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Proventos</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Dividendos, juros sobre capital próprio, rendimentos de fundos e juros de renda fixa —{" "}
+          Dividendos, juros sobre capital próprio, rendimentos de fundos e juros de renda fixa:{" "}
           <span className="tnum text-ink">{totals.payments}</span> pagamentos de{" "}
           <span className="tnum text-ink">{totals.assets}</span> ativos.
         </p>
@@ -565,12 +565,12 @@ export default function Dividends() {
                     const values = grouping === "kind" ? point.kinds_net : point.types_net;
                     return (
                       <td key={key} className="tnum px-2 py-1.5 text-right text-ink-secondary">
-                        {values[key] ? money(values[key]) : "—"}
+                        {values[key] ? money(values[key]) : "-"}
                       </td>
                     );
                   })}
                   <td className="tnum px-2 py-1.5 text-right text-ink-secondary">
-                    {point.tax ? `− ${money(point.tax)}` : "—"}
+                    {point.tax ? `− ${money(point.tax)}` : "-"}
                   </td>
                   <td className="tnum px-2 py-1.5 text-right font-medium">{money(point.net)}</td>
                   <td className="tnum px-2 py-1.5 text-right text-ink-muted">{money(point.cumulative)}</td>
@@ -670,7 +670,7 @@ export default function Dividends() {
       <Card className="p-5">
         <SectionTitle
           title="Mapa de proventos"
-          subtitle="Cada mês desde o início — a intensidade acompanha o valor recebido"
+          subtitle="Cada mês desde o início: a intensidade acompanha o valor recebido"
         />
         {/* On error the skeleton used to shimmer forever — say what happened. */}
         {monthly.isError ? (
@@ -704,7 +704,7 @@ export default function Dividends() {
                     <td className="tnum px-2 py-1.5 text-right text-ink-secondary">{money(row.total)}</td>
                     <td className="tnum px-2 py-1.5 text-right">{money(row.net)}</td>
                     <td className="tnum px-2 py-1.5 text-right">
-                      {row.yield_on_cost_net === null ? "—" : percent(row.yield_on_cost_net, 1)}
+                      {row.yield_on_cost_net === null ? "-" : percent(row.yield_on_cost_net, 1)}
                     </td>
                   </tr>
                 ))}

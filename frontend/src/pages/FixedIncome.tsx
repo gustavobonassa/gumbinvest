@@ -81,7 +81,7 @@ function ImpliedHint({ item, onApply }: { item: FixedIncomeItem; onApply: (perce
       <Info size={15} className="text-accent" aria-hidden />
       <span className="text-ink-secondary">
         Este papel pagou {money(item.implied.proceeds)} sobre {money(item.implied.invested)} entre{" "}
-        {shortDate(item.implied.start)} e {shortDate(item.implied.end)} — equivale a{" "}
+        {shortDate(item.implied.start)} e {shortDate(item.implied.end)}: equivale a{" "}
         <strong className="text-ink">
           {Number(item.implied.percent_of_index).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do{" "}
           {item.implied.index_code}
@@ -254,18 +254,18 @@ function TreasuryCard({ item }: { item: TreasuryItem }) {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field
           label="Resgate hoje (PU)"
-          value={item.sell_price === null ? "—" : money(item.sell_price)}
+          value={item.sell_price === null ? "-" : money(item.sell_price)}
           hint={item.sell_rate === null ? undefined : `${basis} ${percent(item.sell_rate, 2)}`}
         />
         <Field
           label="Compra hoje (PU)"
-          value={item.buy_price === null ? "—" : money(item.buy_price)}
+          value={item.buy_price === null ? "-" : money(item.buy_price)}
           hint={item.buy_rate === null ? undefined : `${basis} ${percent(item.buy_rate, 2)}`}
         />
         <Field label="Preço médio pago" value={money(item.average_price)} />
         <Field
           label="Taxa contratada"
-          value={item.contracted_rate === null ? "—" : `${basis} ${percent(item.contracted_rate, 2)}`}
+          value={item.contracted_rate === null ? "-" : `${basis} ${percent(item.contracted_rate, 2)}`}
           hint={
             rateMoved === null || item.buy_rate === null
               ? undefined
@@ -303,8 +303,8 @@ function TreasuryPanel() {
     <section className="space-y-4 animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm text-ink-secondary">
-          Preços diários do Tesouro Transparente. A posição é marcada pelo preço de recompra — o que o
-          Tesouro paga em um resgate antecipado — e não pelo preço de compra, que é sempre mais alto.
+          Preços diários do Tesouro Transparente. A posição é marcada pelo preço de recompra (o que o
+          Tesouro paga em um resgate antecipado) e não pelo preço de compra, que é sempre mais alto.
         </p>
         <button type="button" className="btn-ghost" onClick={() => sync.mutate()} disabled={sync.isPending}>
           <RefreshCw size={15} className={sync.isPending ? "animate-spin" : undefined} /> Atualizar preços
@@ -440,7 +440,7 @@ function PrivatePanel() {
                     fator {Number(item.accrual.factor).toLocaleString("pt-BR", { maximumFractionDigits: 6 })}
                   </Badge>
                   {item.accrual.stale ? (
-                    <Badge tone="warning">série do índice desatualizada — valor até {shortDate(item.accrual.through)}</Badge>
+                    <Badge tone="warning">série do índice desatualizada, valor até {shortDate(item.accrual.through)}</Badge>
                   ) : null}
                 </div>
               ) : (
@@ -465,7 +465,7 @@ function PrivatePanel() {
                 {item.implied ? (
                   <span className="text-ink-secondary">
                     rendeu {money(item.implied.proceeds - item.implied.invested)} sobre{" "}
-                    {money(item.implied.invested)} —{" "}
+                    {money(item.implied.invested)}:{" "}
                     <strong className="text-ink">
                       {Number(item.implied.percent_of_index).toLocaleString("pt-BR", {
                         maximumFractionDigits: 1,
@@ -634,7 +634,7 @@ function AccountCard({ account }: { account: CashAccount }) {
         onClose={() => setConfirmRemove(false)}
       >
         <p className="text-sm text-ink-secondary">
-          A conta e todos os seus lançamentos serão apagados. Esta ação não pode ser desfeita —
+          A conta e todos os seus lançamentos serão apagados. Esta ação não pode ser desfeita:
           os depósitos e saques teriam de ser lançados de novo.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -846,7 +846,7 @@ export default function FixedIncome() {
         <p className="text-sm text-ink-muted">Carteira</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Renda fixa</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Papéis privados são calculados a partir do indexador contratado; títulos públicos são cotados — o
+          Papéis privados são calculados a partir do indexador contratado; títulos públicos são cotados: o
           Tesouro publica o preço de cada título todo dia útil. Contas guardam o dinheiro que nenhum extrato
           alcança, rendendo o índice desde a data de cada movimento.
         </p>

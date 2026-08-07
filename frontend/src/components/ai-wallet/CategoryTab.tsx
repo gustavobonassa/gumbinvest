@@ -110,14 +110,14 @@ export default function CategoryTab({
         <p className="mt-3 flex items-center gap-2 text-sm text-ink-secondary">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
           {job.status}
-          <span className="text-xs text-ink-muted">— pode levar alguns minutos; você pode navegar à vontade.</span>
+          <span className="text-xs text-ink-muted">: pode levar alguns minutos; você pode navegar à vontade.</span>
         </p>
       ) : null}
       {!running && job?.error ? <p className="mt-3 text-sm text-negative">{job.error}</p> : null}
       {startError ? <p className="mt-3 text-sm text-negative">{startError}</p> : null}
       {!running && deferred.length ? (
         <p className="mt-3 text-xs text-accent">
-          Aguardando cotação para comprar: {deferred.map((item) => item.ticker).join(", ")} — o
+          Aguardando cotação para comprar: {deferred.map((item) => item.ticker).join(", ")}. O
           valor ficou reservado e a compra conclui sozinha quando o preço chegar.
         </p>
       ) : null}
@@ -243,7 +243,7 @@ export default function CategoryTab({
               {positions.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-8 text-center text-sm text-ink-muted">
-                    Sem posições — todo o orçamento está em caixa.
+                    Sem posições, todo o orçamento está em caixa.
                   </td>
                 </tr>
               ) : null}
@@ -284,11 +284,11 @@ function PositionRows({
           </span>
         </td>
         <td className="tnum px-3 py-3 text-right">
-          {position.is_fixed_income || position.quantity <= 0 ? "—" : formatQuantity(position.quantity)}
+          {position.is_fixed_income || position.quantity <= 0 ? "-" : formatQuantity(position.quantity)}
         </td>
         <td className="tnum px-3 py-3 text-right">
           {position.is_fixed_income || position.quantity <= 0
-            ? "—"
+            ? "-"
             : money(position.avg_price, { currency: position.currency !== "BRL" ? position.currency : undefined })}
         </td>
         <td className="tnum px-3 py-3 text-right">{money(position.cost_brl)}</td>
@@ -297,7 +297,7 @@ function PositionRows({
           {position.pending_brl > 0 ? (
             <span className="block text-[11px] text-accent">aguardando cotação para comprar</span>
           ) : !position.priced ? (
-            <span className="block text-[11px] text-warning">sem cotação — ao custo</span>
+            <span className="block text-[11px] text-warning">sem cotação, ao custo</span>
           ) : null}
         </td>
         <td className="px-3 py-3 text-right">

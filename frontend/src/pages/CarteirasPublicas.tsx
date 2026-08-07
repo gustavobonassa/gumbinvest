@@ -52,7 +52,7 @@ function WalletView({ slug }: { slug: string }) {
         </div>
         <Skeleton className="h-96 w-full" />
         <p className="text-center text-xs text-ink-muted">
-          Baixando o 13F na SEC — a primeira visita a cada gestor leva alguns segundos…
+          Baixando o 13F na SEC. A primeira visita a cada gestor leva alguns segundos…
         </p>
       </div>
     );
@@ -78,7 +78,7 @@ function WalletView({ slug }: { slug: string }) {
           subtitle={
             data.previous_quarter
               ? `Mudanças comparadas ao trimestre anterior (${quarterLabel(data.previous_quarter)})`
-              : "Primeiro trimestre disponível — sem base de comparação"
+              : "Primeiro trimestre disponível, sem base de comparação"
           }
         />
         <div className="-mx-2 overflow-x-auto">

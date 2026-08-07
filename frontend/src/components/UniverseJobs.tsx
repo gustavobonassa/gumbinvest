@@ -32,7 +32,7 @@ import { useToast } from "@/components/Toast";
 
 /** Seconds as "1 min 20 s" — the scale these jobs actually run at. */
 function duration(seconds: number | null | undefined): string {
-  if (seconds === null || seconds === undefined) return "—";
+  if (seconds === null || seconds === undefined) return "-";
   if (seconds < 60) return `${Math.round(seconds)} s`;
   const minutes = Math.floor(seconds / 60);
   const rest = Math.round(seconds % 60);
@@ -40,7 +40,7 @@ function duration(seconds: number | null | undefined): string {
 }
 
 function when(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "-";
   return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
@@ -162,7 +162,7 @@ export default function UniverseJobs() {
       processed.current = null;
       queryClient.invalidateQueries({ queryKey: ["universe-status"] });
       toast.info("Sincronização iniciada.", {
-        description: "Roda em segundo plano — pode fechar esta página.",
+        description: "Roda em segundo plano, pode fechar esta página.",
       });
     },
     onError: (error) => toast.error("Não foi possível iniciar a sincronização.", error),
@@ -203,11 +203,7 @@ export default function UniverseJobs() {
 
         {!enabled ? (
           <p className="text-sm text-ink-secondary">
-            O universo de ativos está desativado. Ative-o em{" "}
-            <a className="text-accent hover:underline" href="/configuracoes?aba=dados">
-              Configurações → Dados
-            </a>{" "}
-            para poder sincronizar.
+            O universo de ativos está desativado. Ative-o no cartão acima para poder sincronizar.
           </p>
         ) : (
           <>
@@ -260,7 +256,7 @@ export default function UniverseJobs() {
               <div>
                 <dt className="text-xs text-ink-muted">Tempo restante</dt>
                 <dd className="tnum">
-                  {running ? duration(status.eta_seconds) : "—"}
+                  {running ? duration(status.eta_seconds) : "-"}
                   {running && status.eta_seconds === null ? (
                     <span className="ml-1 text-[11px] text-ink-muted">(medindo)</span>
                   ) : null}
@@ -358,7 +354,7 @@ export default function UniverseJobs() {
       >
         <p className="text-sm text-ink-secondary">
           Serão apagados {total.toLocaleString("pt-BR")} ativos com preços, fundamentos e
-          indicadores — tudo baixado da B3 e da CVM. Suas posições, movimentações, proventos e
+          indicadores, tudo baixado da B3 e da CVM. Suas posições, movimentações, proventos e
           configurações não são tocados, e o screener volta a ficar vazio até a próxima
           sincronização.
         </p>

@@ -1,6 +1,6 @@
 /** Portfolio overview: headline metrics, evolution, allocation and income. */
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ArrowRight, Coins, TrendingUp, Wallet } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, Coins, RefreshCw, TrendingUp, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -153,7 +153,7 @@ export default function Dashboard() {
         <Card className="flex flex-wrap items-center gap-3 border-warning/25 bg-warning/5 px-5 py-3.5 text-sm" hover={false}>
           <AlertTriangle size={16} className="text-warning" aria-hidden />
           <span className="text-ink-secondary">
-            {data.unpriced_positions.length} ativo(s) sem cotação — avaliados pelo preço médio:
+            {data.unpriced_positions.length} ativo(s) sem cotação, avaliados pelo preço médio:
           </span>
           <span className="flex flex-wrap gap-1.5">
             {data.unpriced_positions.slice(0, 8).map((ticker) => (
@@ -163,10 +163,20 @@ export default function Dashboard() {
             ))}
             {data.unpriced_positions.length > 8 ? <Badge tone="warning">+{data.unpriced_positions.length - 8}</Badge> : null}
           </span>
-          <Link to="/configuracoes?aba=dados" className="ml-auto text-xs text-accent hover:underline">
+          <Link to="/configuracoes?aba=eventos" className="ml-auto text-xs text-accent hover:underline">
             Resolver eventos corporativos
           </Link>
         </Card>
+      ) : null}
+
+      {/* A fetch that timed out is not a missing price, so it gets no warning
+          card — just a line saying it is on its way. The detail (which tickers,
+          when the next attempt is) lives in the header bell. */}
+      {data?.pending_quotes?.length ? (
+        <p className="flex items-center gap-2 px-1 text-xs text-ink-muted">
+          <RefreshCw size={13} className="animate-spin text-accent" aria-hidden />
+          {data.pending_quotes.length} cotação(ões) na fila de atualização, chegam em instantes.
+        </p>
       ) : null}
 
       {/* Evolution */}
@@ -452,7 +462,7 @@ export default function Dashboard() {
                           {money(row.window_change, { compact: true })}
                         </span>
                         <span className={`tnum ${row.window_change >= 0 ? "text-positive" : "text-negative"}`}>
-                          {row.window_pct === null ? "—" : percent(row.window_pct, 2, true)}
+                          {row.window_pct === null ? "-" : percent(row.window_pct, 2, true)}
                         </span>
                       </span>
                     </p>

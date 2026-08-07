@@ -138,7 +138,7 @@ def statement_coverage(db: Session, portfolio_id: int) -> list[dict]:
     currencies: dict[tuple[str, str], str] = {}
 
     for batch in batches:
-        series = (batch.broker_name or "Desconhecida", batch.account_ref or "—")
+        series = (batch.broker_name or "Desconhecida", batch.account_ref or "-")
         currencies.setdefault(series, batch.currency or "USD")
         month_key = _month_key(batch.period_end or batch.period_start)
         month = grouped[series].get(month_key)

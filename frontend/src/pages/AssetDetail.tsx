@@ -229,7 +229,7 @@ function MovementsCard({ transactions, currency }: { transactions: TransactionRo
                     >
                       {inNative(transaction.gross_amount)}
                     </td>
-                    <td className="px-3 py-2 text-xs text-ink-muted">{transaction.broker ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs text-ink-muted">{transaction.broker ?? "-"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -299,10 +299,10 @@ function DividendsCard({ data }: { data: AssetDetailData }) {
                 <td className="whitespace-nowrap px-3 py-2 text-ink-secondary">{shortDate(payment.date)}</td>
                 <td className="px-3 py-2">{opLabel(payment.op_type)}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
-                  {payment.quantity ? quantity(payment.quantity) : "—"}
+                  {payment.quantity ? quantity(payment.quantity) : "-"}
                 </td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
-                  {payment.unit_price ? inNative(payment.unit_price) : "—"}
+                  {payment.unit_price ? inNative(payment.unit_price) : "-"}
                 </td>
                 <td className="tnum px-3 py-2 text-right font-medium text-positive">{inNative(payment.amount)}</td>
               </tr>
@@ -775,7 +775,7 @@ export default function AssetDetail() {
           {data.has_market_price ? (
             <Badge tone="neutral">cotação: {data.price_source}</Badge>
           ) : (
-            <Badge tone="warning">sem cotação — avaliado pelo preço médio</Badge>
+            <Badge tone="warning">sem cotação, avaliado pelo preço médio</Badge>
           )}
           {showBase && data.fx_rate ? (
             <Badge tone="accent">{fxRate(data.fx_rate, data.currency)}</Badge>
@@ -840,7 +840,7 @@ export default function AssetDetail() {
             value={
               fund?.fifty_two_week_low !== undefined && fund?.fifty_two_week_high !== undefined
                 ? `${inNative(fund.fifty_two_week_low)} – ${inNative(fund.fifty_two_week_high)}`
-                : "—"
+                : "-"
             }
             hint={
               fund?.fifty_two_week_high && data.current_price
@@ -854,14 +854,14 @@ export default function AssetDetail() {
             value={
               fund?.market_cap !== undefined
                 ? money(fund.market_cap, { currency: fund.currency ?? data.currency, compact: true, decimals: 0 })
-                : "—"
+                : "-"
             }
             hint={[fund?.sector, fund?.industry].filter(Boolean).join(" · ") || undefined}
           />
           <StatTile
             label="Preço-alvo dos analistas"
             loading={fundamentals.isLoading}
-            value={fund?.target_mean_price !== undefined ? inNative(fund.target_mean_price) : "—"}
+            value={fund?.target_mean_price !== undefined ? inNative(fund.target_mean_price) : "-"}
             tone={upside !== undefined ? (upside >= 0 ? "positive" : "negative") : undefined}
             hint={
               upside !== undefined
@@ -947,7 +947,7 @@ export default function AssetDetail() {
                           point.previous !== null && point.close < point.previous && "text-negative",
                         )}
                       >
-                        {point.previous ? percent(((point.close - point.previous) / point.previous) * 100, 2, true) : "—"}
+                        {point.previous ? percent(((point.close - point.previous) / point.previous) * 100, 2, true) : "-"}
                       </td>
                     </tr>
                   ))}
@@ -1048,7 +1048,7 @@ export default function AssetDetail() {
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile
             label="Yield on cost"
-            value={Number(data.cost_basis) > 0 ? percent((incomeNet / Number(data.cost_basis)) * 100, 2) : "—"}
+            value={Number(data.cost_basis) > 0 ? percent((incomeNet / Number(data.cost_basis)) * 100, 2) : "-"}
             tone="positive"
             hint="proventos líquidos sobre o valor investido"
           />
@@ -1120,7 +1120,7 @@ export default function AssetDetail() {
                 className="input"
               />
               <p className="mt-1.5 text-xs text-ink-muted">
-                Preenchido, substitui a cotação automática — útil para CDB, Tesouro e fundos fechados.
+                Preenchido, substitui a cotação automática, útil para CDB, Tesouro e fundos fechados.
               </p>
               <button
                 type="button"
@@ -1168,7 +1168,7 @@ export default function AssetDetail() {
                 onClick={() => {
                   const entered = Number(realBalance.replace(",", "."));
                   if (!Number.isFinite(entered) || entered < 0) {
-                    toast.error("Saldo inválido — informe um número, ex.: 1.573,25.");
+                    toast.error("Saldo inválido: informe um número, ex.: 1.573,25.");
                     return;
                   }
                   setReconcilePreview(entered);
@@ -1199,7 +1199,7 @@ export default function AssetDetail() {
                 </div>
                 <p>
                   {Math.abs(reconcilePreview - Number(data.quantity)) < 1e-9 ? (
-                    "Os dois valores já são iguais — nada será registrado."
+                    "Os dois valores já são iguais, nada será registrado."
                   ) : (
                     <>
                       Um movimento de ajuste de{" "}
@@ -1207,7 +1207,7 @@ export default function AssetDetail() {
                         {reconcilePreview >= Number(data.quantity) ? "+" : "−"}
                         {quantity(Math.abs(reconcilePreview - Number(data.quantity)))}
                       </span>{" "}
-                      será acrescentado ao histórico. Nada é apagado — o ajuste fica visível nas
+                      será acrescentado ao histórico. Nada é apagado; o ajuste fica visível nas
                       movimentações e pode ser conferido depois.
                     </>
                   )}

@@ -19,7 +19,7 @@ import { Badge, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "@/c
 /** A percentile among sector peers, coloured only at the extremes. */
 function Percentile({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined) {
-    return <span className="text-ink-muted">—</span>;
+    return <span className="text-ink-muted">-</span>;
   }
   const tone = value >= 75 ? "text-positive" : value <= 25 ? "text-negative" : "text-ink-secondary";
   return <span className={`tnum ${tone}`}>{value}º</span>;
@@ -98,7 +98,7 @@ export default function PortfolioFitPanel() {
         {fit.gaps?.length ? (
           <p className="mt-3 text-xs text-ink-muted">
             Sem exposição a: <span className="text-ink-secondary">{fit.gaps.join(", ")}</span>. Não é
-            uma recomendação — um setor pode estar fora da carteira de propósito.
+            uma recomendação: um setor pode estar fora da carteira de propósito.
           </p>
         ) : null}
       </Card>
@@ -107,7 +107,7 @@ export default function PortfolioFitPanel() {
         <div className="p-5 pb-0">
           <SectionTitle
             title="Suas posições entre os pares"
-            subtitle="Percentil dentro do próprio setor — 100º é o melhor do setor naquele indicador. UDM = últimos doze meses até o trimestre indicado."
+            subtitle="Percentil dentro do próprio setor: 100º é o melhor do setor naquele indicador. UDM = últimos doze meses até o trimestre indicado."
           />
         </div>
         <div className="overflow-x-auto">
@@ -128,7 +128,7 @@ export default function PortfolioFitPanel() {
                   <td className="px-4 py-3">
                     <span className="font-medium">{row.ticker}</span>
                     <span className="mt-0.5 block truncate text-xs text-ink-muted">
-                      {row.setor ?? "—"}
+                      {row.setor ?? "-"}
                       {row.exercicio_dos_fundamentos ? ` · ${row.exercicio_dos_fundamentos}` : ""}
                     </span>
                   </td>
@@ -165,7 +165,7 @@ export default function PortfolioFitPanel() {
           <p className="text-sm text-ink-secondary">{fit.outside.join(", ")}</p>
           <p className="mt-2 text-xs text-ink-muted">
             Renda fixa, Tesouro, cripto e papéis negociados fora da B3 não têm equivalente no
-            universo local, então ficam de fora dos pesos e percentis — e não do seu patrimônio.
+            universo local, então ficam de fora dos pesos e percentis, e não do seu patrimônio.
           </p>
         </Card>
       ) : null}

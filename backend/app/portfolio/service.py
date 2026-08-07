@@ -56,11 +56,15 @@ CHAIN_VERSION = 3
 #: app.market.fixed_income). Subscription rights and receipts are here because
 #: they are transient by nature: they convert into the underlying or expire, and
 #: B3 leaves the converted line open at zero cost. Quoting them would be
-#: meaningless even where a ticker exists.
+#: meaningless even where a ticker exists. Treasury is here for the same reason
+#: as fixed income — it is priced by accrual (app.market.treasury), and it sits
+#: in ``UNQUOTABLE_KINDS`` too, so warning about it meant complaining that a
+#: quote we never request had not arrived.
 NON_MARKET_KINDS = {
     AssetKind.FUTURE.value,
     AssetKind.OPTION.value,
     AssetKind.FIXED_INCOME.value,
+    AssetKind.TREASURY.value,
     AssetKind.SUBSCRIPTION.value,
 }
 
@@ -739,10 +743,19 @@ class PortfolioService:
         uncosted_proceeds = sum((p.uncosted_proceeds for p in base_positions), ZERO)
         day_change = sum((ap.day_change * ap.rate for ap in open_positions), ZERO)
         priced = [ap for ap in open_positions if ap.has_market_price]
+        # A fetch that timed out is not an asset without a price: it is a price
+        # that is late, already queued, and about to arrive on its own. Those
+        # are reported as `pending_quotes` instead — an alarm the user cannot
+        # act on is worse than no alarm.
+        from app.market.service import pending_quote_asset_ids  # local: avoids a cycle
+
+        retrying = pending_quote_asset_ids(self.db)
         unpriced = [
             ap
             for ap in open_positions
-            if not ap.has_market_price and ap.asset.kind not in NON_MARKET_KINDS
+            if not ap.has_market_price
+            and ap.asset.kind not in NON_MARKET_KINDS
+            and ap.asset.id not in retrying
         ]
 
         # Cash flows are summed in base currency, which is why they are computed
@@ -794,6 +807,10 @@ class PortfolioService:
             "assets_tracked": len(self.positions()),
             "priced_positions": len(priced),
             "unpriced_positions": [ap.asset.ticker for ap in unpriced],
+            # Held positions whose fetch failed transiently and is queued.
+            "pending_quotes": [
+                ap.asset.ticker for ap in open_positions if ap.asset.id in retrying
+            ],
             # Foreign holdings with no exchange rate yet: left out of every
             # figure above rather than added in at the wrong scale.
             "unconverted_positions": [

@@ -63,7 +63,7 @@ const WINDOW_LABELS: Record<PerformanceWindow, string> = {
   total: "Total",
 };
 const WINDOW_HINTS: Record<PerformanceWindow, string> = {
-  day: "Último pregão — na segunda-feira e no fim de semana, o de sexta",
+  day: "Último pregão: na segunda-feira e no fim de semana, o de sexta",
   "1m": "Resultado dos últimos 30 dias",
   "3m": "Resultado dos últimos 3 meses",
   "6m": "Resultado dos últimos 6 meses",
@@ -105,7 +105,7 @@ function PerformerRow({ asset, index, highlight }: { asset: PerformanceRow; inde
           {money(asset.window_change)}
         </span>
         <span className="tnum block text-xs text-ink-muted">
-          {asset.window_pct === null ? "—" : percent(asset.window_pct, 1, true)}
+          {asset.window_pct === null ? "-" : percent(asset.window_pct, 1, true)}
         </span>
       </span>
     </li>
@@ -325,7 +325,7 @@ export default function Reports() {
           outcome ? (
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
               <span className="max-w-xl">
-                A linha pondera cada aporte pelo tempo em que esteve investido — R$ 400 mil que
+                A linha pondera cada aporte pelo tempo em que esteve investido. R$ 400 mil que
                 entraram no mês passado valem um mês, não seis anos.
               </span>
               <span className="sm:ml-auto">
@@ -357,7 +357,7 @@ export default function Reports() {
                   <td className="px-2 py-1.5">{point.date}</td>
                   {series.map((item) => (
                     <td key={item.key} className="tnum px-2 py-1.5 text-right text-ink-secondary">
-                      {point[item.key] === undefined ? "—" : percent(Number(point[item.key]), 2, true)}
+                      {point[item.key] === undefined ? "-" : percent(Number(point[item.key]), 2, true)}
                     </td>
                   ))}
                 </tr>
@@ -430,7 +430,7 @@ export default function Reports() {
         <Card className="p-5">
           <SectionTitle
             title="Resultado por classe"
-            subtitle="Quanto cada classe já entregou — mercado, realizado e proventos"
+            subtitle="Quanto cada classe já entregou: mercado, realizado e proventos"
           />
           {positions.isLoading ? (
             <Skeleton className="h-56 w-full" />
@@ -452,7 +452,7 @@ export default function Reports() {
                         {money(row.result)}
                       </span>
                       <span className="tnum text-xs text-ink-muted">
-                        {row.pct === null ? "—" : percent(row.pct, 1, true)}
+                        {row.pct === null ? "-" : percent(row.pct, 1, true)}
                       </span>
                     </span>
                   </div>
@@ -491,7 +491,7 @@ export default function Reports() {
             <ErrorState error={returns.error} retry={() => returns.refetch()} />
           ) : !consistency ? (
             <p className="py-6 text-center text-sm text-ink-muted">
-              Sem meses fechados para medir — importe transações e aguarde o primeiro mês.
+              Sem meses fechados para medir. Importe transações e aguarde o primeiro mês.
             </p>
           ) : (
             <div className="space-y-4">

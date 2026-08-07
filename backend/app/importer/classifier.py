@@ -266,7 +266,7 @@ def classify(movement: str, direction: Direction, amount: Decimal | None = None)
     return Classification(
         op_type=OT.UNKNOWN,
         effect=PE.NONE,
-        warning=f"unknown movement '{movement}' — imported for the audit trail but not applied",
+        warning=f"unknown movement '{movement}', imported for the audit trail but not applied",
     )
 
 

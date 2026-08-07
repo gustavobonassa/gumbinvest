@@ -393,7 +393,7 @@ def _restore_staked(position: Position) -> None:
     position.cost_basis += position.staked_cost
     position.notes.append(
         f"{position.staked_quantity:.8f} unidades estão aplicadas em staking/Simple Earn "
-        f"(custo {position.staked_cost:.2f}) — continuam na carteira, mas fora do saldo "
+        f"(custo {position.staked_cost:.2f}); continuam na carteira, mas fora do saldo "
         "livre informado pela corretora"
     )
 
@@ -429,7 +429,7 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
             # Treat the whole proceeds as realised and flag it for review.
             position.realized_pnl += proceeds
             position.warnings.append(
-                f"{mv.trade_date}: disposal of {sold} units with no recorded position — "
+                f"{mv.trade_date}: disposal of {sold} units with no recorded position; "
                 "proceeds booked entirely as realised result"
             )
             position.quantity = ZERO
@@ -437,7 +437,7 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
         else:
             if sold > position.quantity:
                 position.warnings.append(
-                    f"{mv.trade_date}: disposal of {sold} units exceeds the held {position.quantity} — "
+                    f"{mv.trade_date}: disposal of {sold} units exceeds the held {position.quantity}; "
                     "capped to the available position"
                 )
                 sold = position.quantity
@@ -484,13 +484,13 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
         if abs(day_total - held) <= QTY_EPSILON:
             position.notes.append(
                 f"{mv.trade_date}: 'Atualização' of {qty} (day total {day_total}) matches the "
-                f"{held} already held — treated as a position restatement, not applied"
+                f"{held} already held; treated as a position restatement, not applied"
             )
         else:
             position.quantity += qty
             position.notes.append(
                 f"{mv.trade_date}: 'Atualização' of {qty} (day total {day_total}) differs from "
-                f"the {held} held — applied as a free quantity credit"
+                f"the {held} held; applied as a free quantity credit"
             )
 
     elif effect == PositionEffect.QTY_RESTATE.value:
@@ -500,7 +500,7 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
         previous = position.quantity
         position.quantity = qty
         position.notes.append(
-            f"{mv.trade_date}: grupamento + desdobramento — position restated from "
+            f"{mv.trade_date}: grupamento + desdobramento: position restated from "
             f"{previous} to {qty}; cost basis preserved and average price rescaled"
         )
 
@@ -594,7 +594,7 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
         if position.quantity < ZERO:
             position.warnings.append(
                 f"{mv.trade_date}: removal of {qty} units left a negative position "
-                f"({position.quantity}) — the export may be missing earlier movements"
+                f"({position.quantity}); the export may be missing earlier movements"
             )
         if abs(position.quantity) <= QTY_EPSILON:
             position.quantity = ZERO
@@ -697,13 +697,13 @@ def build_positions(
         if position.uncosted_quantity > DUST_QUANTITY:
             position.warnings.append(
                 f"{position.uncosted_quantity:.8f} unidades entraram por depósito externo sem "
-                "compra correspondente no histórico — o custo é desconhecido, então elas "
+                "compra correspondente no histórico; o custo é desconhecido, então elas "
                 "aparecem com custo zero e o lucro não pode ser apurado sobre elas"
             )
         if position.uncosted_proceeds > MONEY_DUST:
             position.warnings.append(
                 f"{position.uncosted_proceeds:.2f} recebidos na venda de unidades sem custo "
-                "conhecido — fora do resultado realizado, porque um resultado é receita "
+                "conhecido; fora do resultado realizado, porque um resultado é receita "
                 "menos custo e aqui não há custo a subtrair"
             )
     return positions

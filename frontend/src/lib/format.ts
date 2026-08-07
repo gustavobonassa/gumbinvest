@@ -97,16 +97,16 @@ export function fxRate(value: unknown, from: string, to = currency): string {
 }
 
 export function shortDate(value: string | Date | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = typeof value === "string" ? new Date(`${value.length <= 10 ? `${value}T00:00:00` : value}`) : value;
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
 export function dateTime(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "-";
   return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 

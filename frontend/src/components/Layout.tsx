@@ -1,5 +1,5 @@
-/** Application shell: sidebar, top bar, global search, quote refresh. */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+/** Application shell: sidebar, top bar, global search, notifications. */
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   Radar,
@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   Menu,
   MessagesSquare,
-  RefreshCw,
   Search,
   Settings as SettingsIcon,
   Users,
@@ -25,22 +24,25 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
-import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api";
 import { currencyLabel, dateTime, decimal, kindLabel, money, opLabel, percent, shortDate, toneOf } from "@/lib/format";
 import AssetChat, { AI_CHAT_SLOT_ID } from "@/components/AssetChat";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import Notifications from "@/components/Notifications";
 import TitleBar from "@/components/TitleBar";
 import { Badge, Skeleton } from "@/components/ui";
 
-/** Query families whose answers move with quotes. Refreshing prices must not
-    refetch everything else (import history, fundamentals cached for an hour,
+/** Query families whose answers move with quotes. New prices must not refetch
+    everything else (import history, fundamentals cached for an hour,
     settings…), only what a new price can change. */
 const MARKET_QUERY_KEYS = [
   "market-status",
+  // A refresh either clears the retry queue or fills it, so the bell is stale
+  // as soon as quotes are written.
+  "notifications",
   "overview",
   "positions",
   "allocation",
@@ -259,7 +261,7 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
               {marketHits.length ? (
                 <div className="mb-2">
                   <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-                    Mercado — não está na carteira
+                    Mercado (não está na carteira)
                   </p>
                   {marketHits.map((hit) => (
                     <button
@@ -320,26 +322,50 @@ export default function Layout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
   const queryClient = useQueryClient();
-  const toast = useToast();
 
   const { data: status } = useQuery({
     queryKey: ["market-status"],
     queryFn: api.marketStatus,
     staleTime: 60_000,
-    // The sidebar shows live rates; without this they freeze until a manual
-    // refresh, since focus refetching is off globally.
+    // The sidebar shows live rates; without this they freeze until a reload,
+    // since focus refetching is off globally. This poll is also what tells the
+    // rest of the app that new prices landed — see below.
     refetchInterval: 5 * 60_000,
   });
-  const refresh = useMutation({
-    mutationFn: api.refreshQuotes,
-    onSuccess: () => {
-      MARKET_QUERY_KEYS.forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }));
-      toast.success("Cotações atualizadas.");
-    },
-    onError: (error) => toast.error("Não foi possível atualizar as cotações.", error),
-  });
+
+  // Prices arriving is a *server* event: the scheduled refresh runs on its own
+  // cadence, and the retry queue lands late ones minutes after that. Rather
+  // than every screen polling on a guessed timer — or the user pressing a
+  // button, which is what this replaces — the one endpoint already being
+  // polled reports when the quotes were last written, and a change in that
+  // timestamp invalidates exactly the queries a new price can move.
+  const lastQuoteAt = status?.last_update ?? null;
+  const seenQuoteAt = useRef<string | null>(null);
+  useEffect(() => {
+    if (!lastQuoteAt) return;
+    // The first reading is the baseline, not an update: invalidating here
+    // would refetch everything the page had only just loaded.
+    if (seenQuoteAt.current === null || seenQuoteAt.current === lastQuoteAt) {
+      seenQuoteAt.current = lastQuoteAt;
+      return;
+    }
+    seenQuoteAt.current = lastQuoteAt;
+    MARKET_QUERY_KEYS.filter((key) => key !== "market-status").forEach((key) =>
+      queryClient.invalidateQueries({ queryKey: [key] }),
+    );
+  }, [lastQuoteAt, queryClient]);
 
   useEffect(() => setSidebarOpen(false), [location.pathname]);
+
+  // With the scroll on <main> rather than on the document, PageDown and the
+  // arrow keys only reach it once focus is inside it — landing on a fresh page
+  // with focus still on <body> would leave the keyboard unable to scroll at
+  // all. Focusing the content region on every navigation is also what tells a
+  // screen reader that the page under the unchanged chrome has been replaced.
+  const contentRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    contentRef.current?.focus({ preventScroll: true });
+  }, [location.pathname]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -353,8 +379,11 @@ export default function Layout() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // The shell is exactly as tall as its box and never scrolls: scrolling belongs
+  // to <main> alone, so the scrollbar starts below the top bar and stops at the
+  // content column instead of running the full height of the window.
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-full">
       <TitleBar />
       {/* Sidebar */}
       <aside
@@ -471,7 +500,7 @@ export default function Layout() {
               )}
               aria-hidden
             />
-            Cotações: {status?.provider ?? "—"}
+            Cotações: {status?.provider ?? "-"}
           </p>
           <p className="mt-1">Atualizado {dateTime(status?.last_update ?? null)}</p>
         </div>
@@ -488,7 +517,9 @@ export default function Layout() {
 
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col lg:pl-[248px]">
-        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-xl sm:px-6">
+        {/* Not sticky: it is a sibling of the scroll container, so it holds its
+            place without any content ever passing under it. */}
+        <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-xl sm:px-6">
           <button
             type="button"
             className="btn-ghost px-2 py-2 lg:hidden"
@@ -511,22 +542,26 @@ export default function Layout() {
           <div className="ml-auto flex items-center gap-2">
             {/* Filled by whichever AssetChat is mounted — see AI_CHAT_SLOT_ID. */}
             <div id={AI_CHAT_SLOT_ID} className="flex items-center" />
-            <button
-              type="button"
-              onClick={() => refresh.mutate()}
-              disabled={refresh.isPending}
-              className="btn-ghost"
-              title="Atualizar cotações agora"
-            >
-              <RefreshCw size={15} className={refresh.isPending ? "animate-spin" : undefined} aria-hidden />
-              <span className="hidden sm:inline">Atualizar</span>
-            </button>
+            <Notifications />
           </div>
         </header>
 
-        {/* pb larger than pt: the last card of a page should not end flush
+        {/* The one scroll container in the app. `min-h-0` so it may shrink below
+            its content inside the column flex; `overflow-x-clip` because naming
+            one axis makes the other compute to `auto`, which would let a wide
+            table drag the whole shell sideways instead of scrolling in place.
+
+            `tabIndex` -1 so the route effect can hand it the keyboard: it is a
+            landmark, not a control, so it stays out of the tab order and shows
+            no focus ring.
+
+            pb larger than pt: the last card of a page should not end flush
             against the window edge. */}
-        <main className="min-w-0 flex-1 px-4 pb-12 pt-6 sm:px-6 lg:px-8">
+        <main
+          ref={contentRef}
+          tabIndex={-1}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-clip px-4 pb-12 pt-6 focus-visible:ring-0 sm:px-6 lg:px-8"
+        >
           {/* Keyed by route so a crash on one page doesn't stick to the next. */}
           <ErrorBoundary key={location.pathname}>
             <Suspense

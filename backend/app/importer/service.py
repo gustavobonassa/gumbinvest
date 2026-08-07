@@ -1538,7 +1538,7 @@ class _CryptoImportState:
             "movimentos não negociais (depósitos, saques, recompensas, Earn, futuros) "
             "importados a partir do extrato completo"
             if parsed.events
-            else "a exportação spot cobre apenas negociações — depósitos, saques, conversões, "
+            else "a exportação spot cobre apenas negociações: depósitos, saques, conversões, "
             "Earn e compras por cartão não constam e podem deixar posições sem custo"
         )
         return {

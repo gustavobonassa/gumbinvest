@@ -29,7 +29,7 @@ type TabValue = (typeof TABS)[number]["value"];
  */
 const SOURCES = [
   {
-    title: "B3 — Área do Investidor",
+    title: "B3: Área do Investidor",
     detail: "Extrato de movimentações em .csv ou .xlsx, tanto faz. Até 64 MB.",
   },
   {
@@ -166,7 +166,7 @@ export default function ImportPage() {
       toast.success(`${file.name} importado.`, {
         description: result.rows_imported
           ? `${result.rows_imported} de ${result.rows_total} linhas novas.`
-          : "Nenhuma linha nova — tudo já estava importado.",
+          : "Nenhuma linha nova, tudo já estava importado.",
       });
     },
     onError: (error, file) => toast.error(`Falha ao importar ${file.name}.`, error),
@@ -192,7 +192,7 @@ export default function ImportPage() {
         <p className="text-sm text-ink-muted">Dados</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Importar movimentações</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Movimentos já importados são ignorados automaticamente — pode reenviar o mesmo arquivo, subir vários de
+          Movimentos já importados são ignorados automaticamente, pode reenviar o mesmo arquivo, subir vários de
           uma vez, ou enviar dois relatórios diferentes do mesmo mês sem duplicar nada.
         </p>
       </header>

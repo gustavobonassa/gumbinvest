@@ -24,6 +24,7 @@ import {
 } from "@/components/ui";
 import PortfolioFitPanel from "@/components/PortfolioFit";
 import UniverseJobs from "@/components/UniverseJobs";
+import UniverseSettings from "@/components/UniverseSettings";
 
 type TabValue = "ACOES" | "FII" | "ETF" | "BDR" | "STOCKS" | "REITS" | "COMPARAR" | "SINCRONIZAR";
 
@@ -338,18 +339,14 @@ export default function Universo() {
             description={
               enabled
                 ? "Baixe os arquivos públicos da B3 e da CVM para montar a tabela local. Leva poucos minutos e roda em segundo plano."
-                : "Ative o universo em Configurações → Dados para filtrar todos os papéis listados por critérios objetivos — e para dar à IA uma lista real de candidatos."
+                : "Ative o universo na aba Sincronização para filtrar todos os papéis listados por critérios objetivos e para dar à IA uma lista real de candidatos."
             }
             action={
-              enabled ? (
-                <button type="button" className="btn-primary" onClick={() => setTab("SINCRONIZAR")}>
-                  Ir para a sincronização
-                </button>
-              ) : (
-                <Link className="btn-primary" to="/configuracoes?aba=dados">
-                  Ir para Configurações
-                </Link>
-              )
+              /* Enabled or not, the answer is the same tab now: it holds both
+                 the switch and the button. */
+              <button type="button" className="btn-primary" onClick={() => setTab("SINCRONIZAR")}>
+                Ir para a sincronização
+              </button>
             }
           />
         </Card>
@@ -364,7 +361,14 @@ export default function Universo() {
       <Tabs value={tab} onChange={setTab} options={TABS} />
 
       {tab === "SINCRONIZAR" ? (
-        <UniverseJobs />
+        /* Settings first, then the run: turning the universe on and choosing
+           which markets it covers is what makes a sync possible, and having
+           the switch on a different screen from the button it enables was the
+           confusing part. */
+        <div className="space-y-6">
+          <UniverseSettings />
+          <UniverseJobs />
+        </div>
       ) : tab === "COMPARAR" ? (
         <PortfolioFitPanel />
       ) : (
@@ -432,7 +436,7 @@ export default function Universo() {
               </span>
               <span>
                 Indicadores em UDM (últimos doze meses) até o trimestre mais recente de cada
-                empresa — o período de cada um aparece sob o P/L.
+                empresa. O período de cada um aparece sob o P/L.
               </span>
               {listQ.data?.dropped_for_missing_data ? (
                 <span className="text-warning">
@@ -458,7 +462,7 @@ export default function Universo() {
                 title="Nenhum ativo com esses filtros"
                 description={
                   listQ.data.dropped_for_missing_data > 0
-                    ? `Todos os ${listQ.data.dropped_for_missing_data} ativos desta classe ficaram de fora por não terem “${orderLabel}” publicado. Ordene por outra coluna — ETFs e BDRs não têm balanço próprio, então valor de mercado, P/L e P/VP não existem para eles.`
+                    ? `Todos os ${listQ.data.dropped_for_missing_data} ativos desta classe ficaram de fora por não terem “${orderLabel}” publicado. Ordene por outra coluna: ETFs e BDRs não têm balanço próprio, então valor de mercado, P/L e P/VP não existem para eles.`
                     : "Afrouxe os limites ou limpe a busca."
                 }
               />

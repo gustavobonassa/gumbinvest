@@ -289,7 +289,7 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
                 setPicked(remote && !local ? { kind: remote.kind, currency: remote.currency } : null);
               }}
               options={suggestions}
-              emptyHint="Nenhum ativo encontrado — continue digitando para criar um novo."
+              emptyHint="Nenhum ativo encontrado. Continue digitando para criar um novo."
             />
           </div>
           <div>
@@ -396,7 +396,7 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
               value={broker}
               onChange={setBroker}
               options={(filters.data?.brokers ?? []).map((item) => ({ value: item, label: "" }))}
-              emptyHint="Nenhuma corretora com esse nome — continue digitando para cadastrar."
+              emptyHint="Nenhuma corretora com esse nome. Continue digitando para cadastrar."
             />
           </div>
         </div>
@@ -664,7 +664,7 @@ export default function Transactions() {
                       >
                         {money(transaction.gross_amount)}
                       </td>
-                      <td className="hidden px-4 py-2.5 text-xs text-ink-muted xl:table-cell">{transaction.broker ?? "—"}</td>
+                      <td className="hidden px-4 py-2.5 text-xs text-ink-muted xl:table-cell">{transaction.broker ?? "-"}</td>
                       {/* Only hand-entered rows: an imported one is reproducible
                           from its file, and deleting it would either come back
                           on the next upload or quietly rewrite history. */}

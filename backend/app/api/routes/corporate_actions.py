@@ -1,7 +1,15 @@
-"""Corporate actions: declaring that one asset was replaced by another."""
+"""Corporate actions: declaring that one asset was replaced by another.
+
+Three sources feed the same declaration: the movement-evidence heuristic
+(:mod:`app.portfolio.corporate_actions`), the AI scan (a background job that
+searches the web for events affecting the portfolio's own tickers and stores
+proposals for individual accept/decline), and the manual form. The AI never
+applies anything by itself.
+"""
 from __future__ import annotations
 
-from datetime import date
+import json
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
@@ -9,10 +17,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import CurrentPortfolio, DbSession, PortfolioSvc
-from app.db.models import Asset, AssetSuccession, AuditLog
+from app.core.logging import get_logger
+from app.db.models import Asset, AssetSuccession, AuditLog, SuccessionAiSuggestion
+from app.db.session import session_scope
 from app.portfolio.corporate_actions import suggest_successions
+from app.services import ai_research as research
+from app.services import corporate_ai
+from app.services.ai_providers import active_ai
+from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
 
 router = APIRouter(prefix="/corporate-actions", tags=["corporate actions"])
+logger = get_logger(__name__)
+
+#: One AI scan per portfolio at a time.
+_SCAN_REGISTRY = JobRegistry()
 
 
 class SuccessionPayload(BaseModel):
@@ -105,6 +123,153 @@ def delete_action(action_id: int, db: DbSession, portfolio: CurrentPortfolio) ->
     db.delete(row)
     db.commit()
     return {"deleted": action_id}
+
+
+# ---------------------------------------------------------------------------
+# AI scan: the configured model searches for events affecting these tickers
+
+SYSTEM_EVENTS = """Você é um pesquisador de eventos corporativos de bolsa (B3 e bolsas \
+americanas). Sua tarefa é identificar, com alta confiança, eventos que afetaram os ativos \
+listados no contexto: mudança de código de negociação (rename), incorporação/fusão com \
+troca de papel, fechamento de capital/OPA com pagamento em dinheiro, e cisões relevantes.
+
+Regras:
+- Considere SOMENTE os tickers listados no contexto, e somente eventos a partir do primeiro \
+movimento de cada um.
+- Ignore os que já têm evento declarado (campo evento_ja_declarado).
+- Pesquise na web e cite a fonte de cada evento. Proponha apenas o que você conseguir \
+confirmar — um evento inventado corrompe o histórico do usuário.
+- Datas no formato YYYY-MM-DD (data de eficácia na bolsa). Se houve pagamento em dinheiro \
+por ação/cota no evento, informe o valor TOTAL aproximado por posição apenas se conhecido; \
+caso contrário use 0.
+
+Regra de formato ABSOLUTA: responda APENAS com JSON válido, sem markdown, sem cercas de \
+código, sem nenhum texto antes ou depois do JSON."""
+
+
+def _scan_prompt(context: list[dict]) -> str:
+    return (
+        "Ativos do usuário (fonte: GumbInvest, agora):\n"
+        f"{json.dumps(context, ensure_ascii=False)}\n"
+        "Liste os eventos corporativos encontrados neste formato:\n"
+        '{"events": [{"from_ticker": "XXXX", "to_ticker": "YYYY ou null se baixado", '
+        '"effective_date": "YYYY-MM-DD", "cash_amount": 0, '
+        '"event_type": "rename|merger|delisting|spinoff|other", '
+        '"rationale": "o que aconteceu, em 1 a 2 frases", "source": "fonte"}]}\n'
+        'Se nenhum evento for encontrado, responda {"events": []}.'
+    )
+
+
+@router.get("/ai-scan", response_model=None, summary="Status of the AI corporate-event scan")
+def ai_scan_status(db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    return job_payload(_SCAN_REGISTRY.current(portfolio.id))
+
+
+@router.post("/ai-scan", response_model=None, summary="Start the AI corporate-event scan (background job)")
+def start_ai_scan(db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    provider_id, provider, model, api_key = active_ai(db)
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Informe sua chave da {provider['label']} em Configurações → Sistema "
+                "para buscar eventos com IA."
+            ),
+        )
+    context, known = corporate_ai.scan_context(db, portfolio.id)
+    if not context:
+        raise HTTPException(
+            status_code=409, detail="Nenhum ativo elegível para a busca de eventos."
+        )
+    portfolio_id = portfolio.id
+    status_label = f"Pesquisando eventos com {provider['label']} · {model}…"
+
+    def run(job: BackgroundJob) -> None:
+        job.status = status_label
+        data, used_search = research.call_model_json(
+            provider_id, provider, model, api_key, SYSTEM_EVENTS, [
+                {"role": "user", "content": _scan_prompt(context)}
+            ],
+        )
+        if data is None:
+            job.error = "O modelo não retornou uma resposta válida, tente novamente ou troque o modelo em Configurações."
+            return
+        items = corporate_ai.normalize_events(data, known)
+        job.status = "Registrando as sugestões…"
+        with session_scope() as job_db:
+            stored = corporate_ai.store_suggestions(
+                job_db, portfolio_id, items, provider=provider_id, model=model
+            )
+            job.result = {
+                "found": len(items),
+                "stored": len(stored),
+                "suggestions": [corporate_ai.serialize_suggestion(row) for row in stored],
+                "used_search": used_search,
+            }
+
+    try:
+        job = _SCAN_REGISTRY.start(
+            portfolio_id,
+            "corporate-scan",
+            run,
+            error_message="Erro inesperado na busca de eventos. Veja os logs do backend.",
+            logger=logger,
+        )
+    except JobConflict:
+        raise HTTPException(status_code=409, detail="Já existe uma busca de eventos em andamento.")
+    return job_payload(job)
+
+
+@router.get("/ai-suggestions", response_model=None, summary="AI event proposals awaiting review")
+def ai_suggestions(db: DbSession, portfolio: CurrentPortfolio) -> list[dict]:
+    rows = db.scalars(
+        select(SuccessionAiSuggestion)
+        .where(
+            SuccessionAiSuggestion.portfolio_id == portfolio.id,
+            SuccessionAiSuggestion.status == "pending",
+        )
+        .order_by(SuccessionAiSuggestion.effective_date)
+    ).all()
+    return [corporate_ai.serialize_suggestion(row) for row in rows]
+
+
+def _get_suggestion(db, portfolio_id: int, suggestion_id: int) -> SuccessionAiSuggestion:
+    row = db.get(SuccessionAiSuggestion, suggestion_id)
+    if row is None or row.portfolio_id != portfolio_id:
+        raise HTTPException(status_code=404, detail="sugestão não encontrada")
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail="Esta sugestão já foi resolvida.")
+    return row
+
+
+@router.post(
+    "/ai-suggestions/{suggestion_id}/accept",
+    response_model=None,
+    summary="Apply one AI event proposal as a declared succession",
+)
+def accept_ai_suggestion(suggestion_id: int, db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    row = _get_suggestion(db, portfolio.id, suggestion_id)
+    try:
+        succession = corporate_ai.accept_suggestion(db, portfolio.id, row)
+    except corporate_ai.SuggestionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    db.commit()
+    db.refresh(succession)
+    return {"succession": _serialize(db, succession), "suggestion": corporate_ai.serialize_suggestion(row)}
+
+
+@router.post(
+    "/ai-suggestions/{suggestion_id}/decline",
+    response_model=None,
+    summary="Decline one AI event proposal",
+)
+def decline_ai_suggestion(suggestion_id: int, db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    row = _get_suggestion(db, portfolio.id, suggestion_id)
+    row.status = "declined"
+    row.resolved_at = datetime.now(UTC)
+    db.commit()
+    return {"suggestion": corporate_ai.serialize_suggestion(row)}
 
 
 @router.get("/preview", response_model=None, summary="Positions affected by the declared successions")

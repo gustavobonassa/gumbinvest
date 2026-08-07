@@ -845,6 +845,23 @@ transactions, because merging two histories would need the dedup machinery to
 arbitrate every row. Exported from `GET /api/imports/export`; imported through
 the same upload endpoint as every other file (gzip magic tells it apart).
 
+The cloud backup (`app/services/cloud_backup/`) wraps the same export: the
+nightly backup job also uploads a `.gumbinvest` (optionally AES-GCM-encrypted
+under a user passphrase) to whichever of Google Drive / Dropbox the user
+connected in Configurações → Backup, keeps the newest `BACKUP_KEEP` files
+there, and can restore one through `import_snapshot` — every refusal above
+still applies. Two boundaries shape it. First, providers read credentials
+DB-first with the env as fallback, never the settings singleton alone:
+`apply_stored_secrets()` runs only in the FastAPI lifespan, so the Celery
+worker's singleton never sees keys saved through the UI. Second, the nightly
+run happens in the worker while the status poll answers from the backend
+container, so its outcome lives in a durable `app_settings` row
+(`cloud_backup_status`) rather than an in-memory job — only the manual
+"Enviar agora", which is HTTP-triggered and therefore shares a process with
+its poller, uses `JobRegistry`. OAuth is deliberately redirect-free (Google's
+device-code flow, Dropbox's no-redirect PKCE): the desktop build has no fixed
+port to register a callback on, and a pasted code works everywhere.
+
 React 18 + TypeScript + Vite, Tailwind for styling, TanStack Query for server
 state, Recharts for charts, React Router for navigation. No global state library:
 everything on screen is server state, and Query already models that.

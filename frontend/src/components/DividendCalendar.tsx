@@ -213,9 +213,9 @@ export default function DividendCalendar({
           </div>
 
           <p className="mt-3 text-xs text-ink-muted">
-            Verde: creditado na conta. Azul: anunciado na B3, estimado pela posição atual —{" "}
+            Verde: creditado na conta. Azul: anunciado na B3, estimado pela posição atual (
             {upcoming?.updated_at ? `previsões atualizadas ${dateTime(upcoming.updated_at)}` : "sem previsões carregadas"}
-            {upcoming?.missing.length ? ` · ${upcoming.missing.length} ativo(s) ainda sem consulta` : ""}.
+            {upcoming?.missing.length ? ` · ${upcoming.missing.length} ativo(s) ainda sem consulta` : ""}).
           </p>
         </div>
 

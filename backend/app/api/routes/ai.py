@@ -294,7 +294,7 @@ def ai_chat(
                             pass
                         prefix = {
                             401: f"Chave inválida para {provider['label']}",
-                            403: f"Acesso negado pela {provider['label']} — verifique créditos/permissões da conta",
+                            403: f"Acesso negado pela {provider['label']}, verifique créditos/permissões da conta",
                             404: f"Modelo '{model}' não existe em {provider['label']}",
                             429: "Limite de requisições da API atingido",
                         }.get(response.status_code, f"Erro da API da {provider['label']} ({response.status_code})")
@@ -370,9 +370,9 @@ def ai_chat(
             )
             yield _sse({"done": True, "chat_id": chat_id})
         except anthropic.AuthenticationError:
-            yield _sse({"error": "Chave da Anthropic inválida — confira em Configurações → Sistema."})
+            yield _sse({"error": "Chave da Anthropic inválida, confira em Configurações → Sistema."})
         except anthropic.RateLimitError:
-            yield _sse({"error": "Limite de requisições da API atingido — tente novamente em instantes."})
+            yield _sse({"error": "Limite de requisições da API atingido, tente novamente em instantes."})
         except anthropic.APIConnectionError:
             yield _sse({"error": "Sem conexão com a API da Anthropic."})
         except anthropic.APIStatusError as exc:

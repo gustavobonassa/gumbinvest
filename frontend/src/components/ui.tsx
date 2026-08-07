@@ -254,7 +254,10 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Portalled to <body> on purpose: `position: fixed` is relative to the
+  // nearest containing block, and a `.cq` card (container-type) is one — a
+  // modal opened from inside a card would be trapped and sized to it.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[10vh] backdrop-blur-sm animate-fade-in">
       {/* Click-to-close only: Escape and the × carry the keyboard path, so the
           backdrop stays out of the tab order. */}
@@ -280,7 +283,8 @@ export function Modal({
         </div>
         <div className="max-h-[62vh] overflow-auto px-5 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -293,7 +297,7 @@ export function Modal({
  * It closes on scroll rather than tracking it — a popup that follows the page
  * while the anchor slides away costs more than it gives.
  */
-function AnchoredPanel({
+export function AnchoredPanel({
   anchor,
   onClose,
   children,
@@ -461,7 +465,7 @@ export function Select<T extends string>({
           className,
         )}
       >
-        <span className={clsx("truncate", !selected && "text-ink-muted")}>{selected?.label ?? "—"}</span>
+        <span className={clsx("truncate", !selected && "text-ink-muted")}>{selected?.label ?? "-"}</span>
         <ChevronDown
           size={15}
           className={clsx("shrink-0 text-ink-muted transition-transform duration-200", open && "rotate-180")}
@@ -1254,8 +1258,48 @@ export function Tabs<T extends string>({
     if (next) onChange(next.value);
   };
 
+  // Keep the selected tab on screen. The strip scrolls sideways once there are
+  // more tabs than fit, so on a phone you could otherwise land on a tab that is
+  // off to the right — selected, underlined and invisible. Written as scrollLeft
+  // rather than scrollIntoView because the latter also scrolls the page
+  // vertically to reach the strip.
+  const stripRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+
+    const align = () => {
+      const active = strip.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!active) return;
+      // Measured with rects rather than offsetLeft: the strip is not a
+      // positioned ancestor, so offsetLeft is relative to something further up
+      // the tree and would compare against scrollLeft in the wrong space.
+      const box = strip.getBoundingClientRect();
+      const tab = active.getBoundingClientRect();
+      if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 8;
+      else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 8;
+    };
+
+    align();
+    // Aligning once is not enough: the first measurement happens with fallback
+    // font metrics, and when the real face swaps in every tab gets wider and
+    // the selected one drifts back off screen. Every tab is observed, not just
+    // the strip — the strip's own box never changes, and what moves the
+    // selected tab is the tabs *before* it growing. The callback runs after
+    // layout, so it sees final geometry, and writing scrollLeft resizes
+    // nothing, so it cannot loop.
+    const observer = new ResizeObserver(align);
+    observer.observe(strip);
+    strip.querySelectorAll('[role="tab"]').forEach((tab) => observer.observe(tab));
+    return () => observer.disconnect();
+  }, [value]);
+
   return (
-    <div className={clsx("no-scrollbar flex gap-1 overflow-x-auto border-b border-line", className)} role="tablist">
+    <div
+      ref={stripRef}
+      className={clsx("no-scrollbar flex gap-1 overflow-x-auto border-b border-line", className)}
+      role="tablist"
+    >
       {options.map((option) => {
         const active = option.value === value;
         const Icon = option.icon;

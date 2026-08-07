@@ -200,7 +200,7 @@ export default function Calculadora() {
         </div>
         <p className="mt-3 text-xs text-ink-muted">
           Valor inicial e aporte começam com os números da sua carteira (patrimônio atual e média de aportes dos
-          últimos 12 meses) — edite à vontade. Taxa anual convertida por equivalência: {percent(monthlyRate * 100, 3)}{" "}
+          últimos 12 meses). Edite à vontade. Taxa anual convertida por equivalência: {percent(monthlyRate * 100, 3)}{" "}
           ao mês.
         </p>
       </Card>
@@ -256,13 +256,13 @@ export default function Calculadora() {
 
       <ChartFrame
         title="Composição ano a ano"
-        subtitle="Quanto do patrimônio é aporte e quanto são juros — o efeito bola de neve"
+        subtitle="Quanto do patrimônio é aporte e quanto são juros: o efeito bola de neve"
         height={300}
         footer={
           <span>
             <PiggyBank size={13} className="mr-1 inline-block" aria-hidden />
             Juros compostos sobre {money(parseNumber(initial ?? ""))} iniciais e aportes de {money(parseNumber(monthly ?? ""))}
-            /mês — sem considerar inflação nem imposto de renda.
+            /mês, sem considerar inflação nem imposto de renda.
           </span>
         }
       >

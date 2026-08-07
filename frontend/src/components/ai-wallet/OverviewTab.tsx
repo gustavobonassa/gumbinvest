@@ -60,7 +60,7 @@ export default function OverviewTab({ wallet }: { wallet: AiWalletDetail }) {
         />
         <StatTile
           label="Retorno"
-          value={<span className="tnum">{totals.return_pct === null ? "—" : percent(totals.return_pct, 2, true)}</span>}
+          value={<span className="tnum">{totals.return_pct === null ? "-" : percent(totals.return_pct, 2, true)}</span>}
           tone={(totals.return_pct ?? 0) > 0 ? "positive" : (totals.return_pct ?? 0) < 0 ? "negative" : "neutral"}
           hint={totals.unpriced.length ? `${totals.unpriced.length} sem cotação (ao custo)` : undefined}
         />

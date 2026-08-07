@@ -9,13 +9,10 @@ session — every DB access opens its own ``session_scope``.
 """
 from __future__ import annotations
 
-import concurrent.futures
 import json
-import threading
 import time
 import uuid
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -35,12 +32,10 @@ from app.services import ai_research as research
 from app.services import ai_wallet as wallets
 from app.services import universe as screener
 from app.services.ai_providers import AI_PROVIDERS, active_ai
+from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
 
 router = APIRouter(prefix="/ai-wallets", tags=["ai-wallets"])
 logger = get_logger(__name__)
-
-#: Threads that hold provider calls while the SSE generator emits heartbeats.
-_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="ai-wallet")
 
 ZERO = Decimal(0)
 
@@ -74,11 +69,6 @@ código, sem nenhum texto antes ou depois do JSON."""
 SEARCH_CLAUSE = (
     "Pesquise na web antes de escolher: resultados recentes, notícias, recomendações de "
     "casas de análise e movimentos de grandes investidores."
-)
-
-RETRY_JSON = (
-    "Sua resposta anterior não era JSON válido. Responda novamente SOMENTE com o JSON no "
-    "formato especificado, sem nenhum texto adicional."
 )
 
 #: What each category may hold, in the model's language.
@@ -434,96 +424,26 @@ def decline_suggestion(wallet_id: int, suggestion_id: int, db: DbSession) -> dic
 
 
 # ---------------------------------------------------------------------------
-# Background jobs: generation and suggestions
-#
-# The model call takes minutes; tying it to an open HTTP response meant a tab
-# switch aborted the whole run. Instead POST starts a job on the executor and
-# returns immediately; the UI polls GET .../job for status and the run applies
-# its result whether or not anyone is watching. One job per (wallet, category)
-# at a time — the registry doubles as the lock.
+# Background jobs: generation and suggestions (registry in app/services/jobs)
+
+#: One live job per (wallet, category) — the registry doubles as the lock.
+_REGISTRY = JobRegistry()
 
 
-@dataclass
-class WalletJob:
-    id: str
-    kind: str  # generate | suggest
-    wallet_id: int
-    category: str
-    status: str | None = None
-    error: str | None = None
-    result: dict | None = None
-    done: bool = False
-    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    finished_at: datetime | None = None
-
-
-_JOBS: dict[tuple[int, str], WalletJob] = {}
-_JOBS_LOCK = threading.Lock()
-
-#: A finished job stays readable (its error/skips are the user's feedback),
-#: but not forever — an hour-old result reappearing would only confuse.
-_JOB_RETENTION = timedelta(hours=1)
-
-
-def _job_payload(job: WalletJob | None) -> dict:
-    if job is None:
-        return {
-            "active": False,
-            "id": None,
-            "kind": None,
-            "status": None,
-            "error": None,
-            "result": None,
-            "finished_at": None,
-        }
-    return {
-        "active": not job.done,
-        "id": job.id,
-        "kind": job.kind,
-        "status": job.status,
-        "error": job.error,
-        "result": wallets._jsonable(job.result) if job.result is not None else None,
-        "finished_at": job.finished_at,
-    }
-
-
-def _current_job(wallet_id: int, category: str) -> WalletJob | None:
-    with _JOBS_LOCK:
-        job = _JOBS.get((wallet_id, category))
-        if job and job.done and job.finished_at and datetime.now(UTC) - job.finished_at > _JOB_RETENTION:
-            _JOBS.pop((wallet_id, category), None)
-            return None
-        return job
-
-
-def _start_job(kind: str, wallet_id: int, category: str, runner) -> WalletJob:
-    with _JOBS_LOCK:
-        current = _JOBS.get((wallet_id, category))
-        if current and not current.done:
-            raise HTTPException(
-                status_code=409, detail="Já existe uma operação da IA em andamento nesta categoria."
-            )
-        job = WalletJob(id=str(uuid.uuid4()), kind=kind, wallet_id=wallet_id, category=category, status="Iniciando…")
-        _JOBS[(wallet_id, category)] = job
-
-    def guarded():
-        try:
-            runner(job)
-        except research.AiResearchError as exc:
-            job.error = str(exc)
-        except Exception:  # noqa: BLE001 — a job must end with a readable error
-            logger.exception("ai wallet: %s job failed (%s)", kind, category)
-            job.error = (
-                "Erro inesperado na geração. Veja os logs do backend."
-                if kind == "generate"
-                else "Erro inesperado ao gerar sugestões. Veja os logs do backend."
-            )
-        finally:
-            job.done = True
-            job.finished_at = datetime.now(UTC)
-
-    _EXECUTOR.submit(guarded)
-    return job
+def _start_job(kind: str, wallet_id: int, category: str, runner) -> BackgroundJob:
+    error_message = (
+        "Erro inesperado na geração. Veja os logs do backend."
+        if kind == "generate"
+        else "Erro inesperado ao gerar sugestões. Veja os logs do backend."
+    )
+    try:
+        return _REGISTRY.start(
+            (wallet_id, category), kind, runner, error_message=error_message, logger=logger
+        )
+    except JobConflict:
+        raise HTTPException(
+            status_code=409, detail="Já existe uma operação da IA em andamento nesta categoria."
+        )
 
 
 def _cleanup_created_assets(created_ids: list[int]) -> None:
@@ -546,32 +466,16 @@ def _cleanup_created_assets(created_ids: list[int]) -> None:
 
 
 def _model_call_json(call_args: dict, convo: list[dict], want_search: bool) -> tuple[dict | None, bool]:
-    """One model turn with a single corrective JSON retry.
-
-    Returns ``(data, used_search)``; ``data`` is None when even the retry did
-    not produce parseable JSON.
-    """
-    used_search = False
-    for _attempt in range(2):
-        reply = research.call_model(
-            call_args["provider_id"],
-            call_args["entry"],
-            call_args["model"],
-            call_args["api_key"],
-            call_args["system"],
-            convo,
-            want_search,
-        )
-        used_search = used_search or reply.used_search
-        data = research.extract_json(reply.text)
-        if data is not None:
-            return data, used_search
-        convo = convo + [
-            {"role": "assistant", "content": reply.text or "(vazio)"},
-            {"role": "user", "content": RETRY_JSON},
-        ]
-        want_search = False  # the correction turn only reformats
-    return None, used_search
+    """The shared JSON turn (ai_research), fed from this route's call_args."""
+    return research.call_model_json(
+        call_args["provider_id"],
+        call_args["entry"],
+        call_args["model"],
+        call_args["api_key"],
+        call_args["system"],
+        convo,
+        want_search,
+    )
 
 
 def _phase_a_prompt(category: str, search: bool, prescreened: list[dict] | None = None) -> str:
@@ -708,7 +612,7 @@ def category_job(wallet_id: int, category: str, db: DbSession) -> dict:
     if category not in wallets.CATEGORIES:
         raise HTTPException(status_code=404, detail="categoria desconhecida")
     _get_wallet(db, wallet_id)
-    return _job_payload(_current_job(wallet_id, category))
+    return job_payload(_REGISTRY.current((wallet_id, category)))
 
 
 @router.post(
@@ -729,7 +633,7 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
     )
     if existing is not None:
         raise HTTPException(
-            status_code=409, detail="Categoria já gerada — use as sugestões para mudá-la."
+            status_code=409, detail="Categoria já gerada, use as sugestões para mudá-la."
         )
 
     # Everything the job needs, captured as plain values while the request
@@ -750,14 +654,14 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
     # [] when the universe is off, empty or too thin, and never raises.
     prescreened = screener.category_screen(db, category) if category != "RENDA_FIXA" else []
 
-    def run(job: WalletJob) -> None:
+    def run(job: BackgroundJob) -> None:
         created_ids: list[int] = []
         try:
             execute(job, created_ids)
         finally:
             _cleanup_created_assets(created_ids)
 
-    def execute(job: WalletJob, created_ids: list[int]) -> None:
+    def execute(job: BackgroundJob, created_ids: list[int]) -> None:
         job.status = status_label
         skipped: list[dict] = []
 
@@ -770,7 +674,7 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
             data, used_search = _model_call_json(call_args, convo, search_capable)
             candidates = wallets.normalize_candidates(data)
             if not candidates:
-                job.error = "O modelo não retornou candidatos válidos — tente novamente ou troque o modelo em Configurações."
+                job.error = "O modelo não retornou candidatos válidos, tente novamente ou troque o modelo em Configurações."
                 return
 
             verified: list[dict] = []
@@ -791,7 +695,7 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
                 else:
                     skipped.append({"ticker": ticker, "reason": context.get("erro", "rejeitado")})
             if not verified:
-                job.error = "Nenhum candidato passou na verificação de mercado — tente novamente."
+                job.error = "Nenhum candidato passou na verificação de mercado, tente novamente."
                 return
 
             job.status = "Montando a alocação final…"
@@ -808,7 +712,7 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
             ]
 
         if not items:
-            job.error = "O modelo não retornou uma alocação válida — tente novamente ou troque o modelo em Configurações."
+            job.error = "O modelo não retornou uma alocação válida, tente novamente ou troque o modelo em Configurações."
             return
         strategy = research.decode_escapes(str((data or {}).get("strategy") or "").strip()) or None
 
@@ -832,7 +736,7 @@ def generate_category(wallet_id: int, category: str, db: DbSession) -> dict:
                 job_db.rollback()
                 job.error = "Esta categoria já foi gerada em outra aba."
 
-    return _job_payload(_start_job("generate", wallet.id, category, run))
+    return job_payload(_start_job("generate", wallet.id, category, run))
 
 
 @router.post(
@@ -897,19 +801,19 @@ def suggest_changes(wallet_id: int, category: str, db: DbSession) -> dict:
     # universe is off or too thin, and never raising.
     prescreened = screener.category_screen(db, category)
 
-    def run(job: WalletJob) -> None:
+    def run(job: BackgroundJob) -> None:
         created_ids: list[int] = []
         try:
             execute(job, created_ids)
         finally:
             _cleanup_created_assets(created_ids)
 
-    def execute(job: WalletJob, created_ids: list[int]) -> None:
+    def execute(job: BackgroundJob, created_ids: list[int]) -> None:
         job.status = status_label
         convo = [{"role": "user", "content": _suggest_prompt(category, search_capable, prescreened)}]
         data, used_search = _model_call_json(call_args, convo, search_capable)
         if data is None:
-            job.error = "O modelo não retornou sugestões válidas — tente novamente."
+            job.error = "O modelo não retornou sugestões válidas, tente novamente."
             return
         items = wallets.normalize_suggestions(data, category)
 
@@ -1046,4 +950,4 @@ def suggest_changes(wallet_id: int, category: str, db: DbSession) -> dict:
             "batch_id": batch_id,
         }
 
-    return _job_payload(_start_job("suggest", wallet.id, category, run))
+    return job_payload(_start_job("suggest", wallet.id, category, run))

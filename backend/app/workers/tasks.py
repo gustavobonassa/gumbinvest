@@ -133,8 +133,18 @@ def snapshot_ai_wallets_task() -> dict:
 
 @celery_app.task(name="app.workers.tasks.backup_database_task")
 def backup_database_task() -> dict:
-    """Dump the database into ``BACKUP_DIR`` and rotate old files."""
-    return backup_database()
+    """Dump the database into ``BACKUP_DIR``, then mirror it to the cloud."""
+    from app.services.cloud_backup import sync_to_cloud
+
+    result = {"local": backup_database()}
+    # Cloud problems must never mask the local dump; sync_to_cloud records
+    # its own per-provider outcome in the durable status row either way.
+    try:
+        result["cloud"] = sync_to_cloud()
+    except Exception:  # noqa: BLE001
+        logger.exception("cloud backup sync failed")
+        result["cloud"] = {"status": "failed"}
+    return result
 
 
 @celery_app.task(name="app.workers.tasks.refresh_fundamentals_task")

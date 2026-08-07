@@ -10,9 +10,7 @@ through a dark, modern dashboard. With an optional AI analyst on top.
 Your data never leaves your machine: it runs entirely on your own computer with
 Docker, or as a plain Windows desktop app with no infrastructure at all.
 
-⬇️ [**Download for Windows or macOS**](https://github.com/gustavobonassa/gumbinvest/releases/latest)
-— one installer, no Docker, no terminal. Prefer running from source? See the
-[Quick start](#quick-start).
+⬇️⬇️ [**Download for Windows or macOS**](https://github.com/gustavobonassa/gumbinvest/releases/latest) ⬇️⬇️
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
@@ -164,6 +162,9 @@ And the whole interface is responsive — usable from the phone on your couch
 - Historical daily closes so the value chart is real market value, not cost.
 - Nightly snapshots and automatic backups with rotation, plus a one-file
   `.gumbinvest` export that moves a whole history between installs.
+- Cloud backup to your own Google Drive or Dropbox — nightly and on demand,
+  optionally encrypted with a passphrase — with restore from the cloud on a
+  fresh install (Configurações → Backup).
 - Watchlist, asset notes, manual prices, audit log.
 
 ---

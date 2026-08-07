@@ -43,6 +43,10 @@ DEFAULT_SETTINGS: dict[str, object] = {
     #: Identification sent to the SEC. Not a secret — a contact, which may be a
     #: project URL rather than an e-mail. Empty until the user chooses one.
     "sec_user_agent": "",
+    #: Cloud backup app identifiers. An OAuth client id / app key is public by
+    #: design; the matching secrets live in SECRET_KEYS and never come back.
+    "gdrive_client_id": settings.gdrive_client_id,
+    "dropbox_app_key": settings.dropbox_app_key,
 }
 
 
@@ -147,6 +151,12 @@ def get_settings_endpoint(db: DbSession) -> dict:
     # its value.
     for key in SECRET_KEYS:
         merged.pop(key, None)
+    # Cloud-backup machinery rows (device flow, folder cache, run status) are
+    # state, not preferences — the device flow row even carries a device_code.
+    from app.services.cloud_backup import INTERNAL_KEYS
+
+    for key in INTERNAL_KEYS:
+        merged.pop(key, None)
     return {
         "values": merged,
         "secrets": secret_status(),
@@ -182,6 +192,15 @@ def update_settings(payload: SettingsPayload, db: DbSession) -> dict:
 # --------------------------------------------------------------------------
 # Market data control
 # --------------------------------------------------------------------------
+@router.get("/notifications", response_model=None, summary="Active notifications for the header bell")
+def notifications(db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    """Everything worth telling the user right now, from every source."""
+    from app.services.notifications import feed
+
+    items = feed(db, portfolio.id)
+    return {"items": items, "count": len(items)}
+
+
 @router.get("/market/status", response_model=None, summary="Quote freshness overview")
 def market_status(db: DbSession) -> dict:
     rows = db.execute(

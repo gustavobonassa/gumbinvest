@@ -65,7 +65,7 @@ AI_PROVIDERS: dict[str, dict] = {
         "base_url": "https://api.x.ai/v1",
         "key_setting": "grok_api_key",
         "models": ["grok-4", "grok-3", "grok-3-mini"],
-        "key_hint": "console.x.ai — exige créditos pagos na conta",
+        "key_hint": "console.x.ai: exige créditos pagos na conta",
     },
     "groq": {
         "label": "Groq (modelos abertos)",

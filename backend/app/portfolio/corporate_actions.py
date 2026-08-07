@@ -11,15 +11,14 @@ is no row anywhere linking the two. Replayed literally, that leaves:
   redeemed for cash days later) whose zero-cost redemption books an invented
   realised gain.
 
-Two real B3 events that shaped this module:
+Two real B3 event shapes that shaped this module:
 
-* ``WIZS3`` was renamed ``WIZC3``. On 10/02/2023 B3 credited a ``WIZC3``
-  position exactly matching the ``WIZS3`` one as an ``Atualização`` — and left
-  ``WIZS3`` open.
-* ``AESB3`` was absorbed by Auren. On 04/11/2024 B3 credited ``A7RN11`` (the
-  holding vehicle, exactly the ``AESB3`` position), ``A7RN3`` and ``AURE3`` as
-  ``Incorporação``; four days later the ``A7RN11`` units were redeemed for
-  cash. ``AESB3`` stayed open throughout.
+* A **ticker rename**: B3 credits the new code with a position exactly
+  matching the old one as an ``Atualização`` — and leaves the old code open.
+* An **incorporation**: B3 credits the successor as ``Incorporação``, often
+  alongside an intermediate holding vehicle (units credited with exactly the
+  absorbed position and redeemed for cash days later). The absorbed ticker
+  stays open throughout.
 
 This module *proposes* the links from that evidence; it never applies them on
 its own. The export cannot distinguish "the successor" from "an intermediate
@@ -42,9 +41,9 @@ from app.portfolio.engine import Succession
 ZERO = Decimal(0)
 
 #: A merged company simply stops trading, and the event can land months after
-#: the last purchase — ``AESB3`` was bought in July and absorbed in November. So
-#: the search runs long, and precision comes from the movement types below
-#: rather than from a narrow window.
+#: the last purchase — a paper bought mid-year may only be absorbed near its
+#: end. So the search runs long, and precision comes from the movement types
+#: below rather than from a narrow window.
 WINDOW_DAYS = 400
 
 #: Beyond this many days, only an unambiguous restructuring row still counts —

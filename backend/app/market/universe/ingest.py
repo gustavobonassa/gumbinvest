@@ -760,7 +760,7 @@ def run_ingest(markets: list[str] | None = None, *, budget_seconds: float = 900.
                 total = db.scalar(select(func.count()).select_from(AssetUniverse)) or 0
                 state.finish(db, block, "done", f"{total} ativos no universo.")
             else:
-                state.finish(db, block, "paused", "Pausada — retome para continuar.")
+                state.finish(db, block, "paused", "Pausada. Retome para continuar.")
             return state.read(db)
     except Exception as exc:  # noqa: BLE001 — the run block must always close
         logger.exception("universe ingest failed")
@@ -793,7 +793,7 @@ def _run_claimed(block: dict, markets: list[str]) -> None:
                 total = db.scalar(select(func.count()).select_from(AssetUniverse)) or 0
                 state.finish(db, block, "done", f"{total} ativos no universo.")
             else:
-                state.finish(db, block, "paused", "Pausada — retome para continuar.")
+                state.finish(db, block, "paused", "Pausada. Retome para continuar.")
     except Exception as exc:  # noqa: BLE001 — never leave the block "running"
         logger.exception("universe ingest failed")
         with session_scope() as db:

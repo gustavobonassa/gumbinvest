@@ -103,7 +103,7 @@ function AccountCard({ account }: { account: CoverageAccount }) {
               <Scale size={15} className="mt-0.5 shrink-0" aria-hidden />
               <span>
                 {periodLabel(issue.previous_month)} fechou em {issue.previous_closing} e{" "}
-                {periodLabel(issue.month)} abriu em {issue.opening} — diferença de {issue.difference}.
+                {periodLabel(issue.month)} abriu em {issue.opening}, diferença de {issue.difference}.
                 Provavelmente há um extrato faltando entre os dois.
               </span>
             </p>
@@ -116,7 +116,7 @@ function AccountCard({ account }: { account: CoverageAccount }) {
           <p className="flex items-start gap-2">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden />
             <span>
-              Posições calculadas não batem com as informadas no último extrato — indício de
+              Posições calculadas não batem com as informadas no último extrato, indício de
               movimentação não importada:
             </span>
           </p>

@@ -239,6 +239,37 @@ class Quote(Base):
     asset: Mapped[Asset] = relationship(back_populates="quote")
 
 
+class QuoteAttempt(Base):
+    """A quote fetch that failed transiently and is owed another try.
+
+    Exists so a timeout is never presented to the user as "this asset has no
+    price". A row appears when the provider reports a transient failure and is
+    deleted the moment a price arrives, so the table is empty in the normal
+    case and its contents are exactly the retry queue.
+
+    Persisted rather than kept in memory because the queue has to be visible to
+    whichever runtime happens to be draining it — Celery beat under Docker, the
+    APScheduler inside the desktop server — and to the API that shows the user
+    what is still pending.
+    """
+
+    __tablename__ = "quote_attempts"
+
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32))
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_failed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    #: When the queue may pick this row up again. Compared in Python rather
+    #: than in SQL — SQLite drops the offset of an aware datetime on the way in
+    #: — which the rest of this codebase does for ``fetched_at`` too, and which
+    #: costs nothing on a table that is empty whenever nothing is wrong.
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    asset: Mapped[Asset] = relationship()
+
+
 class AssetFundamentals(Base):
     """Cached company data for an asset (one row per asset).
 
@@ -421,6 +452,38 @@ class AssetSuccession(Base, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: "manual" when the user created it, "detected" when accepted from a suggestion.
     source: Mapped[str] = mapped_column(String(16), default="manual")
+
+
+class SuccessionAiSuggestion(Base):
+    """A corporate event the AI scan found, awaiting the user's decision.
+
+    Stored — not applied: the user accepts or declines each one, now or later.
+    Accepting writes the real :class:`AssetSuccession`; declined rows stay so
+    a re-scan does not resurface the same proposal.
+    """
+
+    __tablename__ = "succession_ai_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
+    from_ticker: Mapped[str] = mapped_column(String(40))
+    #: Null successor: the asset was delisted/bought out — position written off.
+    to_ticker: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    effective_date: Mapped[date] = mapped_column(Date)
+    cash_amount: Mapped[Decimal] = mapped_column(MONEY, default=Decimal(0))
+    #: rename | merger | delisting | spinoff | other
+    event_type: Mapped[str] = mapped_column(String(24), default="other")
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Where the model says it saw the event (site/publication).
+    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: pending | accepted | declined
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    provider: Mapped[str] = mapped_column(String(24))
+    model: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TreasuryPrice(Base):

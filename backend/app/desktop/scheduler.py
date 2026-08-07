@@ -223,7 +223,21 @@ def build_scheduler() -> BackgroundScheduler:
 
     if settings.backup_time:
         backup_hour, backup_minute = _hhmm(settings.backup_time, (3, 30))
-        # backup_database manages its own sessions and audit row.
-        scheduler.add_job(backup_database, cron(backup_hour, backup_minute), id="daily-backup")
+
+        def _daily_backup() -> None:
+            """Local dump, then the cloud mirror — same order as the Celery task.
+
+            Both manage their own sessions and audit rows; a cloud problem
+            must never mask the local dump.
+            """
+            from app.services.cloud_backup import sync_to_cloud
+
+            backup_database()
+            try:
+                sync_to_cloud()
+            except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+                logger.exception("cloud backup sync failed")
+
+        scheduler.add_job(_daily_backup, cron(backup_hour, backup_minute), id="daily-backup")
 
     return scheduler

@@ -214,6 +214,9 @@ def test_dropbox_pkce_flow(db: Session, monkeypatch):
 
     url = provider.build_authorize_url(db)
     assert "code_challenge=" in url and "token_access_type=offline" in url
+    # Scopes requested upfront: an app without file permissions must fail at
+    # the authorize page, not at the nightly upload.
+    assert "files.content.write" in url
     assert "code_verifier" not in url  # only the challenge travels
     verifier = read_row(db, dropbox_mod.PKCE_KEY)["verifier"]
 
@@ -229,6 +232,29 @@ def test_dropbox_pkce_flow(db: Session, monkeypatch):
     assert exchanged[0]["code_verifier"] == verifier
     assert read_value(db, "dropbox_refresh_token") == "drt"
     assert read_row(db, dropbox_mod.PKCE_KEY) is None
+
+
+def test_dropbox_missing_scope_names_the_fix(db: Session, monkeypatch):
+    """The Permissions-tab omission is common enough to deserve its own hint."""
+    monkeypatch.setattr(settings, "dropbox_app_key", "appkey")
+    monkeypatch.setattr(settings, "dropbox_refresh_token", "rt")
+    provider = dropbox_mod.DropboxProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url == dropbox_mod.TOKEN_URL:
+            return httpx.Response(200, json={"access_token": "at"})
+        return httpx.Response(
+            400,
+            text=(
+                'Error in call to API function "files/upload": Your app (ID: 123) is not '
+                "permitted to access this endpoint because it does not have the required "
+                "scope 'files.content.write'."
+            ),
+        )
+
+    _mock_transport(monkeypatch, handler)
+    with pytest.raises(CloudBackupError, match="Permissions"):
+        provider.upload(db, "gumbinvest-x.gumbinvest", b"data")
 
 
 # --------------------------------------------------------------------------
@@ -356,15 +382,85 @@ def test_one_provider_failing_does_not_stop_the_other(db: Session, portfolio: Po
 
 
 def test_failed_upload_reaches_the_notification_bell(db: Session, portfolio: Portfolio, fake_provider):
+    """A failure lands twice, and both are wanted.
+
+    The run itself is history — one stored row per attempt, which is what the
+    panel scrolls back through. The *unresolved* failure is also live, so a
+    provider that has been broken for a week stays at the top without the user
+    having to page down to notice.
+    """
     from app.services.notifications import feed
 
     fake_provider.fail_upload = True
     cloud_service.sync_to_cloud()
     db.expire_all()
-    items = [item for item in feed(db, portfolio.id) if item["kind"] == "cloud_backup"]
-    assert len(items) == 1
-    assert items[0]["level"] == "warning"
-    assert "Fake Cloud: provedor indisponível" in items[0]["body"]
+    page = feed(db, portfolio.id)
+
+    live = [item for item in page["live"] if item["kind"] == "cloud_backup"]
+    assert len(live) == 1
+    assert live[0]["level"] == "warning"
+    assert "Fake Cloud: provedor indisponível" in live[0]["body"]
+
+    stored = [item for item in page["items"] if item["kind"] == "cloud_backup"]
+    assert len(stored) == 1
+    assert stored[0]["source"] == "stored"
+    assert stored[0]["level"] == "warning"
+
+
+def test_successful_upload_is_history_not_a_live_entry(
+    db: Session, portfolio: Portfolio, fake_provider
+):
+    """A success is a moment, so it goes to the history and stays there.
+
+    It used to be derived from the last-run row and retire after 24h, because
+    nothing persisted it and a permanent derived banner would have been a lie.
+    Now that runs are recorded, "did last night's backup happen?" is answered by
+    scrolling — and last week's is still answerable.
+    """
+    from app.services.notifications import feed
+
+    cloud_service.sync_to_cloud()
+    db.expire_all()
+    page = feed(db, portfolio.id)
+
+    assert [item for item in page["live"] if item["kind"] == "cloud_backup"] == []
+    stored = [item for item in page["items"] if item["kind"] == "cloud_backup"]
+    assert len(stored) == 1
+    assert stored[0]["level"] == "success"
+    assert stored[0]["title"] == "Backup na nuvem enviado"
+    assert "Fake Cloud: gumbinvest-" in stored[0]["body"]
+
+
+def test_repeated_runs_accumulate_and_paginate(db: Session, portfolio: Portfolio, fake_provider):
+    """Every run is its own row — that is what there is to scroll through."""
+    from app.services.notifications import feed
+
+    for _ in range(7):
+        cloud_service.sync_to_cloud()
+    db.expire_all()
+
+    first = feed(db, portfolio.id, limit=5)
+    assert len(first["items"]) == 5
+    assert first["next_cursor"] is not None
+
+    second = feed(db, portfolio.id, cursor=first["next_cursor"], limit=5)
+    # Live entries ride with the first page only; a later page is history alone.
+    assert second["live"] == []
+    ids = [item["id"] for item in first["items"] + second["items"]]
+    assert len(ids) == len(set(ids)) == 7
+    assert second["next_cursor"] is None
+
+
+def test_a_rerun_of_the_same_upload_does_not_duplicate_the_entry(
+    db: Session, portfolio: Portfolio, fake_provider
+):
+    """The dedup_key contract, same as the importer's: replaying is a no-op."""
+    from app.services.notifications import record
+
+    record(db, kind="cloud_backup", level="success", title="x", dedup_key="cloud_backup:fake:t0")
+    assert record(
+        db, kind="cloud_backup", level="success", title="x", dedup_key="cloud_backup:fake:t0"
+    ) is None
 
 
 def test_restore_roundtrip_including_encryption(db: Session, portfolio: Portfolio, fake_provider):
@@ -380,14 +476,13 @@ def test_restore_roundtrip_including_encryption(db: Session, portfolio: Portfoli
     assert result["filename"] == "gumbinvest-x.gumbinvest"
 
 
-def test_restore_still_refuses_a_non_empty_installation(db: Session, portfolio: Portfolio, fake_provider):
+def _seed_history(db: Session, portfolio: Portfolio) -> None:
+    """One transaction — enough to make this a non-empty installation."""
     from datetime import date
     from decimal import Decimal
 
     from app.db.models import Asset, Transaction
 
-    payload = export_snapshot(db)
-    fake_provider.files["gumbinvest-x.gumbinvest"] = payload
     asset = Asset(ticker="PETR4", name="Petrobras", kind="stock")
     db.add(asset)
     db.flush()
@@ -408,8 +503,54 @@ def test_restore_still_refuses_a_non_empty_installation(db: Session, portfolio: 
         )
     )
     db.commit()
+
+
+def test_restore_still_refuses_a_non_empty_installation(db: Session, portfolio: Portfolio, fake_provider):
+    payload = export_snapshot(db)
+    fake_provider.files["gumbinvest-x.gumbinvest"] = payload
+    _seed_history(db, portfolio)
     with pytest.raises(FullBackupError, match="instalação vazia"):
         cloud_service.restore_from_cloud(db, "fake", "gumbinvest-x.gumbinvest")
+
+
+def test_confirmed_replace_dumps_locally_then_wipes(
+    db: Session, portfolio: Portfolio, fake_provider, monkeypatch
+):
+    """The typed-confirmation reset: safety dump first, then wipe-and-clone."""
+    from app.db.models import AuditLog, Transaction
+
+    payload = export_snapshot(db)  # snapshot of the empty portfolio
+    fake_provider.files["gumbinvest-x.gumbinvest"] = payload
+    _seed_history(db, portfolio)
+
+    dumps: list[bool] = []
+    monkeypatch.setattr(
+        cloud_service, "backup_database", lambda: dumps.append(True) or {"status": "ok", "file": "/backups/x.gz"}
+    )
+    result = cloud_service.restore_from_cloud(
+        db, "fake", "gumbinvest-x.gumbinvest", confirm_replace=True
+    )
+    assert result["status"] == "COMPLETED"
+    assert dumps == [True]
+    db.expire_all()
+    assert db.query(Transaction).count() == 0  # the seeded history is gone
+    trail = db.query(AuditLog).filter_by(action="backup.cloud_restore_replace").one()
+    assert trail.detail["safety_dump"] == "/backups/x.gz"
+
+
+def test_replace_aborts_if_the_safety_dump_fails(
+    db: Session, portfolio: Portfolio, fake_provider, monkeypatch
+):
+    from app.db.models import Transaction
+
+    payload = export_snapshot(db)
+    fake_provider.files["gumbinvest-x.gumbinvest"] = payload
+    _seed_history(db, portfolio)
+
+    monkeypatch.setattr(cloud_service, "backup_database", lambda: {"status": "failed", "error": "boom"})
+    with pytest.raises(CloudBackupError, match="nada foi apagado"):
+        cloud_service.restore_from_cloud(db, "fake", "gumbinvest-x.gumbinvest", confirm_replace=True)
+    assert db.query(Transaction).count() == 1  # nothing was touched
 
 
 def test_disconnect_forgets_tokens_and_status(db: Session, portfolio: Portfolio, fake_provider):

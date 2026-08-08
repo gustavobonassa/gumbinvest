@@ -135,7 +135,14 @@ class ImportBatch(Base, TimestampMixin):
     rows_imported: Mapped[int] = mapped_column(Integer, default=0)
     rows_duplicate: Mapped[int] = mapped_column(Integer, default=0)
     rows_failed: Mapped[int] = mapped_column(Integer, default=0)
-    #: Structured per-row issues: [{"line": 12, "error": "...", "raw": {...}}]
+    #: Rows that imported, with something the user should know about them. A
+    #: statement note is not a failure: the movement is on file, the importer
+    #: just could not do one part of the job (split a tax it was told about but
+    #: cannot see) and says so rather than guessing.
+    rows_warned: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Structured per-row issues, newest schema first:
+    #: [{"level": "error"|"warning", "line": 12, "error": "...", "raw": {...}}]
+    #: Entries written before the level existed are read as errors.
     issues: Mapped[list] = mapped_column(JSON, default=list)
     #: Counts by operation type, unknown movements, date range, etc.
     summary: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -717,6 +724,51 @@ class AuditLog(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     action: Mapped[str] = mapped_column(String(60), index=True)
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class Notification(Base):
+    """One thing that happened, kept for the header bell's history.
+
+    The counterpart to the *derived* entries in ``app/services/notifications.py``:
+    those describe a condition that holds right now and resolve themselves, so
+    persisting them would only create rows to reap. These describe a moment —
+    last night's backup, this morning's import — which is exactly what does not
+    resolve itself and what a scrollable history is made of.
+
+    Distinct from :class:`AuditLog`, which records the same events for a
+    different reader: the audit trail is written for forensics and keeps every
+    routine refresh, while a row here is a sentence addressed to the user.
+
+    Rows are only ever appended as things happen, so ``id`` descending *is*
+    reverse chronological order — the feed pages on the primary key rather than
+    a (timestamp, id) pair, and the cursor cannot skip or repeat a row when two
+    events land in the same second.
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    #: Groups entries by producer (``cloud_backup``, ``backup``, ``import``).
+    kind: Mapped[str] = mapped_column(String(40), index=True)
+    #: ``info`` | ``success`` | ``warning`` — picks the icon and its colour.
+    level: Mapped[str] = mapped_column(String(12), default="info")
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, default="")
+    #: Subjects the entry is about (tickers, file names) — rendered as chips.
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    #: NULL for events that concern the whole installation (backups); set for
+    #: those that belong to one portfolio (imports).
+    portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    #: Optional idempotency handle. A producer that may run twice for the same
+    #: event (a retried task, a scheduler firing after a restart) passes one and
+    #: gets a single row — the same contract the importer uses for movements.
+    dedup_key: Mapped[str | None] = mapped_column(String(160), unique=True, nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Archived rows stay for the audit trail but leave the panel for good.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AiWallet(Base, TimestampMixin):

@@ -1,7 +1,16 @@
 /** Upload (B3 CSV or broker statement PDF), coverage map and import log. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { CalendarCheck, CheckCircle2, CloudUpload, FileText, History, Loader2, XCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarCheck,
+  CheckCircle2,
+  CloudUpload,
+  FileText,
+  History,
+  Loader2,
+  XCircle,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -12,6 +21,9 @@ import { api, type ImportBatch } from "@/lib/api";
 import { dateTime, opLabel, shortDate } from "@/lib/format";
 
 const PAGE_SIZE = 5;
+//: A malformed CSV can fail thousands of rows, and they are almost always the
+//: same problem repeated; enough to diagnose it, not enough to bury the page.
+const MAX_ISSUES_SHOWN = 50;
 
 const TABS = [
   { value: "enviar", label: "Enviar arquivos", icon: CloudUpload },
@@ -57,6 +69,104 @@ function ImportSummary({ batch }: { batch: Pick<ImportBatch, "summary"> }) {
           {opLabel(type)} · {count}
         </Badge>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The problems one import ran into, on demand.
+ *
+ * The count alone ("1 com erro") tells you something is wrong and nothing
+ * about what, which leaves the file no more trustworthy than before. The log
+ * is already stored per batch; it is fetched only when asked for, because a
+ * bad CSV can carry thousands of entries and the history list shows five
+ * imports at a time.
+ */
+function ImportIssues({ batch }: { batch: Pick<ImportBatch, "id" | "rows_failed" | "rows_warned"> }) {
+  const [open, setOpen] = useState(false);
+  const detail = useQuery({
+    queryKey: ["import-detail", batch.id],
+    queryFn: () => api.importDetail(batch.id),
+    enabled: open,
+  });
+
+  const failed = batch.rows_failed;
+  const warned = batch.rows_warned ?? 0;
+  if (!failed && !warned) return null;
+
+  const issues = detail.data?.issues ?? [];
+  const shown = issues.slice(0, MAX_ISSUES_SHOWN);
+  // An import with a real failure is a red one even if it also has notes.
+  const tone = failed ? "negative" : "warning";
+  const label = failed
+    ? `Ver ${failed} ${failed === 1 ? "erro" : "erros"}`
+    : `Ver ${warned} ${warned === 1 ? "aviso" : "avisos"}`;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className={clsx("btn-ghost px-2 py-1 text-xs", failed ? "text-negative" : "text-warning")}
+      >
+        <AlertTriangle size={14} />
+        {open ? "Ocultar detalhes" : label}
+      </button>
+
+      {open ? (
+        <div
+          className={clsx(
+            "mt-2 rounded-lg border p-3 text-xs",
+            tone === "negative" ? "border-negative/25 bg-negative/5" : "border-warning/25 bg-warning/5",
+          )}
+        >
+          {detail.isLoading ? (
+            <p className="text-ink-muted">Carregando…</p>
+          ) : detail.isError ? (
+            <p className="text-negative">Não foi possível carregar o log desta importação.</p>
+          ) : !issues.length ? (
+            <p className="text-ink-muted">Esta importação não guardou detalhes.</p>
+          ) : (
+            <>
+              <ul className="space-y-1.5">
+                {shown.map((issue, index) => {
+                  const isError = (issue.level ?? "error") === "error";
+                  return (
+                    <li key={index} className="flex gap-2 text-ink-secondary">
+                      <span
+                        className={clsx(
+                          "shrink-0 font-medium",
+                          isError ? "text-negative" : "text-warning",
+                        )}
+                      >
+                        {isError ? "erro" : "aviso"}
+                      </span>
+                      {/* A CSV problem points at a line; a statement's points at
+                          a movement, and has no line to give. */}
+                      {issue.line != null ? (
+                        <span className="tnum shrink-0 text-ink-muted">linha {issue.line}</span>
+                      ) : null}
+                      <span className="min-w-0 break-words">{issue.error}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {issues.length > shown.length ? (
+                <p className="mt-2 text-ink-muted">
+                  e mais {issues.length - shown.length} — o log completo fica em{" "}
+                  <span className="tnum">/api/imports/{batch.id}</span>.
+                </p>
+              ) : null}
+              {!failed ? (
+                <p className="mt-2 text-ink-muted">
+                  Nenhuma linha foi perdida: todas foram importadas, com a ressalva acima.
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -410,6 +520,9 @@ export default function ImportPage() {
                       {batch.rows_failed ? (
                         <span className="tnum text-negative">{batch.rows_failed} com erro</span>
                       ) : null}
+                      {batch.rows_warned ? (
+                        <span className="tnum text-warning">{batch.rows_warned} com aviso</span>
+                      ) : null}
                       {batch.summary?.date_range?.start ? (
                         <span className="text-ink-muted">
                           {shortDate(batch.summary.date_range.start)} →{" "}
@@ -418,6 +531,7 @@ export default function ImportPage() {
                       ) : null}
                     </div>
                     <ImportSummary batch={batch} />
+                    <ImportIssues batch={batch} />
                   </li>
                 ))}
               </ul>

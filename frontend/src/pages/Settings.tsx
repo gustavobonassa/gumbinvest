@@ -57,6 +57,77 @@ const CURRENCIES = ["BRL", "USD", "EUR"];
 const TIMEZONES = ["America/Sao_Paulo", "America/New_York", "Europe/Lisbon", "UTC"];
 const LOCALES = ["pt-BR", "en-US"];
 
+/**
+ * Which producers reach the header bell.
+ *
+ * The list is the backend's, not this file's: `notification_catalog` describes
+ * every kind that exists, so a new producer appears here without a frontend
+ * change.
+ *
+ * Ticks say what you receive; what is *stored* is the complement — the muted
+ * set (`values.notification_muted_kinds`). Saving the enabled set instead would
+ * freeze the catalogue as it stood the day it was saved, and a kind added in a
+ * later release would arrive already switched off for everyone who had ever
+ * opened this screen.
+ *
+ * Unticking mutes, it does not delete — entries keep being recorded and simply
+ * leave the feed, so ticking a kind back on returns its history rather than a
+ * gap. Said on the card, because a switch labelled "receber" reads like it
+ * throws things away.
+ */
+function NotificationSettings({
+  catalog,
+  muted,
+  onChange,
+}: {
+  catalog: { kind: string; label: string; description: string }[];
+  muted: unknown;
+  onChange: (next: string[]) => void;
+}) {
+  // Anything that is not a list means the setting was never written, which is
+  // the same as muting nothing.
+  const silenced = new Set(Array.isArray(muted) ? muted.map(String) : []);
+  const selected = new Set(
+    catalog.map((item) => item.kind).filter((kind) => !silenced.has(kind)),
+  );
+
+  return (
+    <Card className="p-5">
+      <SectionTitle
+        title="Notificações"
+        subtitle="O que aparece no sino, no topo da página"
+      />
+      <div className="space-y-3">
+        {catalog.map((item) => (
+          <label key={item.kind} className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={selected.has(item.kind)}
+              onChange={(event) => {
+                const next = new Set(silenced);
+                if (event.target.checked) next.delete(item.kind);
+                else next.add(item.kind);
+                // Ordered by the catalogue rather than by click order, so two
+                // installations with the same choices store the same value.
+                onChange(catalog.map((k) => k.kind).filter((kind) => next.has(kind)));
+              }}
+            />
+            <span className="text-sm">
+              <span className="font-medium">{item.label}</span>
+              <span className="mt-1 block text-xs text-ink-muted">{item.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-4 text-xs text-ink-muted">
+        Desmarcar apenas esconde: as notificações continuam sendo registradas, então marcar de
+        volta traz também o que aconteceu enquanto estavam desligadas.
+      </p>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -176,6 +247,12 @@ export default function Settings() {
             </div>
           </div>
         </Card>
+
+        <NotificationSettings
+          catalog={settings.data.notification_catalog}
+          muted={values.notification_muted_kinds}
+          onChange={(next) => updatePreference("notification_muted_kinds", next)}
+        />
 
         <Card className="p-5">
           <SectionTitle

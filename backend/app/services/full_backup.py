@@ -154,11 +154,19 @@ def _parse(payload: bytes) -> dict:
     return document
 
 
-def import_snapshot(db: Session, payload: bytes, filename: str) -> dict:
-    """Replace this instance's data with the snapshot. Fresh installs only."""
+def import_snapshot(
+    db: Session, payload: bytes, filename: str, *, replace_existing: bool = False
+) -> dict:
+    """Replace this instance's data with the snapshot.
+
+    Fresh installs only, unless ``replace_existing`` — the escape hatch behind
+    the cloud restore's typed confirmation. Even then this is a wipe-then-clone,
+    never a merge: the caller is expected to have secured a safety dump and an
+    explicit "tenho certeza" from the user first.
+    """
     document = _parse(payload)
 
-    if db.query(Transaction.id).first() is not None:
+    if not replace_existing and db.query(Transaction.id).first() is not None:
         raise FullBackupError(
             "esta instalação já tem movimentações; o import completo só é "
             "permitido numa instalação vazia, para nunca misturar duas histórias"

@@ -63,6 +63,27 @@ def test_reimporting_the_same_file_changes_nothing(db, portfolio):
     assert db.scalar(select(func.count()).select_from(Transaction)) == 2
 
 
+def test_the_bell_hears_a_real_import_once_and_a_replay_never(db, portfolio):
+    """The idempotency invariant reaches the notification, not just the ledger.
+
+    The startup auto-import re-reads the same files on every boot. A run that
+    adds nothing is not news at all, and a run whose parse failures repeat
+    identically is the same news — either way the bell must not grow a row per
+    restart.
+    """
+    from app.services.notifications import feed
+
+    _import(db, portfolio, INITIAL)
+    entries = [item for item in feed(db, portfolio.id)["items"] if item["kind"] == "import"]
+    assert len(entries) == 1
+    assert entries[0]["title"] == "Importação concluída"
+    assert "2 movimento(s) importado(s)" in entries[0]["body"]
+
+    _import(db, portfolio, INITIAL)
+    _import(db, portfolio, INITIAL)
+    assert len([i for i in feed(db, portfolio.id)["items"] if i["kind"] == "import"]) == 1
+
+
 def test_monthly_file_merges_only_new_rows(db, portfolio):
     _import(db, portfolio, INITIAL)
     second = _import(db, portfolio, MONTHLY, "movimentacao-marco.csv")

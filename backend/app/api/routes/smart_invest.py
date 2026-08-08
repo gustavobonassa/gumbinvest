@@ -22,7 +22,7 @@ from app.db.models import SmartInvestRun
 from app.db.session import session_scope
 from app.services import ai_research as research
 from app.services import ai_wallet, smart_invest
-from app.services.ai_providers import active_ai
+from app.services.ai_providers import active_ai, is_configured, unavailable_reason
 from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
 
 router = APIRouter(prefix="/smart-invest", tags=["smart invest"])
@@ -123,13 +123,10 @@ def start_invest(payload: InvestPayload, db: DbSession, portfolio: CurrentPortfo
     # Always the pair chosen in Configurações — this tool deliberately has no
     # picker of its own; one global choice drives every one-shot AI feature.
     provider_id, provider, model, api_key = active_ai(db)
-    if not api_key:
+    if not is_configured(provider):
         raise HTTPException(
             status_code=503,
-            detail=(
-                f"Informe sua chave da {provider['label']} em Configurações → "
-                "Inteligência Artificial para usar o aporte inteligente."
-            ),
+            detail=f"{unavailable_reason(provider)} Necessário para o aporte inteligente.",
         )
 
     kinds = [kind for kind in dict.fromkeys(payload.kinds) if kind in smart_invest.ELIGIBLE_KINDS]

@@ -865,3 +865,56 @@ def test_archive_custody_transfers_cancel_out(archive):
     for position in service.positions().values():
         if position.is_open:
             assert position.cost_basis > 0
+
+
+# -- what the log calls a problem -------------------------------------------
+def test_a_parser_note_is_a_warning_and_not_a_failed_row(db, portfolio):
+    """A statement's own note must not be counted as a row that did not import.
+
+    Nomad prints only the net dividend and describes the withholding in words,
+    so the parser reconstructs the tax and checks it against the printed net.
+    When the two disagree it books the payment at face value and says so — the
+    movement is on file and complete. Reporting that as "1 com erro" told the
+    user a statement that imported perfectly had lost something.
+    """
+    statement = _statement([_dividend(10, "VOOG", "1.45")])
+    statement.warnings.append(
+        "2026-06-26: VOOG — 1.45 bruto menos 0.44 de imposto não reproduz o líquido"
+    )
+
+    result = _import(db, portfolio, statement)
+
+    assert result.rows_imported == 1
+    assert result.rows_failed == 0, "a note is not a failure"
+    assert result.rows_warned == 1
+    # And the movement really is on file.
+    assert db.scalar(select(func.count(Transaction.id))) == 1
+
+    batch = db.get(ImportBatch, result.batch_id)
+    assert batch.rows_failed == 0
+    assert batch.rows_warned == 1
+    assert [i["level"] for i in batch.issues] == ["warning"]
+
+
+def test_a_row_that_could_not_be_imported_is_still_an_error(db, portfolio):
+    """The other side of the split: a real failure keeps counting as one."""
+    bad = _buy(5, "O", "1.5", "83.59")
+    # A row the classifier cannot place at all: no date is not recoverable.
+    bad.trade_date = None
+
+    result = _import(db, portfolio, _statement([bad, _dividend(10, "O", "4.62")]))
+
+    assert result.rows_failed == 1
+    assert result.rows_warned == 0
+    assert result.rows_imported == 1
+    batch = db.get(ImportBatch, result.batch_id)
+    assert [i["level"] for i in batch.issues] == ["error"]
+
+
+def test_an_old_log_entry_without_a_level_reads_as_an_error():
+    """Rows stored before the split must not silently become warnings."""
+    from app.importer.service import _is_error
+
+    assert _is_error({"line": 3, "error": "boom"})
+    assert _is_error({"level": "error", "line": None, "error": "boom"})
+    assert not _is_error({"level": "warning", "line": None, "error": "nota"})

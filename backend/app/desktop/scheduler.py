@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import AuditLog
 from app.db.session import session_scope
-from app.services.backup import backup_database
+from app.services.backup import catch_up_backup, run_daily_backup
 from app.services.portfolio_registry import get_default_portfolio
 
 logger = get_logger(__name__)
@@ -225,19 +225,31 @@ def build_scheduler() -> BackgroundScheduler:
         backup_hour, backup_minute = _hhmm(settings.backup_time, (3, 30))
 
         def _daily_backup() -> None:
-            """Local dump, then the cloud mirror — same order as the Celery task.
-
-            Both manage their own sessions and audit rows; a cloud problem
-            must never mask the local dump.
-            """
-            from app.services.cloud_backup import sync_to_cloud
-
-            backup_database()
+            """Local dump + cloud mirror; both audit themselves (see run_daily_backup)."""
             try:
-                sync_to_cloud()
+                run_daily_backup()
             except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
-                logger.exception("cloud backup sync failed")
+                logger.exception("scheduled job backup.daily failed")
+
+        def _backup_catch_up() -> None:
+            """A laptop that slept through BACKUP_TIME backs up on the next check.
+
+            Runs shortly after boot (the "backup next time the app opens"
+            path) and hourly after that; a no-op while the newest dump is
+            under a day old.
+            """
+            try:
+                catch_up_backup()
+            except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+                logger.exception("scheduled job backup.catch-up failed")
 
         scheduler.add_job(_daily_backup, cron(backup_hour, backup_minute), id="daily-backup")
+        scheduler.add_job(
+            _backup_catch_up,
+            IntervalTrigger(hours=1),
+            # After the startup auto-import, so a fresh import lands in the dump.
+            next_run_time=datetime.now() + timedelta(seconds=150),
+            id="backup-catch-up",
+        )
 
     return scheduler

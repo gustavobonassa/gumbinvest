@@ -26,6 +26,7 @@ from app.services.cloud_backup.base import (
     CloudBackupProvider,
     RemoteBackup,
     _client,
+    error_detail,
     is_backup_name,
     parse_remote_dt,
     read_row,
@@ -41,6 +42,15 @@ TOKEN_URL = "https://api.dropboxapi.com/oauth2/token"
 API_URL = "https://api.dropboxapi.com/2"
 CONTENT_URL = "https://content.dropboxapi.com/2"
 PKCE_KEY = "dropbox_pkce"
+#: Requested explicitly so a Dropbox app whose Permissions tab was never
+#: touched fails at the authorize page — not at 03:30 with an upload error.
+SCOPES = "files.metadata.read files.content.read files.content.write"
+
+_MISSING_SCOPE_HINT = (
+    "o app do Dropbox não tem as permissões de arquivo — marque "
+    "files.metadata.read, files.content.read e files.content.write na aba "
+    "Permissions do App Console e reconecte o Dropbox"
+)
 
 
 def _payload(resp: httpx.Response) -> dict:
@@ -53,7 +63,11 @@ def _payload(resp: httpx.Response) -> dict:
 
 def _check(resp: httpx.Response, action: str) -> dict:
     if resp.status_code // 100 != 2:
-        raise CloudBackupError(f"falha ao {action} (HTTP {resp.status_code})")
+        detail = error_detail(resp)
+        if "scope" in detail:
+            raise CloudBackupError(_MISSING_SCOPE_HINT)
+        suffix = f": {detail}" if detail else ""
+        raise CloudBackupError(f"falha ao {action} (HTTP {resp.status_code}{suffix})")
     return _payload(resp)
 
 
@@ -99,6 +113,7 @@ class DropboxProvider(CloudBackupProvider):
                 "client_id": app_key,
                 "response_type": "code",
                 "token_access_type": "offline",
+                "scope": SCOPES,
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
             }
@@ -216,7 +231,7 @@ class DropboxProvider(CloudBackupProvider):
                 },
             )
         if resp.status_code // 100 != 2:
-            raise CloudBackupError(f"falha ao baixar o backup do Dropbox (HTTP {resp.status_code})")
+            _check(resp, "baixar o backup do Dropbox")
         return resp.content
 
     def delete(self, db: Session, backup_id: str) -> None:

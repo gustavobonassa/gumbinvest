@@ -25,6 +25,7 @@ from app.services.cloud_backup.base import (
     CloudBackupProvider,
     RemoteBackup,
     _client,
+    error_detail,
     is_backup_name,
     parse_remote_dt,
     read_row,
@@ -55,7 +56,9 @@ def _payload(resp: httpx.Response) -> dict:
 
 def _check(resp: httpx.Response, action: str) -> dict:
     if resp.status_code // 100 != 2:
-        raise CloudBackupError(f"falha ao {action} (HTTP {resp.status_code})")
+        detail = error_detail(resp)
+        suffix = f": {detail}" if detail else ""
+        raise CloudBackupError(f"falha ao {action} (HTTP {resp.status_code}{suffix})")
     return _payload(resp)
 
 
@@ -287,9 +290,7 @@ class GoogleDriveProvider(CloudBackupProvider):
                 f"{FILES_URL}/{backup_id}", params={"alt": "media"}, headers=_auth(token)
             )
         if resp.status_code // 100 != 2:
-            raise CloudBackupError(
-                f"falha ao baixar o backup do Google Drive (HTTP {resp.status_code})"
-            )
+            _check(resp, "baixar o backup do Google Drive")
         return resp.content
 
     def delete(self, db: Session, backup_id: str) -> None:
@@ -297,6 +298,4 @@ class GoogleDriveProvider(CloudBackupProvider):
         with _client() as client:
             resp = client.delete(f"{FILES_URL}/{backup_id}", headers=_auth(token))
         if resp.status_code // 100 != 2 and resp.status_code != 404:
-            raise CloudBackupError(
-                f"falha ao apagar um backup antigo no Google Drive (HTTP {resp.status_code})"
-            )
+            _check(resp, "apagar um backup antigo no Google Drive")

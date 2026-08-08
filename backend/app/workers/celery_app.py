@@ -127,5 +127,11 @@ if settings.backup_time:
         "task": "app.workers.tasks.backup_database_task",
         "schedule": crontab(hour=backup_hour, minute=backup_minute),
     }
+    # A host that was off at BACKUP_TIME backs up at the next opportunity
+    # instead of skipping the day. No-op whenever the newest dump is recent.
+    schedule["backup-catch-up"] = {
+        "task": "app.workers.tasks.backup_catch_up_task",
+        "schedule": crontab(minute=35),
+    }
 
 celery_app.conf.beat_schedule = schedule

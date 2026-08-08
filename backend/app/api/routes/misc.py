@@ -20,6 +20,7 @@ from app.market.fx import backfill_transaction_fx, fx_status, sync_all_fx
 from app.market.providers import available_providers, get_provider
 from app.market.service import backfill_history, refresh_quotes
 from app.services.ai_providers import providers_public
+from app.services.notifications import PAGE_SIZE, catalog as notification_catalog
 from app.services.secrets import SECRET_KEYS, secret_status, store_secret
 
 router = APIRouter(tags=["system"])
@@ -43,6 +44,10 @@ DEFAULT_SETTINGS: dict[str, object] = {
     #: Identification sent to the SEC. Not a secret — a contact, which may be a
     #: project URL rather than an e-mail. Empty until the user chooses one.
     "sec_user_agent": "",
+    #: Kinds silenced in the bell. Empty by default, and stored as the *off*
+    #: set so a producer added in a later release is heard rather than missing
+    #: from a list saved before it existed — see notifications.MUTED_SETTING.
+    "notification_muted_kinds": [],
     #: Cloud backup app identifiers. An OAuth client id / app key is public by
     #: design; the matching secrets live in SECRET_KEYS and never come back.
     "gdrive_client_id": settings.gdrive_client_id,
@@ -151,11 +156,13 @@ def get_settings_endpoint(db: DbSession) -> dict:
     # its value.
     for key in SECRET_KEYS:
         merged.pop(key, None)
-    # Cloud-backup machinery rows (device flow, folder cache, run status) are
-    # state, not preferences — the device flow row even carries a device_code.
-    from app.services.cloud_backup import INTERNAL_KEYS
+    # Machinery rows sharing the settings table are state, not preferences —
+    # the cloud device-flow row even carries a device_code, and the bell's row
+    # is bookkeeping about what has been read.
+    from app.services.cloud_backup import INTERNAL_KEYS as CLOUD_INTERNAL_KEYS
+    from app.services.notifications import INTERNAL_KEYS as BELL_INTERNAL_KEYS
 
-    for key in INTERNAL_KEYS:
+    for key in (*CLOUD_INTERNAL_KEYS, *BELL_INTERNAL_KEYS):
         merged.pop(key, None)
     return {
         "values": merged,
@@ -165,6 +172,9 @@ def get_settings_endpoint(db: DbSession) -> dict:
         "provider_active": get_provider().name,
         "known_movements": known_movements(),
         "statement_formats": available_formats(),
+        # The switches the Notificações card draws. Served rather than hardcoded
+        # in the UI, so a new producer becomes a new switch on the backend alone.
+        "notification_catalog": notification_catalog(),
         "env": {
             "base_currency": settings.base_currency,
             "timezone": settings.timezone,
@@ -192,13 +202,53 @@ def update_settings(payload: SettingsPayload, db: DbSession) -> dict:
 # --------------------------------------------------------------------------
 # Market data control
 # --------------------------------------------------------------------------
-@router.get("/notifications", response_model=None, summary="Active notifications for the header bell")
-def notifications(db: DbSession, portfolio: CurrentPortfolio) -> dict:
-    """Everything worth telling the user right now, from every source."""
+@router.get("/notifications", response_model=None, summary="One page of the header bell")
+def notifications(
+    db: DbSession,
+    portfolio: CurrentPortfolio,
+    cursor: int | None = Query(None, description="Last id of the previous page; omit for the first"),
+    limit: int = Query(PAGE_SIZE, ge=1, le=50),
+) -> dict:
+    """Live entries plus a page of history, newest first.
+
+    The live half rides along with the first page only — it describes what is
+    happening now, not a point in the history being scrolled.
+    """
     from app.services.notifications import feed
 
-    items = feed(db, portfolio.id)
-    return {"items": items, "count": len(items)}
+    return feed(db, portfolio.id, cursor=cursor, limit=limit)
+
+
+@router.post("/notifications/read", response_model=None, summary="Mark the bell as read")
+def notifications_read(db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    """Called when the panel closes: everything visible has now been seen."""
+    from app.services.notifications import mark_all_read, unread_count
+
+    marked = mark_all_read(db, portfolio.id)
+    db.commit()
+    return {"marked": marked, "unread": unread_count(db, portfolio.id)}
+
+
+class ArchivePayload(BaseModel):
+    #: ``"live"`` for a derived entry, ``"stored"`` for a history row.
+    source: str
+    id: str
+
+
+@router.post("/notifications/archive", response_model=None, summary="Hide one notification")
+def notifications_archive(
+    payload: ArchivePayload, db: DbSession, portfolio: CurrentPortfolio
+) -> dict:
+    from app.services.notifications import archive, unread_count
+
+    if payload.source not in {"live", "stored"}:
+        raise HTTPException(status_code=422, detail="source deve ser 'live' ou 'stored'")
+    archived = archive(db, payload.source, payload.id)
+    if not archived:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="notificação não encontrada")
+    db.commit()
+    return {"archived": True, "unread": unread_count(db, portfolio.id)}
 
 
 @router.get("/market/status", response_model=None, summary="Quote freshness overview")

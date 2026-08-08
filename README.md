@@ -135,7 +135,7 @@ And the whole interface is responsive — usable from the phone on your couch
   including the yield each purchase was contracted at.
 - Cash accounts (conta remunerada) with deposits/withdrawals accrued the same way.
 
-**AI (optional, bring your own key)**
+**AI (optional, bring your own key — or your Claude subscription)**
 - **Analista IA** — chat about your portfolio or a single asset; the model sees
   your positions and fundamentals and can search the web. Streamed answers,
   conversations saved to their own page.
@@ -144,6 +144,11 @@ And the whole interface is responsive — usable from the phone on your couch
   and reviews the wallet over time. Nothing touches your real portfolio.
 - Works with **Anthropic (Claude), OpenAI (GPT), Google (Gemini), xAI (Grok)
   and Groq** — pick provider and model per feature in Configurações.
+- **Plano Anthropic** — already pay for Claude Pro/Max? Connect the account in
+  one click and run every AI feature on your subscription instead of a metered
+  API key. Desktop only, and requires [Claude Code](https://claude.com/download)
+  installed on the same machine (it holds the login); usage counts against your
+  plan's limits, not API credits.
 
 **Screener & tools**
 - **Universo de ativos** — screen *every* listed B3 paper, not just what you

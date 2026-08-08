@@ -150,13 +150,22 @@ class RestorePayload(BaseModel):
     backup_id: str
     name: str | None = None
     passphrase: str | None = None
+    #: Granted by the UI only after the user types the confirmation phrase:
+    #: wipes the current data (after a local safety dump) instead of refusing
+    #: a non-empty installation.
+    confirm_replace: bool = False
 
 
 @router.post("/restore", response_model=None, summary="Restore a cloud backup into this installation")
 def restore(payload: RestorePayload, db: DbSession) -> dict:
     try:
         return cloud_service.restore_from_cloud(
-            db, payload.provider, payload.backup_id, payload.passphrase, name=payload.name
+            db,
+            payload.provider,
+            payload.backup_id,
+            payload.passphrase,
+            name=payload.name,
+            confirm_replace=payload.confirm_replace,
         )
     except (CloudBackupError, FullBackupError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

@@ -57,3 +57,41 @@ def test_sqlite_backup_missing_file_fails_loudly(tmp_path: Path, monkeypatch) ->
 
     result = backup_service.backup_database()
     assert result["status"] == "failed"
+
+
+def test_backup_is_due_judges_by_the_newest_dump(tmp_path: Path, monkeypatch) -> None:
+    """The catch-up trigger: no dump, or a stale one, means the slot was missed."""
+    import os
+    import time
+
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setattr(settings, "backup_dir", str(backup_dir))
+
+    # No directory / no files: a first run is always due.
+    assert backup_service.backup_is_due() is True
+
+    backup_dir.mkdir(parents=True)
+    dump = backup_dir / "gumbinvest-20260807-033000.db.gz"
+    dump.write_bytes(b"x")
+    assert backup_service.backup_is_due() is False  # fresh mtime
+
+    two_days_ago = time.time() - 2 * 24 * 3600
+    os.utime(dump, (two_days_ago, two_days_ago))
+    assert backup_service.backup_is_due() is True
+
+    # Backups disabled: never due, the catch-up must stay silent.
+    monkeypatch.setattr(settings, "backup_time", "")
+    assert backup_service.backup_is_due() is False
+
+
+def test_catch_up_runs_only_when_due(monkeypatch) -> None:
+    runs: list[bool] = []
+    monkeypatch.setattr(backup_service, "run_daily_backup", lambda: runs.append(True) or {"status": "ok"})
+
+    monkeypatch.setattr(backup_service, "backup_is_due", lambda: False)
+    assert backup_service.catch_up_backup() == {"skipped": True}
+    assert runs == []
+
+    monkeypatch.setattr(backup_service, "backup_is_due", lambda: True)
+    assert backup_service.catch_up_backup() == {"status": "ok"}
+    assert runs == [True]

@@ -12,7 +12,7 @@ import os
 import shutil
 import sqlite3
 import subprocess
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -37,6 +37,67 @@ def backup_database() -> dict:
     return _backup_postgres(target_dir, stamp)
 
 
+_DUMP_PATTERNS = ("gumbinvest-*.sql.gz", "gumbinvest-*.db.gz")
+
+
+def latest_backup_at() -> datetime | None:
+    """When the newest dump in ``BACKUP_DIR`` was written (file mtime, UTC)."""
+    directory = Path(settings.backup_dir)
+    if not directory.is_dir():
+        return None
+    stamps = [
+        datetime.fromtimestamp(path.stat().st_mtime, UTC)
+        for pattern in _DUMP_PATTERNS
+        for path in directory.glob(pattern)
+    ]
+    return max(stamps, default=None)
+
+
+def backup_is_due(max_age: timedelta = timedelta(hours=24)) -> bool:
+    """Whether the daily slot was missed — the machine was off at BACKUP_TIME.
+
+    Judged by the dump files themselves rather than audit rows: files survive
+    a ``.gumbinvest`` restore (which replaces the audit history with the
+    source's) and need no timezone arithmetic — if the newest dump is older
+    than a day, a scheduled run did not happen.
+    """
+    if not settings.backup_time:
+        return False
+    newest = latest_backup_at()
+    return newest is None or datetime.now(UTC) - newest > max_age
+
+
+def run_daily_backup() -> dict:
+    """The whole daily slot: local dump, then the cloud mirror.
+
+    A cloud problem must never mask the local dump; ``sync_to_cloud`` records
+    its own per-provider outcome in the durable status row either way.
+    """
+    from app.services.cloud_backup import sync_to_cloud  # local: avoids a cycle
+
+    result: dict = {"local": backup_database()}
+    try:
+        result["cloud"] = sync_to_cloud()
+    except Exception:  # noqa: BLE001
+        logger.exception("cloud backup sync failed")
+        result["cloud"] = {"status": "failed"}
+    return result
+
+
+def catch_up_backup() -> dict:
+    """Run the daily backup now if its scheduled slot was missed.
+
+    Both schedulers call this hourly (and the desktop one shortly after
+    boot): a computer that is off at BACKUP_TIME gets its backup at the next
+    opportunity instead of skipping the day. A no-op whenever the newest
+    dump is recent.
+    """
+    if not backup_is_due():
+        return {"skipped": True}
+    logger.info("backup catch-up: newest dump is older than a day, running now")
+    return run_daily_backup()
+
+
 def _rotate(target_dir: Path, pattern: str) -> int:
     backups = sorted(target_dir.glob(pattern))
     removed = 0
@@ -47,8 +108,21 @@ def _rotate(target_dir: Path, pattern: str) -> int:
 
 
 def _record(target: Path, removed: int) -> dict:
+    from app.services.notifications import record as notify
+
     with session_scope() as db:
         db.add(AuditLog(action="backup.database", detail={"file": target.name, "rotated": removed}))
+        # Keyed on the file name, which already carries the run's timestamp: a
+        # catch-up firing twice for the same dump announces it once.
+        notify(
+            db,
+            kind="backup",
+            level="success",
+            title="Backup local criado",
+            body=f"{target.name}"
+            + (f" · {removed} backup(s) antigo(s) removido(s)" if removed else ""),
+            dedup_key=f"backup:{target.name}",
+        )
     logger.info("backup written to %s (rotated %s)", target, removed)
     return {"status": "ok", "file": str(target), "rotated": removed}
 

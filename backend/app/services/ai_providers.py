@@ -32,6 +32,18 @@ AI_PROVIDERS: dict[str, dict] = {
         "models": ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5"],
         "key_hint": "console.anthropic.com",
     },
+    # O único provedor sem chave: a credencial é a assinatura Claude já logada no
+    # Claude Code da máquina. Por isso ``key_setting`` é None e "configurado"
+    # deixa de significar "tem chave" — ver ``is_configured``.
+    "claude_code": {
+        "label": "Plano Anthropic (assinatura)",
+        "kind": "claude_code",
+        "key_setting": None,
+        # Aliases, não ids: o CLI resolve para o modelo atual de cada família,
+        # então isso não envelhece a cada lançamento.
+        "models": ["sonnet", "opus", "haiku"],
+        "key_hint": "requer o Claude Code instalado e conectado nesta máquina",
+    },
     "openai": {
         "label": "OpenAI (GPT)",
         "kind": "openai",
@@ -87,12 +99,48 @@ def _stored(db: Session, key: str) -> str | None:
     return str(value) if value else None
 
 
+def api_key_for(entry: dict) -> str:
+    """The configured key, or "" for providers that don't use one."""
+    key_setting = entry.get("key_setting")
+    if not key_setting:
+        return ""
+    return getattr(settings, key_setting, "")
+
+
+def is_configured(entry: dict) -> bool:
+    """Whether this provider can actually be called right now.
+
+    For every keyed provider that is "a key was saved". The subscription
+    provider has no key — it is usable when the local Claude Code is installed
+    and logged in through a Claude account, so availability is a property of the
+    machine, not of a stored setting.
+    """
+    if entry.get("kind") == "claude_code":
+        from app.services import claude_code
+
+        return claude_code.status().uses_subscription
+    return bool(api_key_for(entry))
+
+
+def unavailable_reason(entry: dict) -> str:
+    """Why this provider can't be used, in pt-BR, or "" when it can."""
+    if is_configured(entry):
+        return ""
+    if entry.get("kind") == "claude_code":
+        from app.services import claude_code
+
+        state = claude_code.status()
+        return state.reason or "Conta Anthropic não conectada."
+    return f"Informe sua chave da {entry['label']} em Configurações → Inteligência Artificial."
+
+
 def active_ai(db: Session) -> tuple[str, dict, str, str]:
     """(provider id, provider entry, model, api key) for this instance.
 
     UI-saved choices win over env; an unknown stored provider falls back to
     the config default rather than erroring — the chat gate reports a missing
-    key, not a broken setting.
+    key, not a broken setting. The key is "" for providers that authenticate
+    some other way; callers gate on :func:`is_configured`, not on the key.
     """
     provider_id = _stored(db, "ai_provider") or settings.ai_provider
     provider = AI_PROVIDERS.get(provider_id)
@@ -100,8 +148,7 @@ def active_ai(db: Session) -> tuple[str, dict, str, str]:
         provider_id = "anthropic"
         provider = AI_PROVIDERS[provider_id]
     model = _stored(db, "ai_model") or settings.ai_model or provider["default_model"]
-    key = getattr(settings, provider["key_setting"], "")
-    return provider_id, provider, model, key
+    return provider_id, provider, model, api_key_for(provider)
 
 
 def providers_public(db: Session) -> dict:
@@ -116,9 +163,10 @@ def providers_public(db: Session) -> dict:
                 "label": entry["label"],
                 "default_model": entry["default_model"],
                 "models": entry["models"],
-                "key_setting": entry["key_setting"],
+                "key_setting": entry.get("key_setting"),
                 "key_hint": entry["key_hint"],
-                "key_configured": bool(getattr(settings, entry["key_setting"], "")),
+                "key_configured": is_configured(entry),
+                "unavailable_reason": unavailable_reason(entry),
             }
             for key, entry in AI_PROVIDERS.items()
         ],

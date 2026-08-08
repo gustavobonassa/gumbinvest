@@ -22,7 +22,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import DbSession
-from app.core.config import settings
 from app.core.dates import local_today
 from app.core.logging import get_logger
 from app.db.models import AiWallet, AiWalletCategory, AiWalletEvent, AiWalletSnapshot, AiWalletSuggestion
@@ -31,7 +30,13 @@ from app.market import benchmarks
 from app.services import ai_research as research
 from app.services import ai_wallet as wallets
 from app.services import universe as screener
-from app.services.ai_providers import AI_PROVIDERS, active_ai
+from app.services.ai_providers import (
+    AI_PROVIDERS,
+    active_ai,
+    api_key_for,
+    is_configured,
+    unavailable_reason,
+)
 from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
 
 router = APIRouter(prefix="/ai-wallets", tags=["ai-wallets"])
@@ -97,16 +102,14 @@ def _wallet_ai(wallet: AiWallet) -> tuple[dict, str]:
             status_code=503,
             detail=f"O provedor '{wallet.provider}' desta carteira não está mais disponível.",
         )
-    key = getattr(settings, entry["key_setting"], "")
-    if not key:
+    if not is_configured(entry):
         raise HTTPException(
             status_code=503,
             detail=(
-                f"Informe sua chave da {entry['label']} em Configurações → Sistema para "
-                f"usar esta carteira (ela foi criada com {wallet.model})."
+                f"{unavailable_reason(entry)} Esta carteira foi criada com {wallet.model}."
             ),
         )
-    return entry, key
+    return entry, api_key_for(entry)
 
 
 def _pending_by_category(db, wallet_id: int) -> dict[str, int]:
@@ -151,17 +154,11 @@ def create_wallet(payload: CreateWalletPayload, db: DbSession) -> dict:
         if provider is None:
             raise HTTPException(status_code=422, detail="Provedor de IA desconhecido.")
         model = (payload.model or "").strip() or provider["default_model"]
-        api_key = getattr(settings, provider["key_setting"], "")
+        api_key = api_key_for(provider)
     else:
         provider_id, provider, model, api_key = active_ai(db)
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                f"Informe sua chave da {provider['label']} em Configurações → Sistema "
-                "para criar uma carteira IA (Gemini e Groq têm nível gratuito)."
-            ),
-        )
+    if not is_configured(provider):
+        raise HTTPException(status_code=503, detail=unavailable_reason(provider))
     wallet = AiWallet(name=payload.name.strip(), provider=provider_id, model=model)
     db.add(wallet)
     try:
@@ -285,7 +282,7 @@ def wallet_detail(wallet_id: int, db: DbSession) -> dict:
         "model": wallet.model,
         "created_at": wallet.created_at,
         "web_search": research.supports_search(wallet.provider, wallet.model),
-        "key_configured": bool(entry and getattr(settings, entry["key_setting"], "")),
+        "key_configured": bool(entry and is_configured(entry)),
         "totals": {
             "value": valuation["value"],
             "invested": valuation["invested"],

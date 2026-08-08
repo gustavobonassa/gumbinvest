@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import AuditLog
 from app.db.session import session_scope
+from app.services.backup import backup_database
 from app.services.cloud_backup.base import (
     CloudBackupProvider,
     available_providers,
@@ -54,6 +55,34 @@ def _rotate(db: Session, provider: CloudBackupProvider) -> int:
         provider.delete(db, stale.id)
         removed += 1
     return removed
+
+
+def _announce(db: Session, results: dict[str, dict], now: str) -> None:
+    """One bell entry per provider per run — the history the panel scrolls.
+
+    Keyed by provider and run timestamp so a task retried after a partial
+    failure cannot announce the same upload twice.
+    """
+    from app.services.notifications import record
+
+    for name, entry in results.items():
+        try:
+            label = get_provider(name).label
+        except Exception:  # noqa: BLE001 — a renamed provider must not lose the entry
+            label = name
+        ok = entry["state"] == "ok"
+        record(
+            db,
+            kind="cloud_backup",
+            level="success" if ok else "warning",
+            title="Backup na nuvem enviado" if ok else "Backup na nuvem falhou",
+            body=(
+                f"{label}: {entry.get('file')}"
+                if ok
+                else f"{label}: {entry.get('message') or 'falha no último envio'}"
+            ),
+            dedup_key=f"cloud_backup:{name}:{now}",
+        )
 
 
 def sync_to_cloud() -> dict:
@@ -114,6 +143,7 @@ def sync_to_cloud() -> dict:
                 detail={name: entry["state"] for name, entry in results.items()},
             )
         )
+        _announce(db, results, now)
         failed = [name for name, entry in results.items() if entry["state"] == "error"]
         status = "ok" if not failed else ("partial" if len(failed) < len(results) else "failed")
         return {"status": status, "providers": results}
@@ -137,6 +167,7 @@ def status_payload(db: Session) -> dict:
         "last_run_at": row.get("last_run_at"),
         "encryption": {"passphrase_set": bool(read_value(db, "cloud_backup_passphrase"))},
         "backup_time": settings.backup_time,
+        "backup_keep": settings.backup_keep,
     }
 
 
@@ -175,13 +206,19 @@ def restore_from_cloud(
     backup_id: str,
     passphrase: str | None = None,
     name: str | None = None,
+    confirm_replace: bool = False,
 ) -> dict:
     """Download one backup and hand it to the regular full import.
 
     ``import_snapshot`` keeps all of its own rules — refusing a non-empty
     installation, refusing a schema mismatch — and its pt-BR errors surface
-    unchanged.
+    unchanged. ``confirm_replace`` is the exception the UI grants only after
+    the user types the confirmation phrase: the current data is dumped to the
+    local backup directory first, then wiped and replaced by the snapshot.
+    Still a clone, never a merge.
     """
+    from app.db.models import Transaction
+
     provider = get_provider(provider_name)
     payload = provider.download(db, backup_id)
     filename = name or backup_id.rsplit("/", 1)[-1] or f"cloud-{provider_name}{FILE_EXTENSION}"
@@ -190,7 +227,36 @@ def restore_from_cloud(
         payload = decrypt(payload, effective)
         if filename.endswith(ENCRYPTED_EXTENSION):
             filename = filename[: -len(".enc")]
-    return import_snapshot(db, payload, filename)
+
+    replacing = confirm_replace and db.query(Transaction.id).first() is not None
+    safety: dict | None = None
+    if replacing:
+        # The typed confirmation authorises the wipe, but the current data
+        # still gets one last local dump — "tenho certeza" must never be the
+        # only thing standing between the user and an irreversible mistake.
+        safety = backup_database()
+        if safety.get("status") != "ok":
+            raise CloudBackupError(
+                "não foi possível criar o backup local de segurança antes da "
+                "restauração; nada foi apagado — tente de novo"
+            )
+
+    result = import_snapshot(db, payload, filename, replace_existing=confirm_replace)
+    if replacing:
+        # After import_snapshot: it wipes audit_logs along with everything
+        # else, so a row added earlier would not survive the restore.
+        db.add(
+            AuditLog(
+                action="backup.cloud_restore_replace",
+                detail={
+                    "provider": provider_name,
+                    "file": filename,
+                    "safety_dump": str((safety or {}).get("file")),
+                },
+            )
+        )
+        db.commit()
+    return result
 
 
 def disconnect(db: Session, provider_name: str) -> None:

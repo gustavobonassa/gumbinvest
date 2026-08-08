@@ -209,6 +209,7 @@ def test_treasury_is_never_reported_as_missing_a_quote(db: Session, portfolio):
 
 
 def test_the_notification_feed_shows_the_queue(db: Session, portfolio, provider):
+    """The retry queue is *live* state: derived on read, never a stored row."""
     from app.services.notifications import feed
 
     _tracked(db, "PETR4")
@@ -217,13 +218,15 @@ def test_the_notification_feed_shows_the_queue(db: Session, portfolio, provider)
     provider.faults["PETR4.SA"] = "HTTP 429"
     market_service.refresh_quotes(db, portfolio.id, force=True)
 
-    items = feed(db, portfolio.id)
+    page = feed(db, portfolio.id)
 
-    assert [item["kind"] for item in items] == ["quotes.retry"]
-    entry = items[0]
+    assert [item["kind"] for item in page["live"]] == ["quotes.retry"]
+    entry = page["live"][0]
+    assert entry["source"] == "live"
     assert entry["items"] == ["PETR4"]
     assert entry["progress"] == {"done": 1, "total": 2, "label": "atualizadas"}
     assert entry["at"] is not None
+    assert page["items"] == []
 
 
 def test_the_feed_is_empty_when_nothing_is_wrong(db: Session, portfolio, provider):
@@ -233,7 +236,45 @@ def test_the_feed_is_empty_when_nothing_is_wrong(db: Session, portfolio, provide
     provider.prices["PETR4.SA"] = Decimal("38")
     market_service.refresh_quotes(db, portfolio.id, force=True)
 
-    assert feed(db, portfolio.id) == []
+    page = feed(db, portfolio.id)
+    assert page["live"] == []
+    assert page["items"] == []
+    assert page["unread"] == 0
+
+
+def test_archiving_the_queue_banner_lasts_only_as_long_as_the_queue(
+    db: Session, portfolio, provider
+):
+    """Archive hides this episode, not every future one.
+
+    A live entry has no row to mark, so its archived flag is remembered in a
+    settings blob — and dropped the moment the condition stops being produced.
+    Without that, dismissing the banner once would mute the next outage too.
+    """
+    from app.services.notifications import archive, feed
+
+    _tracked(db, "PETR4")
+    provider.faults["PETR4.SA"] = "HTTP 429"
+    market_service.refresh_quotes(db, portfolio.id, force=True)
+    assert feed(db, portfolio.id)["live"]
+
+    archive(db, "live", "quotes.retry")
+    assert feed(db, portfolio.id)["live"] == []
+    assert feed(db, portfolio.id)["unread"] == 0
+
+    # The queue drains: the entry stops being produced, so its archived flag
+    # goes with it.
+    provider.faults.pop("PETR4.SA")
+    provider.prices["PETR4.SA"] = Decimal("38")
+    market_service.refresh_quotes(db, portfolio.id, force=True)
+    assert feed(db, portfolio.id)["live"] == []
+
+    # It breaks again — and this time it must be heard.
+    provider.faults["PETR4.SA"] = "HTTP 429"
+    market_service.refresh_quotes(db, portfolio.id, force=True)
+    page = feed(db, portfolio.id)
+    assert [item["id"] for item in page["live"]] == ["quotes.retry"]
+    assert page["unread"] == 1
 
 
 # --- The other half: the provider retrying before it ever reports a failure ---

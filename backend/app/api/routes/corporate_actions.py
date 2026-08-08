@@ -23,7 +23,7 @@ from app.db.session import session_scope
 from app.portfolio.corporate_actions import suggest_successions
 from app.services import ai_research as research
 from app.services import corporate_ai
-from app.services.ai_providers import active_ai
+from app.services.ai_providers import active_ai, is_configured, unavailable_reason
 from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
 
 router = APIRouter(prefix="/corporate-actions", tags=["corporate actions"])
@@ -168,13 +168,10 @@ def ai_scan_status(db: DbSession, portfolio: CurrentPortfolio) -> dict:
 @router.post("/ai-scan", response_model=None, summary="Start the AI corporate-event scan (background job)")
 def start_ai_scan(db: DbSession, portfolio: CurrentPortfolio) -> dict:
     provider_id, provider, model, api_key = active_ai(db)
-    if not api_key:
+    if not is_configured(provider):
         raise HTTPException(
             status_code=503,
-            detail=(
-                f"Informe sua chave da {provider['label']} em Configurações → Sistema "
-                "para buscar eventos com IA."
-            ),
+            detail=f"{unavailable_reason(provider)} Necessário para buscar eventos com IA.",
         )
     context, known = corporate_ai.scan_context(db, portfolio.id)
     if not context:

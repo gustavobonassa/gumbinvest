@@ -6,6 +6,9 @@ user — it needs one JSON answer — so every provider can be called through th
 API where its search actually lives:
 
 * Anthropic — native SDK, ``web_search`` server tool (as the chat does).
+* Plano Anthropic — the local Claude Code CLI, whose built-in ``WebSearch`` tool
+  plays the same role. No key and no HTTP: the subscription credential lives in
+  the CLI (see ``app/services/claude_code.py``).
 * OpenAI — the Responses API (``/responses``) with the ``web_search`` tool;
   chat-completions has no generic search.
 * Gemini — the native ``generateContent`` endpoint with Google-Search
@@ -89,6 +92,8 @@ def _dispatch(
 ) -> ModelReply:
     if entry.get("kind") == "anthropic":
         return _call_anthropic(entry, model, api_key, system, messages, search)
+    if entry.get("kind") == "claude_code":
+        return _call_claude_code(model, system, messages, search)
     if provider_id == "openai":
         return _call_openai_responses(entry, model, api_key, system, messages, search)
     if provider_id == "gemini":
@@ -144,6 +149,23 @@ def _call_anthropic(
         raise AiResearchError(f"Erro da API da Anthropic: {exc.message}") from exc
     except anthropic.APIStatusError as exc:
         raise AiResearchError(f"Erro da API da Anthropic ({exc.status_code}).") from exc
+
+
+def _call_claude_code(
+    model: str, system: str, messages: list[dict], search: bool
+) -> ModelReply:
+    """A assinatura Anthropic, pelo Claude Code local.
+
+    Sem chave e sem HTTP: o CLI carrega a credencial da assinatura e a busca web
+    é a ferramenta ``WebSearch`` embutida.
+    """
+    from app.services import claude_code
+
+    try:
+        text = claude_code.call_json(system, messages, model, search=search)
+    except claude_code.ClaudeCodeError as exc:
+        raise AiResearchError(str(exc)) from exc
+    return ModelReply(text.strip(), search)
 
 
 def _post_json(url: str, headers: dict, payload: dict) -> httpx.Response:

@@ -14,6 +14,7 @@ import { useToast } from "@/components/Toast";
 import { Badge, Card, Modal, SectionTitle, Skeleton } from "@/components/ui";
 import {
   api,
+  ApiError,
   type AppSettings,
   type CloudProviderStatus,
   type RemoteBackupItem,
@@ -102,7 +103,9 @@ export default function CloudBackupCard({ settings }: { settings: AppSettings })
             </button>
             {status.data?.backup_time ? (
               <span className="text-xs text-ink-muted">
-                Envio automático todo dia às {status.data.backup_time}, junto com o backup local.
+                Envio automático todo dia às {status.data.backup_time} — ou na próxima vez que o
+                app abrir, se o computador estava desligado. Os {status.data.backup_keep} backups
+                mais recentes ficam guardados; os antigos são apagados sozinhos.
               </span>
             ) : null}
           </div>
@@ -426,7 +429,9 @@ function DropboxSection({
           </button>
           <p className="text-xs text-ink-muted">
             Crie um app gratuito em dropbox.com/developers com acesso “App folder” — os backups
-            ficam em Apps/&lt;seu app&gt;/ e o GumbInvest não enxerga o resto do Dropbox.
+            ficam em Apps/&lt;seu app&gt;/ e o GumbInvest não enxerga o resto do Dropbox. Na aba
+            Permissions do app, marque <code>files.metadata.read</code>,{" "}
+            <code>files.content.read</code> e <code>files.content.write</code> antes de conectar.
           </p>
         </div>
       )}
@@ -434,12 +439,27 @@ function DropboxSection({
   );
 }
 
+/** The typed phrase that unlocks a wipe-and-restore on a non-empty install. */
+const REPLACE_PHRASE = "tenho certeza";
+
 function RestoreSection() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState<{ provider: string; item: RemoteBackupItem } | null>(null);
   const [passphrase, setPassphrase] = useState("");
+  // Second step of the modal: shown when the backend refused because this
+  // installation already has movimentações. Typing the phrase re-sends the
+  // restore with confirm_replace, which wipes after a local safety dump.
+  const [replaceStep, setReplaceStep] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+
+  const closeModal = () => {
+    setTarget(null);
+    setPassphrase("");
+    setReplaceStep(false);
+    setConfirmText("");
+  };
 
   const backups = useQuery({
     queryKey: ["cloud-backups"],
@@ -448,16 +468,31 @@ function RestoreSection() {
   });
 
   const restore = useMutation({
-    mutationFn: (payload: { provider: string; backup_id: string; name: string; passphrase?: string }) =>
-      api.cloudRestore(payload),
+    mutationFn: (payload: {
+      provider: string;
+      backup_id: string;
+      name: string;
+      passphrase?: string;
+      confirm_replace?: boolean;
+    }) => api.cloudRestore(payload),
     onSuccess: (result) => {
-      setTarget(null);
-      setPassphrase("");
+      closeModal();
       queryClient.invalidateQueries();
       toast.success(`Backup restaurado: ${result.rows_imported} registros. Recarregue a página.`);
     },
-    onError: (error) => toast.error("Não foi possível restaurar o backup.", error),
+    onError: (error) => {
+      if (
+        !replaceStep &&
+        error instanceof ApiError &&
+        /instalação vazia|movimentações/.test(error.message)
+      ) {
+        setReplaceStep(true);
+        return;
+      }
+      toast.error("Não foi possível restaurar o backup.", error);
+    },
   });
+  const replaceUnlocked = confirmText.trim().toLowerCase() === REPLACE_PHRASE;
 
   return (
     <div>
@@ -495,7 +530,11 @@ function RestoreSection() {
                           <button
                             type="button"
                             className="btn-ghost"
-                            onClick={() => setTarget({ provider: name, item })}
+                            onClick={() => {
+                              setReplaceStep(false);
+                              setConfirmText("");
+                              setTarget({ provider: name, item });
+                            }}
                           >
                             Restaurar
                           </button>
@@ -514,10 +553,7 @@ function RestoreSection() {
         open={target !== null}
         title="Restaurar backup da nuvem"
         subtitle={target?.item.name}
-        onClose={() => {
-          setTarget(null);
-          setPassphrase("");
-        }}
+        onClose={closeModal}
       >
         <div className="space-y-3 text-sm">
           <p>
@@ -539,21 +575,37 @@ function RestoreSection() {
               />
             </div>
           ) : null}
+          {replaceStep ? (
+            <div className="space-y-2 rounded-xl border border-negative/30 bg-negative/5 p-3">
+              <p className="font-medium text-negative">
+                Esta instalação já tem movimentações.
+              </p>
+              <p>
+                Continuar vai apagar todos os dados atuais e substituí-los pelo backup. Um backup
+                local de segurança é criado antes de apagar, mas a troca em si não tem desfazer.
+              </p>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+                  Digite “{REPLACE_PHRASE}” para liberar:
+                </span>
+                <input
+                  value={confirmText}
+                  onChange={(event) => setConfirmText(event.target.value)}
+                  placeholder={REPLACE_PHRASE}
+                  autoComplete="off"
+                  className="input w-full"
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => {
-                setTarget(null);
-                setPassphrase("");
-              }}
-            >
+            <button type="button" className="btn-ghost" onClick={closeModal}>
               Cancelar
             </button>
             <button
               type="button"
-              className="btn-primary"
-              disabled={restore.isPending}
+              className={replaceStep ? "btn-primary !bg-negative" : "btn-primary"}
+              disabled={restore.isPending || (replaceStep && !replaceUnlocked)}
               onClick={() =>
                 target &&
                 restore.mutate({
@@ -561,10 +613,15 @@ function RestoreSection() {
                   backup_id: target.item.id,
                   name: target.item.name,
                   passphrase: passphrase.trim() || undefined,
+                  confirm_replace: replaceStep,
                 })
               }
             >
-              {restore.isPending ? "Restaurando…" : "Restaurar"}
+              {restore.isPending
+                ? "Restaurando…"
+                : replaceStep
+                  ? "Apagar tudo e restaurar"
+                  : "Restaurar"}
             </button>
           </div>
         </div>

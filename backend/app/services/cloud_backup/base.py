@@ -87,6 +87,29 @@ def is_backup_name(name: str) -> bool:
     )
 
 
+def error_detail(resp: httpx.Response) -> str:
+    """The service's own explanation of a failure, trimmed for a message.
+
+    Dropbox and Google both put the actual reason (missing scope, bad
+    argument) in the body; a bare status code hides exactly the part the
+    user needs to fix.
+    """
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            for key in ("error_summary", "error_description"):
+                if isinstance(data.get(key), str):
+                    return data[key][:300]
+            error = data.get("error")
+            if isinstance(error, dict) and isinstance(error.get("message"), str):
+                return error["message"][:300]
+            if isinstance(error, str):
+                return error[:300]
+    except ValueError:
+        pass
+    return " ".join(resp.text.split())[:300]
+
+
 def parse_remote_dt(value: str | None) -> datetime | None:
     if not value:
         return None

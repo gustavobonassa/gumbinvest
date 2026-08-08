@@ -9,12 +9,23 @@ The optional AI layer and the analysis tools that ship alongside the portfolio i
 
 ## AI features
 
-Everything AI is **off until you add a key**, and the key is yours:
-**Configurações → Inteligência artificial** takes an API key per provider —
-Anthropic (Claude), OpenAI (GPT), Google (Gemini), xAI (Grok) or Groq — and a
-model choice per feature. Keys are stored in your local database, never leave
-your machine except to call the provider you chose, and are stripped from every
-export and backup.
+Everything AI is **off until you connect an account**, and the credential is
+yours: **Configurações → Inteligência artificial** takes an API key per
+provider — Anthropic (Claude), OpenAI (GPT), Google (Gemini), xAI (Grok) or
+Groq — and a model choice per feature. Keys are stored in your local database,
+never leave your machine except to call the provider you chose, and are
+stripped from every export and backup.
+
+**Plano Anthropic** is the alternative to paying twice. If you already have a
+Claude Pro/Max subscription, the *Plano Anthropic* card connects it with one
+button: it opens the Anthropic sign-in in your browser and, once you authorize,
+every AI feature runs on your subscription instead of a metered API key. No key
+to paste. Two things to know — it needs the [Claude Code](https://claude.com/download)
+app installed on the same machine, since that is what holds the account, so it
+is desktop-only (a Docker install has no such login); and usage counts against
+your subscription's own limits rather than API credits, so generating a whole
+Carteira IA with web search will eat into them. It is meant for your own
+personal use on your own machine.
 
 **Analista IA** is the chat in the top bar. On any page it talks about the
 whole portfolio; on an asset page it talks about that asset, with the company's

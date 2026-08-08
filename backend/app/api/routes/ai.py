@@ -17,11 +17,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import CurrentPortfolio, DbSession, PortfolioSvc
-from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import AiChat
 from app.db.session import session_scope
-from app.services.ai_providers import AI_PROVIDERS, active_ai
+from app.services import claude_code
+from app.services.ai_providers import (
+    AI_PROVIDERS,
+    active_ai,
+    api_key_for,
+    is_configured,
+    unavailable_reason,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = get_logger(__name__)
@@ -220,13 +226,10 @@ def ai_chat(
     payload: ChatRequest, db: DbSession, portfolio: CurrentPortfolio, service: PortfolioSvc
 ) -> StreamingResponse:
     provider_id, provider, model, api_key = active_ai(db)
-    if not api_key:
+    if not is_configured(provider):
         raise HTTPException(
             status_code=503,
-            detail=(
-                f"Informe sua chave da {provider['label']} em Configurações → Sistema "
-                "para habilitar o chat (Gemini e Groq têm nível gratuito)."
-            ),
+            detail=f"{unavailable_reason(provider)} Necessário para habilitar o chat.",
         )
     portfolio_id = portfolio.id
     if payload.chat_id is not None:
@@ -382,7 +385,44 @@ def ai_chat(
             logger.exception("ai chat failed")
             yield _sse({"error": "Erro inesperado no chat. Veja os logs do backend."})
 
-    stream = generate() if provider["kind"] == "anthropic" else generate_openai_compatible()
+    def generate_claude_code():
+        """Assinatura Anthropic, via o Claude Code local.
+
+        O serviço já traduz o NDJSON do CLI para os mesmos eventos que os outros
+        ramos emitem, então aqui só falta virar SSE e persistir a conversa.
+        """
+        answer_parts: list[str] = []
+        failed = False
+        try:
+            system_text = "\n\n".join(block["text"] for block in system)
+            for kind, value in claude_code.stream_events(
+                system_text, conversation, model, search=True
+            ):
+                if kind == "text":
+                    answer_parts.append(value)
+                    yield _sse({"text": value})
+                elif kind == "status":
+                    yield _sse({"status": value or None})
+                elif kind == "error":
+                    failed = True
+                    yield _sse({"error": value})
+            answer = _decode_escapes("".join(answer_parts).strip())
+            chat_id = (
+                _persist_chat(payload.chat_id, portfolio_id, payload.ticker, conversation, answer)
+                if answer and not failed
+                else payload.chat_id
+            )
+            yield _sse({"done": True, "chat_id": chat_id})
+        except Exception:  # noqa: BLE001 — the stream must end with a readable error
+            logger.exception("ai chat failed (claude_code)")
+            yield _sse({"error": "Erro inesperado no chat. Veja os logs do backend."})
+
+    if provider["kind"] == "anthropic":
+        stream = generate()
+    elif provider["kind"] == "claude_code":
+        stream = generate_claude_code()
+    else:
+        stream = generate_openai_compatible()
     return StreamingResponse(
         stream,
         media_type="text/event-stream",
@@ -406,8 +446,10 @@ def list_provider_models(provider: str) -> dict:
     entry = AI_PROVIDERS.get(provider)
     if entry is None:
         raise HTTPException(status_code=404, detail="provedor desconhecido")
-    api_key = getattr(settings, entry["key_setting"], "")
+    api_key = api_key_for(entry)
     fallback = {"models": entry["models"], "live": False}
+    # A assinatura não expõe catálogo: o CLI resolve aliases (sonnet/opus/haiku)
+    # para o modelo atual de cada família, então a lista curada já é a resposta.
     if not api_key:
         return fallback
 
@@ -440,6 +482,59 @@ def list_provider_models(provider: str) -> dict:
     except Exception:  # noqa: BLE001 — the dropdown must render regardless
         logger.exception("could not list models for %s", provider)
         return fallback
+
+
+def _claude_code_payload(*, refresh: bool) -> dict:
+    state = claude_code.status(refresh=refresh)
+    return {
+        "installed": state.installed,
+        "logged_in": state.logged_in,
+        "uses_subscription": state.uses_subscription,
+        "method": state.method,
+        "email": state.email,
+        "plan": state.plan,
+        "reason": state.reason,
+        "install_url": claude_code.INSTALL_URL,
+    }
+
+
+@router.get(
+    "/claude-code/status",
+    response_model=None,
+    summary="Whether the local Claude Code is installed and signed in",
+)
+def claude_code_status(refresh: bool = False) -> dict:
+    """Estado da conexão com a assinatura. O polling do botão passa refresh=1."""
+    return _claude_code_payload(refresh=refresh)
+
+
+@router.post(
+    "/claude-code/login",
+    response_model=None,
+    summary="Open the Anthropic sign-in in the user's browser",
+)
+def claude_code_login() -> dict:
+    """Dispara o login e volta na hora — a tela acompanha por ``/status``.
+
+    Não se espera o término aqui de propósito: o usuário ainda vai autorizar no
+    navegador, o que leva o tempo que levar, e segurar a requisição até lá só
+    renderia um timeout.
+    """
+    try:
+        claude_code.start_login()
+    except claude_code.ClaudeCodeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return _claude_code_payload(refresh=True)
+
+
+@router.post(
+    "/claude-code/logout",
+    response_model=None,
+    summary="Sign the local Claude Code out of the Anthropic account",
+)
+def claude_code_logout() -> dict:
+    claude_code.logout()
+    return _claude_code_payload(refresh=True)
 
 
 @router.get("/chats", response_model=None, summary="Saved AI conversations")

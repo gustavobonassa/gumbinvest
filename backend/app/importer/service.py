@@ -99,12 +99,45 @@ class ImportResult:
     rows_imported: int
     rows_duplicate: int
     rows_failed: int
+    #: Rows that imported with a note attached — see LEVEL_WARNING.
+    rows_warned: int = 0
     issues: list[dict] = field(default_factory=list)
     summary: dict = field(default_factory=dict)
 
 
+#: An entry in an import's log that stopped a row from being imported.
+LEVEL_ERROR = "error"
+#: An entry about a row that *was* imported. The distinction is the difference
+#: between "this movement is missing" and "this movement is on file, and here is
+#: what I could not work out about it" — reporting both as errors taught the
+#: user to distrust a file that was in fact complete.
+LEVEL_WARNING = "warning"
+
+
+def _note(message: str, line: int | None = None) -> dict:
+    """A log entry about a row that survived."""
+    return {"level": LEVEL_WARNING, "line": line, "error": message}
+
+
+def _is_error(issue: dict) -> bool:
+    """Entries written before levels existed are read as errors."""
+    return issue.get("level", LEVEL_ERROR) == LEVEL_ERROR
+
+
 def _q(value: Decimal | None) -> Decimal:
     return Decimal(0) if value is None else value
+
+
+def _short_name(filename: str, limit: int = 52) -> str:
+    """A file name that fits in a notification.
+
+    Brokers hand out names like the 130-character Avenue statement, which would
+    wrap over five lines of a 320px panel and bury the counts that are the point
+    of the entry. Truncated from the front, so names that differ early — which
+    is most of them — stay distinguishable. The batch keeps the real name, and
+    the import log is where you go when you need it.
+    """
+    return filename if len(filename) <= limit else f"{filename[: limit - 1]}…"
 
 
 def _net_amount(effect: PositionEffect, gross: Decimal) -> Decimal:
@@ -548,6 +581,43 @@ class ImportService:
         batch.finished_at = datetime.now(UTC)
         self.db.commit()
 
+    def _announce(self, batch: ImportBatch, *, imported: int, duplicates: int) -> None:
+        """Put a finished import in the bell's history.
+
+        Silent when a re-upload changed nothing: idempotent imports are the
+        design, and a run whose whole answer is "already had all of it" is not
+        news. A run that rejected lines is, even if the rest landed — those are
+        the ones worth finding again next week.
+        """
+        from app.services.notifications import record
+
+        if not imported and not batch.rows_failed:
+            return
+        failed = batch.rows_failed
+        # "0 importados" leads with a non-event. When nothing landed, the counts
+        # that follow are the whole story.
+        parts = [f"{imported} movimento(s) importado(s)"] if imported else []
+        if duplicates:
+            parts.append(f"{duplicates} já conhecido(s)")
+        if failed:
+            parts.append(f"{failed} com problema")
+        record(
+            self.db,
+            kind="import",
+            level="warning" if failed else "success",
+            title="Importação concluída" if not failed else "Importação com pendências",
+            body=f"{_short_name(batch.filename)} · " + ", ".join(parts),
+            portfolio_id=batch.portfolio_id,
+            # Keyed on the file and its outcome, not on the batch. The startup
+            # auto-import re-reads the same statements on every boot, and the
+            # lines a parser cannot handle fail identically each time — keyed by
+            # batch that would stack an identical warning per restart. Same
+            # contract as the movements themselves: re-importing a file adds
+            # nothing. A file that later imports differently is a different
+            # outcome, and does get its own entry.
+            dedup_key=f"import:{batch.portfolio_id}:{batch.file_hash}:{imported}:{failed}",
+        )
+
     def _finish_batch(
         self,
         batch: ImportBatch,
@@ -563,8 +633,15 @@ class ImportService:
         batch.rows_total = rows_total
         batch.rows_imported = imported
         batch.rows_duplicate = duplicates
-        batch.rows_failed = len(issues)
-        batch.issues = issues[:500]
+        # Stamp the level on every entry so the stored log is self-describing;
+        # most call sites raise a plain exception and say nothing about level.
+        errors = [{**issue, "level": LEVEL_ERROR} for issue in issues if _is_error(issue)]
+        warnings = [{**issue, "level": LEVEL_WARNING} for issue in issues if not _is_error(issue)]
+        batch.rows_failed = len(errors)
+        batch.rows_warned = len(warnings)
+        # Errors first, so a truncated log never hides a real failure behind a
+        # hundred notes.
+        batch.issues = (errors + warnings)[:500]
         batch.summary = summary
         batch.finished_at = datetime.now(UTC)
         self.db.add(
@@ -579,6 +656,7 @@ class ImportService:
                 },
             )
         )
+        self._announce(batch, imported=imported, duplicates=duplicates)
         self.db.commit()
         logger.info(
             "import %s: %s rows, %s imported, %s duplicates, %s failed",
@@ -596,6 +674,7 @@ class ImportService:
             rows_imported=batch.rows_imported,
             rows_duplicate=batch.rows_duplicate,
             rows_failed=batch.rows_failed,
+            rows_warned=batch.rows_warned,
             issues=batch.issues,
             summary=batch.summary,
         )
@@ -752,13 +831,14 @@ class ImportService:
         batch.closing_balance = statement.closing_balance
 
         state = _PdfImportState()
-        # Parser-level notes and any control-total mismatch surface as issues:
+        # Parser-level notes and any control-total mismatch surface in the log:
         # a statement whose own printed totals disagree with what was read is
-        # exactly the case a human needs to look at.
-        state.issues.extend({"line": None, "error": message} for message in statement.warnings)
-        state.issues.extend(
-            {"line": None, "error": message} for message in statement.reconciliation_warnings()
-        )
+        # exactly the case a human needs to look at. They are warnings, not
+        # failures — every row they describe is imported. What they say is that
+        # one *property* of the row could not be established, such as a
+        # withholding the statement mentions in words but does not print.
+        state.issues.extend(_note(message) for message in statement.warnings)
+        state.issues.extend(_note(message) for message in statement.reconciliation_warnings())
 
         existing_keys = self._existing_keys()
         known_cusips = self._known_cusips()
@@ -1409,12 +1489,14 @@ class ImportService:
         """
         if row.quantity:
             state.provisional += 1
+            # Imported, so a note rather than a failure — the position is right,
+            # only the name is a placeholder waiting to be corrected.
             state.issues.append(
-                {
-                    "line": row.page_number,
-                    "error": "ativo não identificado, importado com código provisório: "
+                _note(
+                    "ativo não identificado, importado com código provisório: "
                     + row.raw_text[:140],
-                }
+                    line=row.page_number,
+                )
             )
             return provisional_ticker(row.description, row.cusip)
         state.unattributed += 1

@@ -171,6 +171,27 @@ def _clear_replay_cache():
 
 
 @pytest.fixture(autouse=True)
+def _no_claude_code():
+    """Pretend the local Claude Code is absent unless a test says otherwise.
+
+    Availability of the subscription provider is a property of the machine, so
+    without this the same test says "configured" on a developer's laptop and
+    "not configured" in CI — and every ``providers_public`` call would spawn a
+    subprocess. Tests that exercise the provider stub ``status`` themselves.
+    """
+    from app.services import claude_code
+
+    claude_code._status_cache = (
+        float("inf"),  # never expires during the test
+        claude_code.CliStatus(
+            installed=False, logged_in=False, reason="Claude Code não encontrado nesta máquina."
+        ),
+    )
+    yield
+    claude_code._status_cache = None
+
+
+@pytest.fixture(autouse=True)
 def _no_unheld_headline_fetch():
     """Keep /market/status offline: the unheld-Bitcoin fallback calls the
     provider from the request path, and every test that renders the status

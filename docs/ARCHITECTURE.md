@@ -794,7 +794,8 @@ so `market/service.py` decides the `.SA` suffix from the asset's *currency*.
 |---|---|---|
 | `refresh_quotes_task` | every `PRICE_REFRESH_MINUTES` | Latest prices |
 | `rebuild_snapshots_task` | daily at `SNAPSHOT_TIME` | Materialise daily history |
-| `backup_database_task` | daily at `BACKUP_TIME` | `pg_dump` + rotation |
+| `backup_database_task` | daily at `BACKUP_TIME` | `pg_dump` + rotation + cloud sync |
+| `backup_catch_up_task` | hourly | Runs the daily backup if its slot was missed (host off) |
 | `backfill_history_task` | on demand | Download full daily closes |
 | `sync_indices_task` | daily 09:20 | CDI/Selic/IPCA from Banco Central |
 | `sync_treasury_task` | daily 11:15 | Tesouro Direto prices from Tesouro Transparente |
@@ -850,7 +851,9 @@ nightly backup job also uploads a `.gumbinvest` (optionally AES-GCM-encrypted
 under a user passphrase) to whichever of Google Drive / Dropbox the user
 connected in Configurações → Backup, keeps the newest `BACKUP_KEEP` files
 there, and can restore one through `import_snapshot` — every refusal above
-still applies. Two boundaries shape it. First, providers read credentials
+still applies, with one deliberate exception: a typed-confirmation reset
+(`confirm_replace`) that dumps the current database locally, then wipes and
+clones. Still never a merge. Two boundaries shape it. First, providers read credentials
 DB-first with the env as fallback, never the settings singleton alone:
 `apply_stored_secrets()` runs only in the FastAPI lifespan, so the Celery
 worker's singleton never sees keys saved through the UI. Second, the nightly

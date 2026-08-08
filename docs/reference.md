@@ -144,7 +144,12 @@ absent, so the suite still runs on a clean checkout.
 
 ## Backups
 
-A `pg_dump` runs daily at `BACKUP_TIME` into `./backups`, keeping `BACKUP_KEEP` files.
+A `pg_dump` runs daily at `BACKUP_TIME` into `./backups`, keeping `BACKUP_KEEP`
+files. A machine that was off at that hour catches up: an hourly check (and, on
+the desktop build, a check shortly after the app opens) runs the backup — and
+the cloud sync — whenever the newest dump is more than a day old. The cloud
+side keeps `BACKUP_KEEP` files per provider too, so neither disk nor cloud
+grows without bound.
 
 ```bash
 # manual backup
@@ -165,7 +170,10 @@ For moving a whole history between installs (Docker ↔ desktop), use the
 Google Drive and/or Dropbox, nightly (with the local backup) and on demand. On
 another computer, connect the same account and restore from the listed backups
 — the restore uses the regular full import, so it only proceeds into an empty
-installation. An optional passphrase encrypts the file (AES-256-GCM) before it
+installation. On a non-empty one, the dialog offers a deliberate reset: type
+the confirmation phrase and the current data is dumped to the local backup
+directory, then wiped and replaced by the cloud backup (a clone, never a
+merge). An optional passphrase encrypts the file (AES-256-GCM) before it
 leaves the machine; without the passphrase the backup cannot be restored.
 
 Setup is one-time, in the UI:
@@ -176,8 +184,11 @@ Setup is one-time, in the UI:
   google.com/device with the code shown. Scope is `drive.file`: the app only
   ever sees the files it created, in a `GumbInvest` folder.
 - **Dropbox** — create a free app at dropbox.com/developers with *App folder*
-  access, paste its app key, and authorize with the code Dropbox displays.
-  Backups live under `Apps/<your app>/`.
+  access, enable `files.metadata.read`, `files.content.read` and
+  `files.content.write` on the app's **Permissions** tab, paste its app key,
+  and authorize with the code Dropbox displays. Backups live under
+  `Apps/<your app>/`. (Permissions are baked into the authorization — if you
+  change them later, disconnect and reconnect.)
 
 Tokens and the passphrase are stored like AI keys: local database only, never
 echoed back, stripped from every export.

@@ -85,6 +85,14 @@ export interface Overview {
  * with the same component as a queued quote refresh.
  */
 export interface AppNotification {
+  /**
+   * Which half of the feed this came from, and the half that decides what
+   * archiving it means: a `stored` row is a past event that keeps its history
+   * and merely leaves the panel, while a `live` entry is a condition holding
+   * right now, hidden only until that condition clears.
+   */
+  source: "live" | "stored";
+  /** Unique within its `source`, not across both — always pair the two. */
   id: string;
   kind: string;
   level: "info" | "success" | "warning";
@@ -93,6 +101,15 @@ export interface AppNotification {
   progress: { done: number; total: number; label: string } | null;
   items: string[];
   at: string | null;
+  read: boolean;
+}
+
+/** One page of the bell. `live` is populated on the first page only. */
+export interface NotificationPage {
+  live: AppNotification[];
+  items: AppNotification[];
+  next_cursor: number | null;
+  unread: number;
 }
 
 export interface PositionRow {
@@ -431,6 +448,8 @@ export interface ImportBatch {
   rows_imported: number;
   rows_duplicate: number;
   rows_failed: number;
+  /** Rows that imported carrying a caveat — not failures. See `issues`. */
+  rows_warned: number;
   created_at: string;
   finished_at: string | null;
   summary: {
@@ -476,7 +495,18 @@ export interface ImportBatch {
       unconverted_fees?: number;
     };
   };
-  issues?: { line: number | null; error: string }[];
+  /**
+   * The import's log, one entry per problem. Only the detail endpoint fills
+   * this in — the history list would be enormous with it.
+   *
+   * `level` separates a row that did not import (`error`) from one that did
+   * and carries a caveat (`warning`), such as a withholding the statement
+   * mentions in words but never prints. Entries stored before the level
+   * existed are read as errors. `line` is the source line for a CSV row, and
+   * null for a statement, whose notes are about a movement rather than a
+   * position in the file.
+   */
+  issues?: { level?: "error" | "warning"; line: number | null; error: string }[];
 }
 
 /** One month of one broker's statement series. */
@@ -793,9 +823,26 @@ export interface AiProviderInfo {
   default_model: string;
   /** Curated suggestions — the model field remains free text. */
   models: string[];
-  key_setting: string;
+  /** null for the subscription provider, whose credential is the local Claude Code. */
+  key_setting: string | null;
   key_hint: string;
+  /** Usable right now — a saved key, or a connected subscription. */
   key_configured: boolean;
+  /** Why it is not usable, in pt-BR; empty when it is. */
+  unavailable_reason: string;
+}
+
+/** The local Claude Code, which carries the Anthropic subscription credential. */
+export interface ClaudeCodeStatus {
+  installed: boolean;
+  logged_in: boolean;
+  /** Signed in *and* through a Claude account rather than a Console API key. */
+  uses_subscription: boolean;
+  method: string;
+  email: string;
+  plan: string;
+  reason: string;
+  install_url: string;
 }
 
 export interface AppSettings {
@@ -806,6 +853,13 @@ export interface AppSettings {
   providers: string[];
   provider_active: string;
   known_movements: string[];
+  /**
+   * The notification kinds that exist, with their copy — served rather than
+   * hardcoded here, so a new producer on the backend becomes a new switch on
+   * the Settings page with no change to the UI. Which of them are *off* lives
+   * in `values.notification_muted_kinds`; everything not named there is on.
+   */
+  notification_catalog: { kind: string; label: string; description: string }[];
   env: Record<string, unknown>;
 }
 
@@ -847,6 +901,8 @@ export interface CloudBackupStatus {
   encryption: { passphrase_set: boolean };
   /** When the nightly local dump + cloud sync runs (HH:MM). */
   backup_time: string;
+  /** How many backups are kept, locally and per cloud provider. */
+  backup_keep: number;
   job: CloudBackupJob;
 }
 
@@ -1195,7 +1251,15 @@ export interface UniverseQuery {
 // --- endpoints -----------------------------------------------------------
 export const api = {
   overview: () => request<Overview>("/portfolio/overview"),
-  notifications: () => request<{ items: AppNotification[]; count: number }>("/notifications"),
+  notifications: (cursor?: number | null, limit?: number) =>
+    request<NotificationPage>(`/notifications${query({ cursor, limit })}`),
+  notificationsRead: () =>
+    request<{ marked: number; unread: number }>("/notifications/read", { method: "POST" }),
+  notificationArchive: (source: "live" | "stored", id: string) =>
+    request<{ archived: boolean; unread: number }>("/notifications/archive", {
+      method: "POST",
+      body: JSON.stringify({ source, id }),
+    }),
   positions: (includeClosed = false) =>
     request<PositionRow[]>(`/portfolio/positions${query({ include_closed: includeClosed })}`),
   allocation: (groupBy: "asset" | "kind" | "broker" | "currency" = "asset") =>
@@ -1317,7 +1381,14 @@ export const api = {
     }),
   cloudBackupSend: () => request<CloudBackupJob>("/cloud-backup/send", { method: "POST" }),
   cloudBackups: () => request<RemoteBackupsResponse>("/cloud-backup/backups"),
-  cloudRestore: (payload: { provider: string; backup_id: string; name?: string; passphrase?: string }) =>
+  cloudRestore: (payload: {
+    provider: string;
+    backup_id: string;
+    name?: string;
+    passphrase?: string;
+    /** Wipe the current data first (typed-confirmation reset) instead of refusing a non-empty install. */
+    confirm_replace?: boolean;
+  }) =>
     request<{ status: string; rows_imported: number; rows_total: number }>("/cloud-backup/restore", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -1326,6 +1397,16 @@ export const api = {
   /** Live model catalog from the provider (needs its key); curated fallback otherwise. */
   aiModels: (provider: string) =>
     request<{ models: string[]; live: boolean }>(`/ai/models${query({ provider })}`),
+
+  /** Subscription provider: `refresh` skips the backend's status cache. */
+  claudeCodeStatus: (refresh = false) =>
+    request<ClaudeCodeStatus>(`/ai/claude-code/status${query({ refresh })}`),
+  /** Opens the Anthropic sign-in in the user's browser and returns at once —
+   *  the authorization happens there, so poll `claudeCodeStatus` afterwards. */
+  claudeCodeLogin: () =>
+    request<ClaudeCodeStatus>("/ai/claude-code/login", { method: "POST" }),
+  claudeCodeLogout: () =>
+    request<ClaudeCodeStatus>("/ai/claude-code/logout", { method: "POST" }),
 
   // Carteira IA — generate/suggest run as backend jobs; poll aiWalletJob.
   aiWallets: () => request<AiWalletSummary[]>("/ai-wallets"),
@@ -1390,6 +1471,7 @@ export const api = {
       rows_imported: number;
       rows_duplicate: number;
       rows_failed: number;
+      rows_warned: number;
       summary: ImportBatch["summary"];
     }>("/imports", { method: "POST", body: form });
   },

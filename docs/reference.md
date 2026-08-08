@@ -57,7 +57,7 @@ All of these live in `.env` (copied from `.env.example`); every one has a workin
 | `QUOTE_CACHE_TTL` | `900` | Seconds a quote counts as fresh |
 | `PRICE_REFRESH_MINUTES` | `30` | Automatic quote refresh interval |
 | `SNAPSHOT_TIME` | `23:10` | Daily snapshot job (HH:MM) |
-| `BACKUP_TIME` | `03:30` | Daily `pg_dump`; empty disables |
+| `BACKUP_TIME` | `03:30` | Weekly `pg_dump` (Sundays at this time); empty disables |
 | `BACKUP_DIR` / `BACKUP_KEEP` | `/backups` / `14` | Backup location and rotation |
 | `AUTO_IMPORT_DIR` | `/data` | Scanned recursively for exports on startup (any filename) |
 | `AUTO_IMPORT_ON_STARTUP` | `true` | Import those files automatically |
@@ -144,12 +144,12 @@ absent, so the suite still runs on a clean checkout.
 
 ## Backups
 
-A `pg_dump` runs daily at `BACKUP_TIME` into `./backups`, keeping `BACKUP_KEEP`
-files. A machine that was off at that hour catches up: an hourly check (and, on
-the desktop build, a check shortly after the app opens) runs the backup — and
-the cloud sync — whenever the newest dump is more than a day old. The cloud
-side keeps `BACKUP_KEEP` files per provider too, so neither disk nor cloud
-grows without bound.
+A `pg_dump` runs weekly — Sundays at `BACKUP_TIME` — into `./backups`, keeping
+`BACKUP_KEEP` files. A machine that was off then catches up: an hourly check
+(and, on the desktop build, a check shortly after the app opens) runs the
+backup — and the cloud sync — whenever the newest dump is more than a week
+old. The cloud side keeps `BACKUP_KEEP` files per provider too, so neither
+disk nor cloud grows without bound.
 
 ```bash
 # manual backup
@@ -167,7 +167,7 @@ For moving a whole history between installs (Docker ↔ desktop), use the
 ### Cloud backup
 
 **Configurações → Backup** can also mirror the `.gumbinvest` export to your own
-Google Drive and/or Dropbox, nightly (with the local backup) and on demand. On
+Google Drive and/or Dropbox, weekly (with the local backup) and on demand. On
 another computer, connect the same account and restore from the listed backups
 — the restore uses the regular full import, so it only proceeds into an empty
 installation. On a non-empty one, the dialog offers a deliberate reset: type

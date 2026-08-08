@@ -21,7 +21,7 @@ router = APIRouter(prefix="/cloud-backup", tags=["cloud-backup"])
 logger = get_logger(__name__)
 
 #: The manual "Enviar agora". HTTP-triggered, so the registry and its poller
-#: share a process under Docker and desktop alike; the nightly worker run
+#: share a process under Docker and desktop alike; the weekly worker run
 #: reports through the durable status row instead (see cloud_backup.service).
 _REGISTRY = JobRegistry()
 _JOB_KEY = "cloud_backup"

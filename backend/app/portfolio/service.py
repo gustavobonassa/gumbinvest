@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
@@ -14,7 +15,7 @@ from sqlalchemy import String, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.db.models import Asset, PortfolioSnapshot, PriceHistory, Quote, Transaction
+from app.db.models import Asset, AssetSplit, PortfolioSnapshot, PriceHistory, Quote, Transaction
 from app.domain.enums import INCOME_TYPES, AssetKind, OperationType, PositionEffect
 from app.portfolio.engine import (
     ZERO,
@@ -50,7 +51,35 @@ def clear_replay_cache() -> None:
 INCOME_TYPE_VALUES = {t.value for t in INCOME_TYPES}
 #: Bumped whenever the return arithmetic changes, so every stored chain is
 #: recomputed instead of silently serving figures from the previous formula.
-CHAIN_VERSION = 3
+CHAIN_VERSION = 9
+
+#: How far a broker may lag the exchange in crediting split shares and still
+#: be recognised as the same event. Two business days covers what statements
+#: actually do; a wider window would start pairing unrelated events.
+SPLIT_BOOKING_WINDOW_DAYS = 4
+
+#: ``AssetSplit.source`` for a ratio a person entered; never second-guessed.
+MANUAL_SPLIT = "manual"
+#: Trades whose unit price is a market price. Income rows carry a payment
+#: per share, which would read as a factor of 0.03 and poison the check.
+SPLIT_SAMPLE_OPS = (OperationType.BUY.value, OperationType.SELL.value)
+#: Trades sampled on each side of a split. A handful smooths the gap between
+#: an execution price and that day's close without reaching back years.
+SPLIT_SAMPLES = 5
+#: How far the observed factor may sit from the declared one. Execution
+#: prices differ from closes by a couple of percent; a phantom split misses
+#: by a factor, so the gap between right and wrong is enormous.
+SPLIT_TOLERANCE = Decimal("0.2")
+#: Ratios nearer to 1 than this cannot be told from that same noise, so they
+#: are never judged — and a wrong 2% bonus barely moves a curve anyway.
+SPLIT_RESOLVABLE = Decimal("1.5")
+
+#: Operations that change the share count without money changing hands.
+SHARE_COUNT_OPS = {
+    OperationType.SPLIT.value,
+    OperationType.REVERSE_SPLIT.value,
+    OperationType.BONUS.value,
+}
 #: Instrument families excluded from the "missing quote" warning because no
 #: public API marks them to market (fixed income is accrued instead — see
 #: app.market.fixed_income). Subscription rights and receipts are here because
@@ -110,6 +139,68 @@ def _flow_sign(effect: str) -> Decimal:
     if effect in (PositionEffect.ACQUIRE.value, PositionEffect.CASH_OUT.value):
         return Decimal(-1)
     return ZERO
+
+
+def _ratio_phrase(ratio: Decimal) -> str:
+    """A split ratio as a sentence. "10" says nothing; "1 cota virando 10" does.
+
+    The reader of this string is someone looking at their own portfolio, not at
+    a spreadsheet — and the whole value of the message is that they can judge
+    it against what they remember happening.
+    """
+    if abs(ratio - ONE) < Decimal("0.02"):
+        return "nenhuma mudança na quantidade de cotas"
+    if ratio > ONE:
+        return f"1 cota virando {_trim(ratio)}"
+    return f"{_trim(ONE / ratio)} cotas virando 1"
+
+
+def _trim(value: Decimal) -> str:
+    """Two decimals at most, and none when the number is whole."""
+    rounded = value.quantize(Decimal("0.01"))
+    return str(rounded.to_integral_value() if rounded == rounded.to_integral_value() else rounded)
+
+
+def _is_resolvable(ratio: Decimal) -> bool:
+    """Whether a ratio is far enough from 1 to be seen in noisy prices."""
+    return ratio >= SPLIT_RESOLVABLE or ratio <= ONE / SPLIT_RESOLVABLE
+
+
+def _median(values: list[Decimal]) -> Decimal:
+    """Median, not mean: one odd fill must not drag the estimate."""
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def _in_ledger_shares(
+    series: list[tuple[date, Decimal]], events: list[tuple[date, Decimal]]
+) -> list[tuple[date, Decimal]]:
+    """Restate a provider's closes in the shares the ledger held that day.
+
+    The stored series is always in *today's* shares: history arrives from the
+    provider already retro-adjusted, and each day's own close is appended raw,
+    which is the same thing at the time it is written. The ledger, meanwhile,
+    counts the shares that existed on each date. So a close is multiplied by
+    every share-count factor that came *after* it — and by nothing at all for
+    an asset that never split, which is almost all of them.
+
+    An event on day D does not scale D itself: the split happens before the
+    open, so that day's close and that day's ledger quantity are already both
+    in the new shares.
+    """
+    restated: list[tuple[date, Decimal]] = []
+    factor = ONE
+    index = len(events) - 1
+    for day, close in reversed(series):
+        while index >= 0 and events[index][0] > day:
+            factor *= events[index][1]
+            index -= 1
+        restated.append((day, close * factor))
+    restated.reverse()
+    return restated
 
 
 def base_amount(column):
@@ -336,6 +427,17 @@ class AssetPosition:
         invested_reference = (
             p.total_bought_amount if p.total_bought_amount > MONEY_EPSILON else p.cost_basis
         )
+        # The same reference in the portfolio's currency. Exposed because a
+        # caller adding several positions up — the per-class ranking does —
+        # cannot rebuild it from the fields above, and dividing a class's
+        # lifetime result by the cost still open understates every class that
+        # ever sold anything.
+        base = self.base_position
+        invested_base = (
+            (base.total_bought_amount if base.total_bought_amount > MONEY_EPSILON else base.cost_basis)
+            if base is not None
+            else invested_reference * self.rate
+        )
         return {
             "asset_id": self.asset.id,
             "ticker": self.asset.ticker,
@@ -392,6 +494,7 @@ class AssetPosition:
             "fx_rate": self.fx_rate,
             "market_value_base": self.market_value_base,
             "cost_basis_base": self.cost_basis_base,
+            "invested_base": invested_base,
             "unrealized_pnl_base": self.unrealized_base,
             "realized_pnl_base": self.realized_base,
             "income_base": self.income_base,
@@ -420,6 +523,9 @@ class PortfolioService:
         self._base_currency: str | None = None
         self._fx: dict[str, object] = {}
         self._prices: dict[int, list[tuple[date, Decimal]]] | None = None
+        self._share_splits: dict[int, list[tuple[date, Decimal]]] | None = None
+        self._rejected_splits: dict[tuple[int, date], str] | None = None
+        self._raw_prices: dict[int, list[tuple[date, Decimal]]] | None = None
         self._replay_fp: str | None = None
 
     # -- currency ----------------------------------------------------------
@@ -983,11 +1089,17 @@ class PortfolioService:
             return day.weekday() == 4  # Fridays
         return (day + timedelta(days=1)).day == 1  # month end
 
-    def _price_matrix(self) -> dict[int, list[tuple[date, Decimal]]]:
+    def _raw_price_matrix(self) -> dict[int, list[tuple[date, Decimal]]]:
+        """Closes exactly as stored — in the provider's shares, not the ledger's.
+
+        Separate from :meth:`_price_matrix` because the split check reads this
+        one: it reconciles declared ratios against these very closes, and
+        reading the restated series would be reasoning in a circle.
+        """
         # Only assets this portfolio ever transacted — the table also holds
         # benchmarks and other portfolios' assets, and callers never look
         # those up here.
-        if self._prices is None:
+        if self._raw_prices is None:
             held = list(self.positions().keys())
             rows = self.db.execute(
                 select(PriceHistory.asset_id, PriceHistory.date, PriceHistory.close)
@@ -997,8 +1109,162 @@ class PortfolioService:
             matrix: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
             for asset_id, day, close in rows:
                 matrix[asset_id].append((day, d(close)))
+            self._raw_prices = matrix
+        return self._raw_prices
+
+    def _price_matrix(self) -> dict[int, list[tuple[date, Decimal]]]:
+        """Closes restated into the shares the ledger counted on each day."""
+        if self._prices is None:
+            events = self.share_splits()
+            matrix: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
+            for asset_id, series in self._raw_price_matrix().items():
+                matrix[asset_id] = (
+                    _in_ledger_shares(series, events[asset_id]) if events.get(asset_id) else series
+                )
             self._prices = matrix
         return self._prices
+
+    def share_splits(self) -> dict[int, list[tuple[date, Decimal]]]:
+        """Declared splits per asset, oldest first.
+
+        Read from ``asset_splits`` — the provider's figure — rather than
+        reconstructed from the ledger. A statement reports the quantity credited
+        to one broker's sleeve, so a single 6-for-1 arrives as 13.7 shares from
+        one broker and 38.7 from another, one of them classified as a purchase;
+        dividing holdings before by holdings after then yields 2.3 instead of 6.
+        """
+        if self._share_splits is None:
+            rows = self.db.execute(
+                select(AssetSplit.asset_id, AssetSplit.date, AssetSplit.ratio, AssetSplit.source)
+                .order_by(AssetSplit.asset_id, AssetSplit.date)
+            ).all()
+            booked = self._share_event_days()
+            manual = {(asset_id, day) for asset_id, day, _r, src in rows if src == MANUAL_SPLIT}
+            splits: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
+            for asset_id, day, ratio, _source in rows:
+                splits[asset_id].append((day, d(ratio)))
+            rejected = self._uncorroborated_splits(splits, manual)
+            self._rejected_splits = rejected
+            kept: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
+            for asset_id, series in splits.items():
+                for day, ratio in series:
+                    if (asset_id, day) in rejected:
+                        continue
+                    kept[asset_id].append(
+                        (self._effective_split_day(day, booked.get(asset_id, ())), ratio)
+                    )
+                kept[asset_id].sort()
+            self._share_splits = kept
+        return self._share_splits
+
+    def rejected_splits(self) -> dict[tuple[int, date], str]:
+        """Provider splits the ledger's own prices contradict, and why."""
+        if self._rejected_splits is None:
+            self.share_splits()
+        return self._rejected_splits or {}
+
+    def _uncorroborated_splits(
+        self, splits: dict[int, list[tuple[date, Decimal]]], manual: set[tuple[int, date]]
+    ) -> dict[tuple[int, date], str]:
+        """Declared splits that the user's own executed prices contradict.
+
+        A provider's event feed can disagree with the provider's own price
+        series. It happened here: a 10-for-1 was declared for a fund whose
+        closes never moved, and applying it multiplied every earlier day of that
+        class by ten — a 419% return in a month nobody earned.
+
+        The check is the same one the statement parsers make: reconcile against
+        a figure the document itself printed. Every trade carries the price
+        actually paid, and dividing it by that day's stored close gives the
+        factor the series still needs on that date. Across a genuine split that
+        quotient drops by the ratio; across a phantom one it does not move.
+
+        Deliberately conservative. Only ratios far enough from 1 to be seen
+        through the noise of intraday-versus-close are judged at all, and a
+        split with no trade on one side of it is kept — absence of evidence is
+        not evidence, and the provider is right far more often than not. A
+        hand-declared ratio is never second-guessed: it exists precisely
+        because the provider was wrong.
+        """
+        rejected: dict[tuple[int, date], str] = {}
+        for asset_id, series in splits.items():
+            samples = self._price_samples(asset_id)
+            if not samples:
+                continue
+            for day, ratio in series:
+                if (asset_id, day) in manual or not _is_resolvable(ratio):
+                    continue
+                before = [factor for sample_day, factor in samples if sample_day < day]
+                after = [factor for sample_day, factor in samples if sample_day >= day]
+                if not before or not after:
+                    continue
+                observed = _median(before[-SPLIT_SAMPLES:]) / _median(after[:SPLIT_SAMPLES])
+                if abs(observed / ratio - ONE) > SPLIT_TOLERANCE:
+                    rejected[(asset_id, day)] = (
+                        f"O provedor informou {_ratio_phrase(ratio)} nesta data, mas os preços "
+                        f"que você negociou antes e depois indicam {_ratio_phrase(observed)}."
+                    )
+                    logger.warning(
+                        "ignoring split for asset %s on %s: declared %s, prices imply %.2f",
+                        asset_id,
+                        day,
+                        ratio,
+                        observed,
+                    )
+        return rejected
+
+    def _price_samples(self, asset_id: int) -> list[tuple[date, Decimal]]:
+        """(day, executed price ÷ stored close) for each trade, oldest first.
+
+        Only real trades: an income row carries a per-share payment, not a
+        price, and would read as a factor of 0.03.
+        """
+        series = dict(self._raw_price_matrix().get(asset_id, ()))
+        if not series:
+            return []
+        rows = self.db.execute(
+            select(Transaction.trade_date, Transaction.unit_price)
+            .where(
+                Transaction.portfolio_id == self.portfolio_id,
+                Transaction.asset_id == asset_id,
+                Transaction.op_type.in_(SPLIT_SAMPLE_OPS),
+                Transaction.unit_price > 0,
+            )
+            .order_by(Transaction.trade_date)
+        ).all()
+        samples: list[tuple[date, Decimal]] = []
+        for day, price in rows:
+            close = series.get(day)
+            if close and close > ZERO:
+                samples.append((day, d(price) / close))
+        return samples
+
+    def _share_event_days(self) -> dict[int, list[date]]:
+        """When the *ledger* booked each share-count change, per asset.
+
+        Only the dates are taken from the statements. The quantity credited is
+        per broker and sometimes misfiled, so the ratio comes from the provider
+        — but the date the shares landed in the account is exactly what the
+        statement is authoritative about.
+        """
+        days: dict[int, list[date]] = defaultdict(list)
+        for movement in self.movements():
+            if movement.op_type in SHARE_COUNT_OPS:
+                days[movement.asset_id].append(movement.trade_date)
+        return days
+
+    @staticmethod
+    def _effective_split_day(declared: date, booked: Sequence[date]) -> date:
+        """When the holding changed shares, which is not always the split date.
+
+        The exchange adjusts the price on the ex-date; a broker may credit the
+        new shares a day or two later. In between, a close quoted in new shares
+        meets a ledger still counting old ones and the position appears to lose
+        five sixths of its value for a day. Deferring to the later of the two
+        keeps the price in old shares until the quantity catches up.
+        """
+        nearby = [day for day in booked if abs((day - declared).days) <= SPLIT_BOOKING_WINDOW_DAYS]
+        return max([declared, *nearby]) if nearby else declared
 
     @staticmethod
     def _price_at(
@@ -1494,30 +1760,45 @@ class PortfolioService:
         return series
 
     def monthly_returns(self) -> list[dict]:
-        """Monthly return: value change adjusted for the period's cash flows."""
-        history = self.history(granularity="month")
-        contributions = {c["period"]: c["net"] for c in self.contributions_series("month")}
-        income = {i["period"]: i["total"] for i in self.income_series("month")}
+        """Monthly return: value change adjusted for the period's cash flows.
+
+        Read off the same daily chain the accumulated curve is drawn from, so
+        the months add up to the curve plotted above them. Assembling it from
+        separate queries instead is what made them disagree by R$ 5.9 mil on
+        one screen: ``income_series`` reports income *gross* of the tax withheld
+        at source while every result figure is net of it, and
+        ``contributions_series`` sums ``gross_amount``, which leaves the costs
+        of a sale to surface as a loss. Neither is a rounding difference — one
+        was 4.567 of tax that never reached the account.
+        """
+        rows = self.chain()
+        if not rows:
+            return []
+
+        # The last chain row of each month, and today for the month in progress.
+        by_month: dict[str, dict] = {}
+        for row in rows:
+            by_month[row["date"].strftime("%Y-%m")] = row
+
         series: list[dict] = []
-        previous_value = ZERO
-        for point in history:
-            period = point["date"].strftime("%Y-%m")
-            flow = d(contributions.get(period))
-            dividends = d(income.get(period))
-            value = point["market_value"]
-            base = previous_value + flow
-            profit = value - previous_value - flow + dividends
+        previous = None
+        for period in sorted(by_month):
+            row = by_month[period]
+            flow = row["flow"] - (previous["flow"] if previous else ZERO)
+            profit = row["profit"] - (previous["profit"] if previous else ZERO)
+            income = row["income"] - (previous["income"] if previous else ZERO)
+            opening = previous["market_value"] if previous else ZERO
             series.append(
                 {
                     "period": period,
-                    "market_value": value,
+                    "market_value": row["market_value"],
                     "flow": flow,
-                    "income": dividends,
+                    "income": income,
                     "profit": profit,
-                    "return_pct": pct(profit, base),
+                    "return_pct": pct(profit, opening + flow),
                 }
             )
-            previous_value = value
+            previous = row
         return series
 
     # -- profit ------------------------------------------------------------
@@ -1673,7 +1954,13 @@ class PortfolioService:
             select(func.count(PriceHistory.id), func.max(PriceHistory.date))
         ).one()
         assets = self.db.execute(select(func.count(Asset.id), func.max(Asset.id))).one()
-        raw = f"{CHAIN_VERSION}|{transactions}|{successions}|{history}|{assets}"
+        # A split restates every close before it, so declaring or correcting one
+        # changes every historical value. Summing the ratios as well as counting
+        # them catches an edited ratio, which leaves the count untouched.
+        splits = self.db.execute(
+            select(func.count(AssetSplit.id), func.sum(AssetSplit.ratio))
+        ).one()
+        raw = f"{CHAIN_VERSION}|{transactions}|{successions}|{history}|{assets}|{splits}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def daily_chain(self) -> list[dict]:
@@ -1713,20 +2000,44 @@ class PortfolioService:
         previous_quantity: dict[int, Decimal] = {}
         previous_price: dict[int, Decimal] = {}
         previous_income: dict[int, Decimal] = {}
+        #: Yesterday's accrued value, for papers priced by accrual rather than
+        #: by a close. See the accrual branch of the return below.
+        previous_accrued: dict[int, Decimal] = {}
         # Running sums for the money-weighted return; see `dietz`.
         flow_total = ZERO
         flow_time_total = ZERO
         flow_by_kind: dict[str, Decimal] = defaultdict(Decimal)
         flow_time_by_kind: dict[str, Decimal] = defaultdict(Decimal)
 
+        splits_by_day: dict[date, list[tuple[int, Decimal]]] = defaultdict(list)
+        for asset_id, events in self.share_splits().items():
+            for split_day, ratio in events:
+                splits_by_day[split_day].append((asset_id, ratio))
+
         while day <= last_day:
             while index < len(timeline) and timeline[index].day <= day:
                 current = timeline[index]
                 index += 1
 
+            # A split is not a return. Today's close is quoted in the new
+            # shares while yesterday's was restated into the old ones, so
+            # without this the day's move reads as an 83% crash on a 6-for-1.
+            # Restating yesterday's price *and* quantity leaves their product —
+            # the denominator — untouched and cancels the ratio out of the
+            # numerator, which is exactly what a split does to a holder.
+            for asset_id, ratio in splits_by_day.get(day, ()):
+                if asset_id in previous_price:
+                    previous_price[asset_id] /= ratio
+                if asset_id in previous_quantity:
+                    previous_quantity[asset_id] *= ratio
+
             stamp = Decimal(day.toordinal())
+            # Per asset, so the accrual branch of the return below can subtract
+            # today's own capital from today's value change.
+            todays_flow: dict[int, Decimal] = defaultdict(Decimal)
             for asset_id, amount in flows_by_day.get(day, ()):
                 kind = kinds.get(asset_id, AssetKind.OTHER.value)
+                todays_flow[asset_id] += amount
                 flow_total += amount
                 flow_time_total += amount * stamp
                 flow_by_kind[kind] += amount
@@ -1736,8 +2047,12 @@ class PortfolioService:
             value_by_kind: dict[str, Decimal] = defaultdict(Decimal)
             unrealized = ZERO
             total_value = ZERO
+            #: The share of today's value that a real price speaks for — see
+            #: the ``priced_share`` the page quotes as its coverage caveat.
+            priced_value = ZERO
             quantity_now: dict[int, Decimal] = {}
             price_now: dict[int, Decimal] = {}
+            accrued_now: dict[int, Decimal] = {}
             # The day's return, built asset by asset. Numerator: what
             # yesterday's holding earned — its price move plus anything it
             # paid. Denominator: what that holding was worth.
@@ -1753,11 +2068,13 @@ class PortfolioService:
                 close = cursor.price(asset_id, day)
                 rate = self._rate_on(currencies.get(asset_id), day)
                 unit = None if close is None else close * rate
+                accrued: Decimal | None = None
                 if unit is None and quantity > ZERO:
-                    # A paper with no close accrues instead. Expressed as a unit
-                    # price so the day's interest also reaches the return chain
-                    # below — valuing it at cost would report a CDB as earning
-                    # nothing every day of its life.
+                    # A paper with no close accrues instead. Valuing it at cost
+                    # would report a CDB as earning nothing every day of its
+                    # life, so the accrued figure marks it — but the accrual is
+                    # a *position* value, not a price, and the two are not
+                    # interchangeable once the return is computed from it.
                     accrued = self.accrued_value_on(asset_id, day)
                     if accrued is not None:
                         unit = accrued / quantity
@@ -1782,12 +2099,54 @@ class PortfolioService:
                     quantity_now[asset_id] = quantity
                     if unit is not None:
                         price_now[asset_id] = unit
+                        priced_value += value
+                    if accrued is not None:
+                        accrued_now[asset_id] = accrued
+
+                paid = current.income_by_asset.get(asset_id, ZERO) - previous_income.get(asset_id, ZERO)
+                opening = previous_accrued.get(asset_id)
+                # The second clause is the paper being redeemed: nothing left to
+                # accrue, so the day's result is the proceeds against what it
+                # was worth yesterday. Deliberately *not* "no accrual today" —
+                # a paper that gained a close would take that branch too, and
+                # read as having gone to zero.
+                if accrued is not None or (opening is not None and quantity <= ZERO):
+                    # An accruing paper has no price, only a value, and the
+                    # "unit price" above is that value spread over the position.
+                    # Applying more capital raises value and quantity together,
+                    # so the quotient *falls* — and reading that dilution as a
+                    # price move books a loss on the day of a deposit: a
+                    # R$ 6.422 top-up onto a balance already 22 % above its
+                    # principal printed as -0,79 %, permanently, every time.
+                    # What a paper earned in a day is what it is worth today
+                    # less what it was worth yesterday less the money added in
+                    # between, which is the same arithmetic the accrual itself
+                    # is built on.
+                    if opening is None or opening <= ZERO:
+                        continue
+                    settled = todays_flow.get(asset_id, ZERO)
+                    if accrued is None and settled == ZERO:
+                        # The paper is gone and nothing came back on the ledger:
+                        # a "VENCIMENTO" row that carries no amount. What it
+                        # actually paid is unknown, and a redemption is not a
+                        # total loss — writing the whole balance off printed a
+                        # -3 % day on renda fixa that never happened. Left out
+                        # of the return and warned about instead, so the missing
+                        # amount gets entered rather than guessed. See the
+                        # `sem valor` warning in the engine.
+                        continue
+                    today = accrued if accrued is not None else ZERO
+                    moved = today - opening - settled + paid
+                    gain += moved
+                    base += opening
+                    gain_by_kind[kind] += moved
+                    base_by_kind[kind] += opening
+                    continue
 
                 held = previous_quantity.get(asset_id, ZERO)
                 before = previous_price.get(asset_id)
                 if held <= ZERO or before is None or unit is None:
                     continue
-                paid = current.income_by_asset.get(asset_id, ZERO) - previous_income.get(asset_id, ZERO)
                 moved = held * (unit - before) + paid
                 gain += moved
                 base += held * before
@@ -1806,6 +2165,7 @@ class PortfolioService:
 
             previous_quantity = quantity_now
             previous_price = price_now
+            previous_accrued = accrued_now
             previous_income = dict(current.income_by_asset)
 
             for asset_id, amount in current.realized_by_asset.items():
@@ -1823,7 +2183,12 @@ class PortfolioService:
                     "realized": current.realized,
                     "income": current.dividends,
                     "profit": unrealized + current.realized + current.dividends,
-                    "priced_value": base,
+                    # Today's value that a real price (or an accrual) speaks
+                    # for — not the base the factor was chained on. The base is
+                    # *yesterday's* holding, so dividing it by today's value
+                    # measured coverage against the wrong day and read as low
+                    # as 67 % in months of heavy aportes, and as 100,5 % once.
+                    "priced_value": priced_value,
                     "factor": factor,
                     "flow": flow_total,
                     "flow_time": flow_time_total,
@@ -1925,6 +2290,31 @@ class PortfolioService:
             )
         self.db.commit()
 
+    @staticmethod
+    def _kind_start_days(rows: list[dict], opening: dict) -> dict[str, date]:
+        """The first day inside the window on which each class existed.
+
+        A money-weighted return divides by the capital that was actually at
+        work, weighted by how long it was there. For the portfolio the window
+        and its life are the same thing, but a class bought halfway through has
+        a life much shorter than the chart — and weighting its money against
+        the chart's span counts a R$600 purchase as R$40 of average capital.
+
+        Taken from the daily chain rather than from the plotted points, so the
+        answer is the real date and not whichever monthly sample follows it.
+        """
+        starts: dict[str, date] = {}
+        for row in rows:
+            if row["date"] < opening["date"]:
+                continue
+            for kind, state in row["kinds"].items():
+                if kind in starts:
+                    continue
+                before = opening["kinds"].get(kind, {})
+                if state["value"] > ZERO or state["flow"] != before.get("flow", ZERO):
+                    starts[kind] = row["date"]
+        return starts
+
     def profit_history(
         self,
         start: date | None = None,
@@ -1972,6 +2362,7 @@ class PortfolioService:
         base_factor = opening["factor"] or ONE
         base_kind = {kind: state["factor"] or ONE for kind, state in opening["kinds"].items()}
         first_day_of_window = opening["date"]
+        kind_start = self._kind_start_days(rows, opening) if split else {}
 
         points = []
         for row in window:
@@ -1993,7 +2384,12 @@ class PortfolioService:
                         before.get("value", ZERO),
                         state["flow"] - before.get("flow", ZERO),
                         state["flow_time"] - before.get("flow_time", ZERO),
-                        first_day_of_window,
+                        # The class's own start, not the chart's: money that was
+                        # at work for ten days of a six-year window is weighted
+                        # at ten days *of that class's life*. Weighting it
+                        # against the whole window shrinks the denominator to
+                        # almost nothing and turns a small loss into -4000%.
+                        kind_start.get(kind, first_day_of_window),
                         row["date"],
                     )
                     if value is not None:

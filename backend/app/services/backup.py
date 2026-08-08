@@ -53,13 +53,13 @@ def latest_backup_at() -> datetime | None:
     return max(stamps, default=None)
 
 
-def backup_is_due(max_age: timedelta = timedelta(hours=24)) -> bool:
-    """Whether the daily slot was missed — the machine was off at BACKUP_TIME.
+def backup_is_due(max_age: timedelta = timedelta(days=7)) -> bool:
+    """Whether the weekly slot was missed — the machine was off on Sunday.
 
     Judged by the dump files themselves rather than audit rows: files survive
     a ``.gumbinvest`` restore (which replaces the audit history with the
     source's) and need no timezone arithmetic — if the newest dump is older
-    than a day, a scheduled run did not happen.
+    than a week, a scheduled run did not happen.
     """
     if not settings.backup_time:
         return False
@@ -67,8 +67,8 @@ def backup_is_due(max_age: timedelta = timedelta(hours=24)) -> bool:
     return newest is None or datetime.now(UTC) - newest > max_age
 
 
-def run_daily_backup() -> dict:
-    """The whole daily slot: local dump, then the cloud mirror.
+def run_scheduled_backup() -> dict:
+    """The whole weekly slot: local dump, then the cloud mirror.
 
     A cloud problem must never mask the local dump; ``sync_to_cloud`` records
     its own per-provider outcome in the durable status row either way.
@@ -85,17 +85,17 @@ def run_daily_backup() -> dict:
 
 
 def catch_up_backup() -> dict:
-    """Run the daily backup now if its scheduled slot was missed.
+    """Run the weekly backup now if its scheduled slot was missed.
 
     Both schedulers call this hourly (and the desktop one shortly after
-    boot): a computer that is off at BACKUP_TIME gets its backup at the next
-    opportunity instead of skipping the day. A no-op whenever the newest
-    dump is recent.
+    boot): a computer that is off on Sunday at BACKUP_TIME gets its backup at
+    the next opportunity instead of skipping the week. A no-op whenever the
+    newest dump is recent.
     """
     if not backup_is_due():
         return {"skipped": True}
-    logger.info("backup catch-up: newest dump is older than a day, running now")
-    return run_daily_backup()
+    logger.info("backup catch-up: newest dump is older than a week, running now")
+    return run_scheduled_backup()
 
 
 def _rotate(target_dir: Path, pattern: str) -> int:

@@ -9,7 +9,7 @@ is a new module plus one ``register()`` call.
 Credentials are read DB-first with the env as fallback — never the settings
 singleton alone. ``apply_stored_secrets()`` runs only in the FastAPI lifespan,
 so the Celery worker's singleton never sees keys saved through the UI; the
-nightly sync runs in that worker.
+weekly sync runs in that worker.
 """
 from __future__ import annotations
 

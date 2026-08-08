@@ -165,9 +165,9 @@ And the whole interface is responsive — usable from the phone on your couch
 **Operations**
 - Live quotes with pluggable providers; automatic refresh in the background.
 - Historical daily closes so the value chart is real market value, not cost.
-- Nightly snapshots and automatic backups with rotation, plus a one-file
-  `.gumbinvest` export that moves a whole history between installs.
-- Cloud backup to your own Google Drive or Dropbox — nightly and on demand,
+- Nightly snapshots and weekly automatic backups with rotation, plus a
+  one-file `.gumbinvest` export that moves a whole history between installs.
+- Cloud backup to your own Google Drive or Dropbox — weekly and on demand,
   optionally encrypted with a passphrase — with restore from the cloud on a
   fresh install (Configurações → Backup).
 - Watchlist, asset notes, manual prices, audit log.

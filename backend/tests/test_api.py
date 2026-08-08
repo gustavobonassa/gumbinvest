@@ -352,6 +352,37 @@ def test_profit_history_headline_return_weights_capital_by_time(client: TestClie
     assert last["return_pct"] != pytest.approx(last["twr_pct"])
 
 
+#: The same history, plus R$ 30 of IRRF withheld on the dividend.
+CSV_WITH_WITHHOLDING = CSV + (
+    'Debito,15/02/2024,IRRF,PETR4 - PETROLEO BRASILEIRO S.A.,XP INVESTIMENTOS CCTVM S/A,200," R$ 0,15 "," R$ 30,00 "\n'
+)
+
+
+def test_monthly_returns_add_up_to_the_accumulated_curve(client: TestClient, db: Session):
+    """The two widgets on the rentabilidade page must tell the same story.
+
+    They did not. *Retorno mensal* was assembled from its own queries, and
+    ``income_series`` reports income **gross** of the tax withheld at source
+    while every result figure — the curve above it, the dashboard, the Proventos
+    page — is net of it. On the real portfolio the months summed to R$ 210.503
+    under a curve that said R$ 204.589, and R$ 4.567 of the gap was tax that
+    never reached the account.
+    """
+    upload(client, CSV_WITH_WITHHOLDING)
+    seed_closes(db)
+
+    months = client.get("/api/portfolio/monthly-returns").json()
+    curve = client.get("/api/portfolio/profit-history", params={"range": "max"}).json()
+
+    assert sum(month["profit"] for month in months) == pytest.approx(curve[-1]["profit"])
+    # And the tax is out of the income the months report, not just out of the
+    # total: 200 declared, 30 withheld, 170 received.
+    assert sum(month["income"] for month in months) == pytest.approx(170.0)
+    # 3.000 + 4.000 in, 2.500 out. The flows are what the replay actually paid
+    # and received, so a sale's costs land in the aporte and not in the result.
+    assert sum(month["flow"] for month in months) == pytest.approx(4500.0)
+
+
 def test_profit_history_says_how_much_of_the_portfolio_it_prices(client: TestClient):
     """No closes on file means no time-weighted return — the page is told, not fooled."""
     upload(client)

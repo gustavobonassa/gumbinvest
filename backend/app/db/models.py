@@ -246,6 +246,33 @@ class Quote(Base):
     asset: Mapped[Asset] = relationship(back_populates="quote")
 
 
+class AssetSplit(Base):
+    """A share split as the exchange declared it, from the data provider.
+
+    Stored because :class:`PriceHistory` is written in *today's* shares — a
+    provider divides the whole pre-split series by the ratio — while the ledger
+    counts the shares that existed on each date. Valuing a past holding needs
+    both, and without this row the two series are indistinguishable from one
+    that never split: a 6-for-1 makes every earlier day look like an 83% loss
+    that never happened.
+
+    Not derived from the ledger, though the statements do report splits: a
+    statement gives the quantity credited to *one broker's* sleeve, so the same
+    6-for-1 arrives as 13.7 shares from one broker and 38.7 from another — and
+    sometimes classified as a purchase. The exchange's own ratio is the fact.
+    """
+
+    __tablename__ = "asset_splits"
+    __table_args__ = (UniqueConstraint("asset_id", "date", name="uq_asset_split_day"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), index=True)
+    date: Mapped[date] = mapped_column(Date)
+    #: Shares after, per share before: 6 for a 6-for-1, 0.1 for a 1-for-10.
+    ratio: Mapped[Decimal] = mapped_column(Numeric(18, 8))
+    source: Mapped[str] = mapped_column(String(32), default="unknown")
+
+
 class QuoteAttempt(Base):
     """A quote fetch that failed transiently and is owed another try.
 
@@ -586,8 +613,10 @@ class PortfolioSnapshot(Base):
     #: which is what lets the rentabilidade chart answer every range from one
     #: pass instead of replaying six years of prices on each request.
     return_factor: Mapped[Decimal] = mapped_column(Numeric(28, 16), default=Decimal(1))
-    #: Market value the return actually speaks for — a CDB has no daily close,
-    #: so it is outside the percentage and the page says by how much.
+    #: How much of *this day's* market value carried a real price (a close, or
+    #: an accrual). A holding nothing can value is marked at cost, which is
+    #: outside the percentage — and the page says by how much rather than
+    #: quietly diluting the figure towards zero.
     priced_value: Mapped[Decimal] = mapped_column(MONEY, default=Decimal(0))
     #: Net capital put in since the first movement, and the same flows weighted
     #: by their date (amount × day ordinal). Two running sums are all a

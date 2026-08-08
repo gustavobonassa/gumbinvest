@@ -3,7 +3,7 @@
  * Both providers authorize by pasting a short code — Google's device flow and
  * Dropbox's no-redirect PKCE — so the same UI works under Docker and on the
  * desktop build's variable port. The manual send runs as a backend job polled
- * here; the nightly sync reports through the notification bell instead.
+ * here; the weekly sync reports through the notification bell instead.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CloudUpload, Download, ExternalLink, RefreshCw, Unplug } from "lucide-react";
@@ -103,9 +103,10 @@ export default function CloudBackupCard({ settings }: { settings: AppSettings })
             </button>
             {status.data?.backup_time ? (
               <span className="text-xs text-ink-muted">
-                Envio automático todo dia às {status.data.backup_time} — ou na próxima vez que o
-                app abrir, se o computador estava desligado. Os {status.data.backup_keep} backups
-                mais recentes ficam guardados; os antigos são apagados sozinhos.
+                Envio automático toda semana (domingo às {status.data.backup_time}) — ou na
+                próxima vez que o app abrir, se o computador estava desligado. Os{" "}
+                {status.data.backup_keep} backups mais recentes ficam guardados; os antigos são
+                apagados sozinhos.
               </span>
             ) : null}
           </div>

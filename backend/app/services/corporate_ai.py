@@ -131,6 +131,58 @@ def normalize_events(data: dict | None, known: set[str]) -> list[dict]:
     return out[:30]
 
 
+#: Ratios outside this range are a misread, not an event. The widest real
+#: splits are around 1-for-20 and 20-for-1; anything beyond is the model having
+#: confused a price with a ratio, and a wrong ratio silently rewrites years of
+#: historical value.
+MIN_RATIO = Decimal("0.01")
+MAX_RATIO = Decimal(100)
+
+
+def normalize_splits(data: dict | None, known_dates: set[str]) -> list[dict]:
+    """Model output → share-split candidates the user may accept into the form.
+
+    Nothing here is written to the database: these are proposals to fill a form
+    with, and the user presses the button that stores them. Validation is still
+    strict, because a plausible-looking wrong ratio is the failure mode that
+    matters — it would restate every close before its date.
+    """
+    items = (data or {}).get("splits")
+    if not isinstance(items, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            day = date.fromisoformat(str(raw.get("date") or ""))
+        except ValueError:
+            continue
+        iso = day.isoformat()
+        # Already recorded, or proposed twice in the same answer.
+        if iso in known_dates or iso in seen:
+            continue
+        try:
+            ratio = Decimal(str(raw.get("ratio")))
+        except (ArithmeticError, TypeError, ValueError):
+            continue
+        if not MIN_RATIO <= ratio <= MAX_RATIO or ratio == Decimal(1):
+            continue
+        seen.add(iso)
+        out.append(
+            {
+                "date": iso,
+                "ratio": str(ratio),
+                "event_type": str(raw.get("event_type") or "").strip().lower() or None,
+                "rationale": str(raw.get("rationale") or "").strip() or None,
+                "source": str(raw.get("source") or "").strip() or None,
+            }
+        )
+    out.sort(key=lambda item: item["date"])
+    return out[:20]
+
+
 def store_suggestions(
     db: Session, portfolio_id: int, items: list[dict], *, provider: str, model: str
 ) -> list[SuccessionAiSuggestion]:

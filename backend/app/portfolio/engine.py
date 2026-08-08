@@ -589,6 +589,18 @@ def apply_movement(position: Position, mv: Movement, totals: SyncTotals | None =
                 # Held until B3 auctions the fraction and pays for it, so the
                 # auction can be booked net of what it actually cost.
                 position.pending_fraction_cost += cost_removed
+            elif mv.op_type == OperationType.REDEMPTION.value and mv.gross_amount == ZERO:
+                # A paper matured and the statement recorded the units leaving
+                # but not the money arriving ("VENCIMENTO" with no amount). The
+                # cost comes off and the interest it had accrued goes with it,
+                # so the result of the whole application silently vanishes —
+                # and the principal reads as still deployed, then as a fresh
+                # contribution when it is reinvested the next day. Nothing here
+                # can know what was actually credited, so it is said out loud.
+                position.warnings.append(
+                    f"{mv.trade_date}: vencimento de {removed} sem valor de resgate no extrato; "
+                    "o que o papel rendeu não entra no resultado — lance o resgate para corrigir"
+                )
         _release_uncosted(position, qty)
         position.quantity -= qty
         if position.quantity < ZERO:

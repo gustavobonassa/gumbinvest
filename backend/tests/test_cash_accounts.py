@@ -137,6 +137,67 @@ def test_an_empty_account_is_harmless(db: Session, cdi):
     assert build_positions([]) == {}
 
 
+def test_a_deposit_is_not_a_loss_in_the_return_chain(db: Session, cdi):
+    """Topping up an account must not show up as the balance falling.
+
+    An accruing paper has no price, only a value, and the chain marks it by
+    spreading that value over the position. Applying more capital raises value
+    and quantity together, so the quotient *falls* — and read as a price move
+    that books a loss on the day of every deposit. It is not a rounding error:
+    a R$ 6.422 top-up onto a balance already 22 % above its principal printed
+    as -0,79 %, and 38 of them had taken renda fixa's return from +94 % to
+    +53 % — below the CDI it is invested in.
+
+    The invariant: a balance earning 1 % a day returns 1 % a day, whatever was
+    deposited when. That is what "time-weighted" means.
+    """
+    from app.db.models import FixedIncomeTerms
+    from app.market.fixed_income import accrual_factor
+
+    portfolio, asset = make(db, "Rendendo")
+    accounts_api.add_entry(db, portfolio.id, asset, Decimal(100_000), START, deposit=True)
+    accounts_api.add_entry(
+        db, portfolio.id, asset, Decimal(100_000), START + timedelta(days=10), deposit=True
+    )
+    db.commit()
+
+    rows = PortfolioService(db, portfolio.id).daily_chain()
+    by_day = {row["date"]: row for row in rows}
+
+    # The deposit day itself: a day of interest, not a fall.
+    before = by_day[START + timedelta(days=9)]["factor"]
+    after = by_day[START + timedelta(days=10)]["factor"]
+    assert after > before
+
+    # No day of a portfolio holding nothing but a CDI balance may lose money.
+    assert all(a["factor"] <= b["factor"] for a, b in zip(rows, rows[1:]))
+
+    # And the whole chain equals what a single untouched deposit would have
+    # earned over the same window: the second aporte changes the money, not
+    # the return.
+    terms = db.get(FixedIncomeTerms, asset.id)
+    expected, _days, _stale = accrual_factor(db, terms, START, rows[-1]["date"])
+    assert rows[-1]["factor"] == pytest.approx(expected, rel=Decimal("1e-9"))
+
+
+def test_a_withdrawal_is_not_a_gain_in_the_return_chain(db: Session, cdi):
+    """The mirror image: taking money out is not performance either."""
+    portfolio, asset = make(db, "Sacando")
+    accounts_api.add_entry(db, portfolio.id, asset, Decimal(100_000), START, deposit=True)
+    accounts_api.add_entry(
+        db, portfolio.id, asset, Decimal(30_000), START + timedelta(days=10), deposit=False
+    )
+    db.commit()
+
+    from app.db.models import FixedIncomeTerms
+    from app.market.fixed_income import accrual_factor
+
+    rows = PortfolioService(db, portfolio.id).daily_chain()
+    terms = db.get(FixedIncomeTerms, asset.id)
+    expected, _days, _stale = accrual_factor(db, terms, START, rows[-1]["date"])
+    assert rows[-1]["factor"] == pytest.approx(expected, rel=Decimal("1e-9"))
+
+
 def test_names_collapse_to_one_account(db: Session):
     portfolio, _asset = make(db, "Nubank")
     with pytest.raises(accounts_api.AccountError, match="já existe"):

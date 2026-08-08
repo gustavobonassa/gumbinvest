@@ -215,7 +215,7 @@ def test_dropbox_pkce_flow(db: Session, monkeypatch):
     url = provider.build_authorize_url(db)
     assert "code_challenge=" in url and "token_access_type=offline" in url
     # Scopes requested upfront: an app without file permissions must fail at
-    # the authorize page, not at the nightly upload.
+    # the authorize page, not at the weekly upload.
     assert "files.content.write" in url
     assert "code_verifier" not in url  # only the challenge travels
     verifier = read_row(db, dropbox_mod.PKCE_KEY)["verifier"]

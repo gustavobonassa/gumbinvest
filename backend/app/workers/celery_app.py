@@ -58,6 +58,15 @@ schedule["backfill-new-assets"] = {
 }
 
 # Banco Central publishes the previous day's CDI in the morning.
+# Splits are rare but retroactive: one invalidates every stored close before
+# it. The nightly history backfill cannot find them — it only touches assets
+# with no history at all — so this is what keeps an established install
+# correct. One small request per asset, once a week.
+schedule["sync-splits"] = {
+    "task": "app.workers.tasks.sync_splits_task",
+    "schedule": crontab(hour=7, minute=10, day_of_week=6),
+}
+
 schedule["sync-indices"] = {
     "task": "app.workers.tasks.sync_indices_task",
     "schedule": crontab(hour=9, minute=20),
@@ -123,12 +132,14 @@ schedule["sync-universe"] = {
 
 if settings.backup_time:
     backup_hour, backup_minute = _hhmm(settings.backup_time, (3, 30))
-    schedule["daily-backup"] = {
+    # Weekly, not daily: transactions are occasional, and a week of them is
+    # what one backup slot is worth. Sunday keeps it clear of trading days.
+    schedule["weekly-backup"] = {
         "task": "app.workers.tasks.backup_database_task",
-        "schedule": crontab(hour=backup_hour, minute=backup_minute),
+        "schedule": crontab(hour=backup_hour, minute=backup_minute, day_of_week=0),
     }
-    # A host that was off at BACKUP_TIME backs up at the next opportunity
-    # instead of skipping the day. No-op whenever the newest dump is recent.
+    # A host that was off on Sunday backs up at the next opportunity instead
+    # of skipping the week. No-op whenever the newest dump is under a week old.
     schedule["backup-catch-up"] = {
         "task": "app.workers.tasks.backup_catch_up_task",
         "schedule": crontab(minute=35),

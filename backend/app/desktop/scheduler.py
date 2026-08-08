@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import AuditLog
 from app.db.session import session_scope
-from app.services.backup import catch_up_backup, run_daily_backup
+from app.services.backup import catch_up_backup, run_scheduled_backup
 from app.services.portfolio_registry import get_default_portfolio
 
 logger = get_logger(__name__)
@@ -63,6 +63,12 @@ def _retry_quotes() -> None:
                 db.add(AuditLog(action="market.retry", detail={k: str(v) for k, v in result.items()}))
     except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
         logger.exception("scheduled job market.retry failed")
+
+
+def _sync_splits(db) -> dict:
+    from app.market.service import sync_splits
+
+    return sync_splits(db, get_default_portfolio(db).id)
 
 
 def _backfill_missing(db) -> dict:
@@ -200,6 +206,11 @@ def build_scheduler() -> BackgroundScheduler:
     # settles by early afternoon; benchmarks after the B3 close.
     scheduler.add_job(lambda: _audited("market.backfill", _backfill_missing), cron(6, 40), id="backfill-new-assets")
     scheduler.add_job(lambda: _audited("fundamentals.refresh", _refresh_fundamentals), cron(8, 5), id="refresh-fundamentals")
+    scheduler.add_job(
+        lambda: _audited("market.splits", _sync_splits),
+        CronTrigger(day_of_week="sat", hour=7, minute=10, timezone=settings.timezone),
+        id="sync-splits",
+    )
     scheduler.add_job(lambda: _audited("market.indices", _sync_indices), cron(9, 20), id="sync-indices")
     scheduler.add_job(lambda: _audited("market.treasury", _sync_treasury), cron(11, 15), id="sync-treasury")
     scheduler.add_job(lambda: _audited("market.fx", _sync_fx), cron(14, 10), id="sync-fx")
@@ -224,26 +235,31 @@ def build_scheduler() -> BackgroundScheduler:
     if settings.backup_time:
         backup_hour, backup_minute = _hhmm(settings.backup_time, (3, 30))
 
-        def _daily_backup() -> None:
-            """Local dump + cloud mirror; both audit themselves (see run_daily_backup)."""
+        def _weekly_backup() -> None:
+            """Local dump + cloud mirror; both audit themselves (see run_scheduled_backup)."""
             try:
-                run_daily_backup()
+                run_scheduled_backup()
             except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
-                logger.exception("scheduled job backup.daily failed")
+                logger.exception("scheduled job backup.weekly failed")
 
         def _backup_catch_up() -> None:
-            """A laptop that slept through BACKUP_TIME backs up on the next check.
+            """A machine that was off on Sunday backs up on the next check.
 
             Runs shortly after boot (the "backup next time the app opens"
             path) and hourly after that; a no-op while the newest dump is
-            under a day old.
+            under a week old.
             """
             try:
                 catch_up_backup()
             except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
                 logger.exception("scheduled job backup.catch-up failed")
 
-        scheduler.add_job(_daily_backup, cron(backup_hour, backup_minute), id="daily-backup")
+        # Weekly, mirroring the beat schedule: Sunday at BACKUP_TIME.
+        scheduler.add_job(
+            _weekly_backup,
+            CronTrigger(day_of_week="sun", hour=backup_hour, minute=backup_minute, timezone=settings.timezone),
+            id="weekly-backup",
+        )
         scheduler.add_job(
             _backup_catch_up,
             IntervalTrigger(hours=1),

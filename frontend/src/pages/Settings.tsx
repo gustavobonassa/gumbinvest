@@ -17,6 +17,7 @@ import { useSearchParams } from "react-router-dom";
 
 import AiSettings from "@/components/AiSettings";
 import CloudBackupCard from "@/components/CloudBackupCard";
+import AssetSplits from "@/components/AssetSplits";
 import CorporateActions from "@/components/CorporateActions";
 import UpdateCard from "@/components/UpdateCard";
 import SecretField from "@/components/SecretField";
@@ -386,7 +387,15 @@ export default function Settings() {
 
       {tab === "ia" ? <AiSettings settings={settings.data} /> : null}
 
-      {tab === "eventos" ? <CorporateActions /> : null}
+      {/* Two kinds of corporate event, kept apart because they do different
+          things: a succession replaces one asset with another, a split only
+          changes the share count — and each is declared for its own reason. */}
+      {tab === "eventos" ? (
+        <>
+          <CorporateActions />
+          <AssetSplits />
+        </>
+      ) : null}
 
       {tab === "backup" ? (
         <>

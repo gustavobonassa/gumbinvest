@@ -84,6 +84,30 @@ export interface Overview {
  * grows new sources without this type changing, so a price-target alert renders
  * with the same component as a queued quote refresh.
  */
+/** A share split: the share count changed without money changing hands. */
+export interface AssetSplit {
+  id: number;
+  ticker: string;
+  name: string;
+  date: string;
+  /** Shares after per share before: 6 for a 6-for-1, 0.1 for a 1-for-10. */
+  ratio: number;
+  source: string;
+  /** Only a hand-declared split can be removed here. */
+  editable: boolean;
+  /** Set when the traded prices contradict this ratio, so it is not applied. */
+  ignored_reason: string | null;
+}
+
+/** One split the AI proposes for the form — never stored until accepted. */
+export interface SplitCandidate {
+  date: string;
+  ratio: string;
+  event_type: string | null;
+  rationale: string | null;
+  source: string | null;
+}
+
 export interface AppNotification {
   /**
    * Which half of the feed this came from, and the half that decides what
@@ -159,6 +183,10 @@ export interface PositionRow {
   /** Base-currency mirrors: cost at each purchase's own rate, value at today's. */
   market_value_base: number;
   cost_basis_base: number;
+  /** What was put in over the position's whole life — the denominator a
+   *  lifetime result belongs over, since `cost_basis_base` is only what is
+   *  still open. */
+  invested_base: number;
   unrealized_pnl_base: number;
   realized_pnl_base: number;
   income_base: number;
@@ -890,7 +918,7 @@ export interface CloudProviderStatus {
   label: string;
   /** App credentials (client id / app key) present. */
   configured: boolean;
-  /** Authorization completed — included in the nightly sync. */
+  /** Authorization completed — included in the weekly sync. */
   connected: boolean;
   last: CloudProviderLast | null;
 }
@@ -1560,6 +1588,15 @@ export const api = {
     source?: string;
   }) => request<Succession>("/corporate-actions", { method: "POST", body: JSON.stringify(payload) }),
   deleteSuccession: (id: number) => request(`/corporate-actions/${id}`, { method: "DELETE" }),
+
+  splits: () => request<AssetSplit[]>("/corporate-actions/splits"),
+  createSplit: (payload: { ticker: string; date: string; ratio: string }) =>
+    request<AssetSplit>("/corporate-actions/splits", { method: "POST", body: JSON.stringify(payload) }),
+  deleteSplit: (id: number) =>
+    request(`/corporate-actions/splits/${id}`, { method: "DELETE" }),
+  splitLookup: () => request<AiWalletJob>("/corporate-actions/splits/lookup"),
+  startSplitLookup: (ticker: string) =>
+    request<AiWalletJob>(`/corporate-actions/splits/lookup${query({ ticker })}`, { method: "POST" }),
   // AI event scan: background job (poll status) + stored accept/decline proposals.
   corporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan"),
   startCorporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan", { method: "POST" }),

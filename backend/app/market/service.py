@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models import Asset, PriceHistory, Quote, QuoteAttempt, Transaction
+from app.db.models import (
+    AppSetting,
+    Asset,
+    AssetSplit,
+    PriceHistory,
+    Quote,
+    QuoteAttempt,
+    Transaction,
+)
 from app.db.upsert import dialect_insert
 from app.domain.enums import AssetKind
 from app.market.base import QuoteBatch
@@ -22,6 +30,17 @@ logger = get_logger(__name__)
 #: first sync and the user is looking at the screen right then; longer after,
 #: because by the third failure the provider is having a bad hour.
 RETRY_SCHEDULE = (120, 480, 1800)  # 2min, 8min, 30min
+
+#: A ratio of one is not a split, and a non-positive one is bad data.
+ZERO_RATIO = Decimal(0)
+ONE_RATIO = Decimal(1)
+
+#: ``AssetSplit.source`` for a ratio a person entered. Providers never write it,
+#: and a provider sync never overwrites a row carrying it.
+MANUAL_SPLIT_SOURCE = "manual"
+
+#: Marks that the one-time historical split sweep has run on this install.
+SPLITS_SYNCED_KEY = "splits_synced_at"
 
 #: Instrument families that no public quote API covers.
 UNQUOTABLE_KINDS = {
@@ -441,17 +460,79 @@ def backfill_history(
     first_trade = db.scalar(select(Transaction.trade_date).order_by(Transaction.trade_date).limit(1))
     total_points = 0
     covered = 0
+    splits_stored = 0
     for asset in assets:
-        points = provider.get_history(resolve_market_symbol(asset), start=first_trade)
-        if not points:
+        series = provider.fetch_history(resolve_market_symbol(asset), start=first_trade)
+        # Splits are stored even when the closes come back empty: they are what
+        # lets an already-stored series be read in the right shares.
+        splits_stored += _upsert_splits(db, asset.id, series.splits, provider.name)
+        if not series.points:
+            db.commit()
             continue
         covered += 1
-        for point in points:
+        for point in series.points:
             _upsert_price(db, asset.id, point.day, point.close, provider.name)
             total_points += 1
         db.commit()
-    logger.info("history backfill: %s assets, %s points", covered, total_points)
-    return {"provider": provider.name, "assets": covered, "points": total_points}
+    logger.info(
+        "history backfill: %s assets, %s points, %s splits", covered, total_points, splits_stored
+    )
+    return {
+        "provider": provider.name,
+        "assets": covered,
+        "points": total_points,
+        "splits": splits_stored,
+    }
+
+
+def sync_splits(db: Session, portfolio_id: int | None = None) -> dict:
+    """Re-check every held asset for declared splits.
+
+    Runs on its own schedule rather than riding the history backfill, because
+    the backfill deliberately only touches assets that have *no* history: on an
+    install that has been running a while it never fires, and a split declared
+    last week would silently invalidate every stored close before it. This costs
+    one small request per asset and is the only thing that keeps a historical
+    curve honest after a split.
+    """
+    provider = get_provider()
+    if provider.name == "none":
+        return {"provider": "none", "assets": 0, "splits": 0}
+
+    assets = quotable_assets(db, portfolio_id, only_held=False)
+    stored = 0
+    for asset in assets:
+        splits = provider.get_splits(resolve_market_symbol(asset))
+        if splits:
+            stored += _upsert_splits(db, asset.id, splits, provider.name)
+    db.commit()
+    logger.info("split sync via %s: %s assets, %s splits", provider.name, len(assets), stored)
+    return {"provider": provider.name, "assets": len(assets), "splits": stored}
+
+
+def _upsert_splits(
+    db: Session, asset_id: int, splits: list[tuple[date, Decimal]], source: str
+) -> int:
+    """Record the share splits a provider reported for one asset."""
+    stored = 0
+    for day, ratio in splits:
+        if ratio <= ZERO_RATIO or ratio == ONE_RATIO:
+            continue
+        stmt = dialect_insert(db)(AssetSplit).values(
+            asset_id=asset_id, date=day, ratio=ratio, source=source
+        )
+        db.execute(
+            stmt.on_conflict_do_update(
+                index_elements=[AssetSplit.asset_id, AssetSplit.date],
+                set_={"ratio": stmt.excluded.ratio, "source": stmt.excluded.source},
+                # A ratio typed by hand outranks the provider: it is only ever
+                # entered because the provider was wrong or silent, and letting
+                # the next sync overwrite it would undo the correction nightly.
+                where=AssetSplit.source != MANUAL_SPLIT_SOURCE,
+            )
+        )
+        stored += 1
+    return stored
 
 
 def heal_market_data(db: Session) -> dict:
@@ -494,5 +575,22 @@ def heal_market_data(db: Session) -> dict:
             healed["indices"] = True
     except Exception:  # noqa: BLE001
         logger.exception("market heal: index sync failed")
+
+    try:
+        # An install that predates split tracking has years of stored closes and
+        # no ratios to read them with, and nothing else would ever fetch them:
+        # the nightly backfill only touches assets with no history at all. One
+        # pass, then never again — the weekly sync owns it from here.
+        #
+        # Marked by a settings row rather than by "the table is empty", because
+        # a portfolio whose papers never split would leave it empty forever and
+        # re-run this every half hour.
+        if db.get(AppSetting, SPLITS_SYNCED_KEY) is None:
+            if db.scalar(select(PriceHistory.id).limit(1)) is not None:
+                healed["splits"] = sync_splits(db)["splits"]
+            db.merge(AppSetting(key=SPLITS_SYNCED_KEY, value={"at": datetime.now(UTC).isoformat()}))
+            db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("market heal: split sync failed")
 
     return healed

@@ -1,6 +1,6 @@
 """Cloud backup orchestration: export → encrypt → upload → rotate, and back.
 
-Runs in two places with different plumbing. The nightly sync executes in the
+Runs in two places with different plumbing. The weekly sync executes in the
 Celery worker (or the desktop scheduler thread) right after the local dump,
 so its outcome is written to a durable ``app_settings`` row — the API
 container answers the status poll from that row, since an in-memory job
@@ -8,7 +8,7 @@ registry never crosses the container boundary. The manual "Enviar agora" is
 HTTP-triggered and therefore *does* share a process with its poller; the
 route wraps this same :func:`sync_to_cloud` in a ``JobRegistry``.
 
-A nightly worker run and a manual send can theoretically overlap. The worst
+A scheduled worker run and a manual send can theoretically overlap. The worst
 case is one extra file in the cloud, and rotation converges on the next run —
 not worth a cross-process lock.
 """

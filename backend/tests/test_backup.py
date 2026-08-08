@@ -75,8 +75,13 @@ def test_backup_is_due_judges_by_the_newest_dump(tmp_path: Path, monkeypatch) ->
     dump.write_bytes(b"x")
     assert backup_service.backup_is_due() is False  # fresh mtime
 
+    # A weekly cadence: two days old is fine, past a week is a missed slot.
     two_days_ago = time.time() - 2 * 24 * 3600
     os.utime(dump, (two_days_ago, two_days_ago))
+    assert backup_service.backup_is_due() is False
+
+    eight_days_ago = time.time() - 8 * 24 * 3600
+    os.utime(dump, (eight_days_ago, eight_days_ago))
     assert backup_service.backup_is_due() is True
 
     # Backups disabled: never due, the catch-up must stay silent.
@@ -86,7 +91,7 @@ def test_backup_is_due_judges_by_the_newest_dump(tmp_path: Path, monkeypatch) ->
 
 def test_catch_up_runs_only_when_due(monkeypatch) -> None:
     runs: list[bool] = []
-    monkeypatch.setattr(backup_service, "run_daily_backup", lambda: runs.append(True) or {"status": "ok"})
+    monkeypatch.setattr(backup_service, "run_scheduled_backup", lambda: runs.append(True) or {"status": "ok"})
 
     monkeypatch.setattr(backup_service, "backup_is_due", lambda: False)
     assert backup_service.catch_up_backup() == {"skipped": True}

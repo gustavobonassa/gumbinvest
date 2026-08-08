@@ -8,7 +8,12 @@ from app.market.crypto import sync_crypto_fx
 from app.market.fixed_income import ensure_terms_for_fixed_income
 from app.market.fx import backfill_transaction_fx, sync_all_fx
 from app.market.indices import sync_all_indices
-from app.market.service import backfill_history, refresh_quotes, retry_pending_quotes
+from app.market.service import (
+    backfill_history,
+    refresh_quotes,
+    retry_pending_quotes,
+    sync_splits,
+)
 from app.market.treasury import sync_treasury_prices
 from app.portfolio.service import PortfolioService
 from app.services.backup import backup_database
@@ -24,6 +29,17 @@ def refresh_quotes_task(force: bool = False) -> dict:
         portfolio = get_default_portfolio(db)
         result = refresh_quotes(db, portfolio.id, force=force)
         db.add(AuditLog(action="market.refresh", detail={k: str(v) for k, v in result.items()}))
+        return {k: str(v) for k, v in result.items()}
+
+
+@celery_app.task(name="app.workers.tasks.sync_splits_task")
+def sync_splits_task() -> dict:
+    """Re-check declared splits. Cheap, and the only thing that keeps a
+    historical curve honest once a paper splits."""
+    with session_scope() as db:
+        portfolio = get_default_portfolio(db)
+        result = sync_splits(db, portfolio.id)
+        db.add(AuditLog(action="market.splits", detail={k: str(v) for k, v in result.items()}))
         return {k: str(v) for k, v in result.items()}
 
 
@@ -134,14 +150,14 @@ def snapshot_ai_wallets_task() -> dict:
 @celery_app.task(name="app.workers.tasks.backup_database_task")
 def backup_database_task() -> dict:
     """Dump the database into ``BACKUP_DIR``, then mirror it to the cloud."""
-    from app.services.backup import run_daily_backup
+    from app.services.backup import run_scheduled_backup
 
-    return run_daily_backup()
+    return run_scheduled_backup()
 
 
 @celery_app.task(name="app.workers.tasks.backup_catch_up_task")
 def backup_catch_up_task() -> dict:
-    """Run the daily backup now if the BACKUP_TIME slot was missed (host off)."""
+    """Run the weekly backup now if the Sunday slot was missed (host off)."""
     from app.services.backup import catch_up_backup
 
     return catch_up_backup()

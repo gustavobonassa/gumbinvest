@@ -244,13 +244,18 @@ export default function Reports() {
     };
   }, [monthly]);
 
-  /** Result per class, from every position ever held. */
+  /**
+   * Result per class, from every position ever held — so the percentage is
+   * measured against what was put in over those lives, not against the cost
+   * still open. A class that sold its winners has a small remaining cost and a
+   * large result, and dividing one by the other reports a return nobody made.
+   */
   const byKind = useMemo(() => {
     const buckets = new Map<string, { kind: string; result: number; cost: number; assets: number }>();
     for (const row of positions.data ?? []) {
       const bucket = buckets.get(row.kind) ?? { kind: row.kind, result: 0, cost: 0, assets: 0 };
       bucket.result += Number(row.total_return_base);
-      bucket.cost += Number(row.cost_basis_base);
+      bucket.cost += Number(row.invested_base);
       bucket.assets += 1;
       buckets.set(row.kind, bucket);
     }
@@ -469,7 +474,7 @@ export default function Reports() {
                   </div>
                   <p className="mt-1 text-xs text-ink-muted">
                     {row.assets} ativo{row.assets === 1 ? "" : "s"}
-                    {row.cost > 1 ? ` · ${money(row.cost, { compact: true })} de custo` : ""}
+                    {row.cost > 1 ? ` · ${money(row.cost, { compact: true })} aplicados` : ""}
                   </p>
                 </li>
               ))}

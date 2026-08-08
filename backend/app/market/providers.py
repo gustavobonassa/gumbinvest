@@ -20,7 +20,13 @@ import httpx
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.market.base import HistoricalPoint, MarketDataProvider, QuoteBatch, QuoteData
+from app.market.base import (
+    HistoricalPoint,
+    HistorySeries,
+    MarketDataProvider,
+    QuoteBatch,
+    QuoteData,
+)
 
 logger = get_logger(__name__)
 
@@ -87,6 +93,29 @@ def _retry_after(response: httpx.Response) -> float | None:
         return min(float(raw), RETRY_MAX_DELAY)
     except ValueError:  # an HTTP-date rather than seconds — not worth parsing
         return None
+
+
+def _splits_from(payload: dict) -> list[tuple[date, Decimal]]:
+    """Split events out of a chart payload, oldest first.
+
+    Taken from the provider rather than from the ledger on purpose. A statement
+    reports the *quantity credited* to one broker's sleeve — 13.7 shares from
+    one broker and 38.7 from another for the same 6-for-1, one of them
+    classified as a purchase — so reconstructing the ratio from holdings is
+    guesswork. The exchange's own ``6:1`` is not.
+    """
+    events = ((payload.get("events") or {}).get("splits") or {}).values()
+    splits: list[tuple[date, Decimal]] = []
+    for event in events:
+        numerator = _dec(event.get("numerator"))
+        denominator = _dec(event.get("denominator"))
+        stamp = event.get("date")
+        if not numerator or not denominator or stamp is None:
+            continue
+        day = datetime.fromtimestamp(int(stamp), tz=UTC).date()
+        splits.append((day, numerator / denominator))
+    splits.sort()
+    return splits
 
 
 def _backoff(attempt: int, retry_after: float | None) -> float:
@@ -340,17 +369,41 @@ class YahooChartProvider(MarketDataProvider):
     def supports_history(self) -> bool:
         return True
 
-    def get_history(self, symbol: str, start: date | None = None) -> list[HistoricalPoint]:
+    def get_splits(self, symbol: str) -> list[tuple[date, Decimal]]:
+        # Quarterly candles: the events block does not depend on the interval,
+        # so this asks for ten years of splits and gets back forty rows of
+        # prices instead of two thousand.
         with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
             try:
-                payload = self._fetch(client, symbol, {"range": "10y", "interval": "1d"})
+                payload = self._fetch(
+                    client, symbol, {"range": "10y", "interval": "3mo", "events": "split"}
+                )
             except TransientFetchError as exc:
-                # History has its own nightly job; an empty list here means
+                logger.warning("yahoo splits unavailable for %s: %s", symbol, exc)
+                return []
+        return _splits_from(payload) if payload else []
+
+    def get_history(self, symbol: str, start: date | None = None) -> list[HistoricalPoint]:
+        return self.fetch_history(symbol, start).points
+
+    def fetch_history(self, symbol: str, start: date | None = None) -> HistorySeries:
+        with httpx.Client(timeout=settings.request_timeout, follow_redirects=True) as client:
+            try:
+                # `events=split` rides along on the same request: the closes
+                # below are stated in today's shares, and without the ratios
+                # nothing downstream can put them back into the shares that
+                # existed on each day.
+                payload = self._fetch(
+                    client, symbol, {"range": "10y", "interval": "1d", "events": "split"}
+                )
+            except TransientFetchError as exc:
+                # History has its own nightly job; an empty series here means
                 # "not today", and the backfill picks the asset up again.
                 logger.warning("yahoo history unavailable for %s: %s", symbol, exc)
-                return []
+                return HistorySeries(points=[])
         if not payload:
-            return []
+            return HistorySeries(points=[])
+        splits = _splits_from(payload)
         timestamps = payload.get("timestamp") or []
         quote = ((payload.get("indicators") or {}).get("quote") or [{}])[0]
         closes = quote.get("close") or []
@@ -363,7 +416,7 @@ class YahooChartProvider(MarketDataProvider):
             if start and day < start:
                 continue
             points.append(HistoricalPoint(day=day, close=value))
-        return points
+        return HistorySeries(points=points, splits=splits)
 
 
 class YFinanceProvider(MarketDataProvider):

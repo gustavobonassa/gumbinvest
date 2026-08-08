@@ -45,6 +45,22 @@ class QuoteBatch:
     failed: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class HistorySeries:
+    """Daily closes plus the share splits that shaped them.
+
+    The two belong together because one explains the other: a provider's series
+    is stated in *today's* shares, so every close before a split has already
+    been divided by its ratio. A caller that stores the closes without the
+    splits cannot later tell that series apart from one that never split — and
+    will value a past holding at a fraction of what it was worth.
+    """
+
+    points: list[HistoricalPoint]
+    #: ``(day, ratio)`` — 6.0 for a 6-for-1, 0.1 for a 1-for-10 grouping.
+    splits: list[tuple[date, Decimal]] = field(default_factory=list)
+
+
 class MarketDataProvider(ABC):
     """Interface every provider implements."""
 
@@ -70,6 +86,26 @@ class MarketDataProvider(ABC):
     def get_history(self, symbol: str, start: date | None = None) -> list[HistoricalPoint]:
         """Daily closes. Providers without history return an empty list."""
         return []
+
+    def get_splits(self, symbol: str) -> list[tuple[date, Decimal]]:
+        """Declared share splits, without downloading the price series.
+
+        Separate from :meth:`fetch_history` because the two are needed at very
+        different rates: history is a heavy one-off, while splits have to be
+        re-checked periodically — a split declared next month invalidates every
+        stored close before it, and an install that only ever fetches history
+        for *new* assets would never find out.
+        """
+        return []
+
+    def fetch_history(self, symbol: str, start: date | None = None) -> HistorySeries:
+        """:meth:`get_history` plus the splits behind it.
+
+        The default reports no splits, which is the honest answer for a
+        provider that does not publish them — and leaves that provider's
+        history valued as it always was.
+        """
+        return HistorySeries(points=self.get_history(symbol, start))
 
     def supports_history(self) -> bool:
         return False

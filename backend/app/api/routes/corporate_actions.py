@@ -14,12 +14,20 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentPortfolio, DbSession, PortfolioSvc
 from app.core.logging import get_logger
-from app.db.models import Asset, AssetSuccession, AuditLog, SuccessionAiSuggestion
+from app.db.models import (
+    Asset,
+    AssetSplit,
+    AssetSuccession,
+    AuditLog,
+    SuccessionAiSuggestion,
+    Transaction,
+)
 from app.db.session import session_scope
+from app.market.service import MANUAL_SPLIT_SOURCE
 from app.portfolio.corporate_actions import suggest_successions
 from app.services import ai_research as research
 from app.services import corporate_ai
@@ -31,6 +39,8 @@ logger = get_logger(__name__)
 
 #: One AI scan per portfolio at a time.
 _SCAN_REGISTRY = JobRegistry()
+#: ...and one split lookup, which is a different question and may run alongside.
+_SPLIT_REGISTRY = JobRegistry()
 
 
 class SuccessionPayload(BaseModel):
@@ -147,6 +157,40 @@ Regra de formato ABSOLUTA: responda APENAS com JSON válido, sem markdown, sem c
 código, sem nenhum texto antes ou depois do JSON."""
 
 
+SYSTEM_SPLITS = """Você é um pesquisador de eventos societários de bolsa (B3 e bolsas \
+americanas). Sua tarefa é listar os DESDOBRAMENTOS, GRUPAMENTOS e BONIFICAÇÕES EM AÇÕES de \
+um único papel — eventos que mudam a quantidade de cotas sem entrada de dinheiro.
+
+Regras:
+- Responda a razão como "cotas depois por cota antes": desdobramento 1:6 vira 6; \
+grupamento 10:1 vira 0.1; bonificação de 5% vira 1.05.
+- Use a data EX (o dia em que o preço na bolsa passou a refletir o evento), YYYY-MM-DD.
+- Pesquise e cite a fonte de cada evento. Só proponha o que conseguir confirmar: uma razão \
+errada distorce todo o histórico de valor do usuário antes daquela data.
+- NÃO inclua dividendos, JCP, rendimentos, subscrições nem fusões — apenas eventos de \
+quantidade de cotas.
+- Se não encontrar nada confiável, devolva uma lista vazia. Uma lista vazia é uma resposta \
+melhor que um palpite.
+
+Regra de formato ABSOLUTA: responda APENAS com JSON válido, sem markdown, sem cercas de \
+código, sem nenhum texto antes ou depois do JSON."""
+
+
+def _split_prompt(asset: Asset, first_trade: date | None, known: list[dict]) -> str:
+    return (
+        f"Papel: {asset.ticker} ({asset.name}), negociado em "
+        f"{'B3' if (asset.currency or 'BRL').upper() == 'BRL' else 'bolsa dos EUA'}.\n"
+        f"O usuário tem posição desde {first_trade.isoformat() if first_trade else 'data desconhecida'}; "
+        "eventos anteriores a essa data não interessam.\n"
+        f"Já registrados (não repita): {json.dumps(known, ensure_ascii=False)}\n"
+        "Liste os eventos de quantidade de cotas neste formato:\n"
+        '{"splits": [{"date": "YYYY-MM-DD", "ratio": 6, '
+        '"event_type": "desdobramento|grupamento|bonificacao", '
+        '"rationale": "o que aconteceu, em 1 frase", "source": "fonte"}]}\n'
+        'Se não houver nenhum, responda {"splits": []}.'
+    )
+
+
 def _scan_prompt(context: list[dict]) -> str:
     return (
         "Ativos do usuário (fonte: GumbInvest, agora):\n"
@@ -158,6 +202,180 @@ def _scan_prompt(context: list[dict]) -> str:
         '"rationale": "o que aconteceu, em 1 a 2 frases", "source": "fonte"}]}\n'
         'Se nenhum evento for encontrado, responda {"events": []}.'
     )
+
+
+# ---------------------------------------------------------------------------
+# Splits. A different animal from a succession: the asset stays the same, only
+# the share count changes — and the reason it needs declaring at all is that a
+# provider's price history is retro-adjusted for splits while the ledger counts
+# the shares that existed on each day. Missing one values every earlier day at a
+# fraction of the truth. The provider supplies most of them automatically (see
+# app.market.service.sync_splits); this is for the ones it stays silent about.
+
+
+class SplitPayload(BaseModel):
+    ticker: str
+    date: date
+    #: Shares after per share before: 6 for a 6-for-1, 0.1 for a 1-for-10.
+    ratio: Decimal = Field(gt=0)
+
+
+@router.get("/splits", response_model=None, summary="Declared share splits")
+def list_splits(db: DbSession, portfolio: CurrentPortfolio, svc: PortfolioSvc) -> list[dict]:
+    """Every split known for assets this portfolio holds, newest first."""
+    rows = db.execute(
+        select(AssetSplit, Asset)
+        .join(Asset, Asset.id == AssetSplit.asset_id)
+        .join(Transaction, Transaction.asset_id == Asset.id)
+        .where(Transaction.portfolio_id == portfolio.id)
+        .group_by(AssetSplit.id, Asset.id)
+        .order_by(AssetSplit.date.desc())
+    ).all()
+    # A declared ratio the traded prices contradict is not applied — and saying
+    # so here is the whole point: silently dropping it would be the same sin as
+    # silently applying it.
+    rejected = svc.rejected_splits()
+    return [
+        {
+            "id": split.id,
+            "ticker": asset.ticker,
+            "name": asset.name,
+            "date": split.date,
+            "ratio": split.ratio,
+            "source": split.source,
+            # Only what a person declared can be withdrawn here; a provider row
+            # would simply come back on the next sync.
+            "editable": split.source == MANUAL_SPLIT_SOURCE,
+            "ignored_reason": rejected.get((asset.id, split.date)),
+        }
+        for split, asset in rows
+    ]
+
+
+@router.post("/splits", response_model=None, summary="Declare a share split")
+def create_split(payload: SplitPayload, db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    asset = _asset(db, payload.ticker)
+    if payload.ratio == Decimal(1):
+        raise HTTPException(status_code=422, detail="a ratio of 1 changes nothing")
+    # A split only ever does one thing: restate the closes used to value a
+    # holding. Declared for a paper this portfolio never held, it would be
+    # stored, do nothing, and not even appear in the list below.
+    held = db.scalar(
+        select(func.count(Transaction.id)).where(
+            Transaction.portfolio_id == portfolio.id, Transaction.asset_id == asset.id
+        )
+    )
+    if not held:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{asset.ticker} não tem movimentações nesta carteira, então um desdobramento nele não muda nada.",
+        )
+    existing = db.scalar(
+        select(AssetSplit).where(
+            AssetSplit.asset_id == asset.id, AssetSplit.date == payload.date
+        )
+    )
+    row = existing or AssetSplit(asset_id=asset.id, date=payload.date)
+    row.ratio = payload.ratio
+    row.source = MANUAL_SPLIT_SOURCE
+    db.add(row)
+    db.add(
+        AuditLog(
+            action="portfolio.split",
+            detail={
+                "ticker": asset.ticker,
+                "date": payload.date.isoformat(),
+                "ratio": str(payload.ratio),
+            },
+        )
+    )
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "ticker": asset.ticker,
+        "name": asset.name,
+        "date": row.date,
+        "ratio": row.ratio,
+        "source": row.source,
+        "editable": True,
+    }
+
+
+@router.delete("/splits/{split_id}", response_model=None, summary="Remove a declared split")
+def delete_split(split_id: int, db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    row = db.get(AssetSplit, split_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="split not found")
+    if row.source != MANUAL_SPLIT_SOURCE:
+        raise HTTPException(
+            status_code=409,
+            detail="Este desdobramento veio do provedor de cotações e voltaria na próxima sincronização.",
+        )
+    db.delete(row)
+    db.commit()
+    return {"deleted": split_id}
+
+
+@router.get("/splits/lookup", response_model=None, summary="Status of the AI split lookup")
+def split_lookup_status(db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    return job_payload(_SPLIT_REGISTRY.current(portfolio.id))
+
+
+@router.post("/splits/lookup", response_model=None, summary="Ask the AI for a ticker's splits")
+def start_split_lookup(ticker: str, db: DbSession, portfolio: CurrentPortfolio) -> dict:
+    """Fill the form rather than file a proposal.
+
+    Splits are found in bulk by the provider already; the model is here for the
+    ones it does not publish, so the useful shape is "I know the ticker, tell me
+    its events" — the user still presses the button that writes the row.
+    """
+    provider_id, provider, model, api_key = active_ai(db)
+    if not is_configured(provider):
+        raise HTTPException(
+            status_code=503,
+            detail=f"{unavailable_reason(provider)} Necessário para buscar desdobramentos com IA.",
+        )
+    asset = _asset(db, ticker)
+    known = [
+        {"date": row.date.isoformat(), "ratio": str(row.ratio)}
+        for row in db.scalars(
+            select(AssetSplit).where(AssetSplit.asset_id == asset.id).order_by(AssetSplit.date)
+        ).all()
+    ]
+    first_trade = db.scalar(
+        select(func.min(Transaction.trade_date)).where(
+            Transaction.portfolio_id == portfolio.id, Transaction.asset_id == asset.id
+        )
+    )
+
+    def run(job: BackgroundJob) -> None:
+        job.status = f"Pesquisando desdobramentos de {asset.ticker}…"
+        data, used_search = research.call_model_json(
+            provider_id, provider, model, api_key, SYSTEM_SPLITS, [
+                {"role": "user", "content": _split_prompt(asset, first_trade, known)}
+            ],
+        )
+        if data is None:
+            job.error = "O modelo não retornou uma resposta válida, tente novamente ou troque o modelo em Configurações."
+            return
+        job.result = {
+            "ticker": asset.ticker,
+            "splits": corporate_ai.normalize_splits(data, known_dates={row["date"] for row in known}),
+            "used_search": used_search,
+        }
+
+    try:
+        job = _SPLIT_REGISTRY.start(
+            portfolio.id,
+            "split-lookup",
+            run,
+            error_message="Erro inesperado na busca de desdobramentos. Veja os logs do backend.",
+            logger=logger,
+        )
+    except JobConflict:
+        raise HTTPException(status_code=409, detail="Já existe uma busca em andamento.")
+    return job_payload(job)
 
 
 @router.get("/ai-scan", response_model=None, summary="Status of the AI corporate-event scan")

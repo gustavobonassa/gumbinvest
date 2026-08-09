@@ -87,6 +87,12 @@ class Asset(Base, TimestampMixin):
     #: from one statement is reused for every later one — see
     #: :mod:`app.importer.pdf.symbols`.
     cusip: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
+    #: Who the IRPF worksheet names as the payer, when the registry cannot say.
+    #: ``asset_universe`` already carries the CNPJ B3 and the CVM publish and it
+    #: covers every listed Brazilian asset; this answers for the ones no registry
+    #: lists — a private CDB's issuer, a cash account's bank, the exchange
+    #: holding the crypto. An override, so the registry stays the source.
+    cnpj: Mapped[str | None] = mapped_column(String(14), nullable=True)
     sector: Mapped[str | None] = mapped_column(String(120), nullable=True)
     #: Ticker used when querying the market data provider (e.g. PETR4 -> PETR4.SA)
     market_symbol: Mapped[str | None] = mapped_column(String(60), nullable=True)

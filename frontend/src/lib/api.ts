@@ -459,6 +459,63 @@ export interface ContributionPoint {
   cumulative: number;
 }
 
+/** One line of *Bens e Direitos*, declared at cost on 31/12. */
+export interface IrpfBem {
+  ticker: string;
+  name: string;
+  kind: string;
+  grupo: string;
+  codigo: string;
+  cnpj: string | null;
+  country: string | null;
+  is_foreign: boolean;
+  quantity: number;
+  cost: number;
+  cost_previous: number;
+  /** What an accruing paper was worth on 31/12 — for conference, never instead
+   *  of the cost: which of the two belongs on the form is the informe's call. */
+  accrued_value: number | null;
+  discriminacao: string;
+}
+
+export interface IrpfIncomeRow {
+  ticker: string;
+  name: string;
+  kind: string;
+  cnpj: string | null;
+  op_type: string;
+  gross: number;
+  withheld: number;
+  net: number;
+}
+
+/** Something the ledger cannot answer, named with the positions it affects. */
+export interface IrpfGap {
+  kind: string;
+  title: string;
+  tickers: string[];
+  detail: string;
+}
+
+export interface IrpfReport {
+  years: number[];
+  year: number | null;
+  closing: string;
+  opening: string;
+  base_currency: string;
+  bens: IrpfBem[];
+  groups: Record<string, string>;
+  isentos: IrpfIncomeRow[];
+  exclusiva: IrpfIncomeRow[];
+  exterior: IrpfIncomeRow[];
+  sales: {
+    exemption_limit: number;
+    months: ({ period: string } & Record<string, number | string>)[];
+    result_by_bucket: Record<string, number>;
+  };
+  gaps: IrpfGap[];
+}
+
 export interface MonthlyReturn {
   period: string;
   market_value: number;
@@ -1322,6 +1379,7 @@ export const api = {
   aiChatDetail: (id: number) => request<AiChatDetail>(`/ai/chats/${id}`),
   deleteAiChat: (id: number) => request<{ deleted: number }>(`/ai/chats/${id}`, { method: "DELETE" }),
   monthlyReturns: () => request<MonthlyReturn[]>("/portfolio/monthly-returns"),
+  irpf: (year?: number) => request<IrpfReport>(`/reports/irpf${query({ year })}`),
   portfolioWarnings: () => request<{ ticker: string; name: string; message: string }[]>("/portfolio/warnings"),
 
   assets: (includeClosed = true) => request<PositionRow[]>(`/assets${query({ include_closed: includeClosed })}`),

@@ -11,6 +11,7 @@ import {
   Coins,
   Compass,
   GitCompareArrows,
+  FileText,
   Landmark,
   ChartPie,
   FileUp,
@@ -92,6 +93,8 @@ const NAV: NavEntry[] = [
   { to: "/renda-fixa", label: "Renda fixa", icon: Landmark },
   // Where all of the above comes from
   { to: "/transacoes", label: "Transações", icon: ArrowUpDown },
+  // The yearly artifact the whole ledger exists to produce.
+  { to: "/irpf", label: "IRPF", icon: FileText },
   // Things you do
   {
     label: "IA",

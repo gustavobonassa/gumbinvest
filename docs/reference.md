@@ -95,6 +95,7 @@ Interactive documentation at `/api/docs`. The main endpoints:
 | `POST` | `/api/assets/{ticker}/reconcile` | State the balance the venue reports; appends the difference |
 | `GET` | `/api/transactions`, `/api/transactions/export` | Ledger with filters; CSV export |
 | `GET` | `/api/reports/summary`, `/annual`, `/performers`, `/income` | Reports |
+| `GET` | `/api/reports/irpf?year=` | IRPF worksheet for one closed calendar year |
 | `GET` | `/api/search?q=` | Global search |
 | `GET`/`PUT` | `/api/settings` | Preferences and AI provider configuration |
 | `POST` | `/api/market/refresh`, `/api/market/backfill` | Quotes and history |

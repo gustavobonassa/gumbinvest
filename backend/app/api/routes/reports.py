@@ -44,6 +44,22 @@ def allocation(service: PortfolioSvc) -> dict:
     }
 
 
+@router.get("/irpf", response_model=None, summary="IRPF worksheet for one calendar year")
+def irpf(service: PortfolioSvc, year: int | None = None) -> dict:
+    """The declaration's own blocks, for a year that has finished.
+
+    Defaults to the most recent closed year: a declaration is of a closed year,
+    and half a year of movements under this year's heading reads as a complete
+    one.
+    """
+    from app.portfolio import irpf as irpf_report
+
+    years = irpf_report.available_years(service)
+    if not years:
+        return {"years": [], "year": None, "bens": [], "gaps": []}
+    return {"years": years, **irpf_report.worksheet(service, year or years[0])}
+
+
 @router.get("/summary", response_model=None, summary="Everything the reports page needs in one call")
 def summary(service: PortfolioSvc) -> dict:
     overview = service.overview()

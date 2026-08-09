@@ -6,7 +6,7 @@ from datetime import date as date_type
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from app.api.deps import CurrentPortfolio, DbSession, PortfolioSvc
@@ -76,6 +76,22 @@ class AssetUpdate(BaseModel):
     price_manual: bool | None = None
     manual_price: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
+    #: Kept as digits only, whatever the user typed: the IRPF worksheet formats
+    #: it for reading, and a CNPJ stored once with dots and once without is two
+    #: different payers to every lookup that follows.
+    cnpj: str | None = None
+
+    @field_validator("cnpj")
+    @classmethod
+    def _digits_only(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        digits = "".join(character for character in value if character.isdigit())
+        if not digits:
+            return None
+        if len(digits) != 14:
+            raise ValueError("um CNPJ tem 14 dígitos")
+        return digits
 
 
 def _get_asset(db: DbSession, ticker: str) -> Asset:
@@ -501,5 +517,6 @@ def update_asset(ticker: str, payload: AssetUpdate, db: DbSession, portfolio: Cu
         "market_symbol": asset.market_symbol,
         "price_manual": asset.price_manual,
         "manual_price": asset.manual_price,
+        "cnpj": asset.cnpj,
         "user_notes": asset.notes,
     }

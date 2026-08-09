@@ -20,6 +20,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Dividends = lazy(() => import("@/pages/Dividends"));
 const FixedIncome = lazy(() => import("@/pages/FixedIncome"));
 const ImportPage = lazy(() => import("@/pages/ImportPage"));
+const Irpf = lazy(() => import("@/pages/Irpf"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Universo = lazy(() => import("@/pages/Universo"));
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="renda-fixa" element={<FixedIncome />} />
         <Route path="transacoes" element={<Transactions />} />
         <Route path="rentabilidade" element={<Reports />} />
+        <Route path="irpf" element={<Irpf />} />
         {/* The page was /relatorios until 2026-08; old bookmarks keep working. */}
         <Route path="relatorios" element={<Navigate to="/rentabilidade" replace />} />
         <Route path="calculadora" element={<Calculadora />} />

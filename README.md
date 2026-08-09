@@ -125,6 +125,20 @@ And the whole interface is responsive — usable from the phone on your couch
 - Ranked payers, **yield on cost** per asset, and a month × year matrix of
   every payment since the first one, shaded by amount.
 
+**IRPF**
+- A page per calendar year with the blocks the declaration asks for: **Bens e
+  Direitos** at acquisition cost on 31/12 with the previous year beside it,
+  grouped by grupo/código and with the discriminação written out to copy;
+  **rendimentos isentos**, **tributação exclusiva** and income from abroad kept
+  apart, each named by payer and CNPJ; and disposals per month against the
+  exemption each class actually answers to.
+- What it *cannot* answer comes first, above every number it would otherwise
+  corrupt: a payer with no CNPJ on file, units whose cost is unknown, a
+  maturity the statement recorded without its value, a balance that is a CDI
+  projection rather than a bank statement. Nothing is filled with a plausible
+  figure.
+- A worksheet to transcribe, never a filing.
+
 **Fixed income & Tesouro Direto**
 - CDB/LCI/LCA/RDB positions are **accrued from the index**, not frozen at cost:
   Banco Central's CDI, Selic and IPCA series (free, no key) drive the valuation.

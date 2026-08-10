@@ -1,14 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { useToast } from "@/components/Toast";
 import { Badge } from "@/components/ui";
 import { api } from "@/lib/api";
 
-/** Write-only API-key input: never shows the stored value back — only whether
- *  one is configured. No save button: a key is pasted in one burst, so it
- *  saves itself once typing settles; the trash icon removes a stored key. */
+/** Write-only credential input: never shows the stored value back — only
+ *  whether one is configured. It saves when you leave the field (blur) or press
+ *  Enter — never mid-typing. An earlier version saved on a typing pause and
+ *  cleared the input on save, which meant a value typed slowly (a CPF, a
+ *  password) got persisted half-finished and wiped out from under the typist.
+ *  The trash icon removes a stored key. */
 export default function SecretField({
   label,
   hint,
@@ -47,12 +50,12 @@ export default function SecretField({
   });
   const { mutate } = save;
 
-  useEffect(() => {
+  // Persist only once the user is done with the field. Blur covers clicking
+  // away (including onto the Run button); Enter is the keyboard equivalent.
+  const commit = () => {
     const next = value.trim();
-    if (!next) return undefined;
-    const timer = setTimeout(() => mutate(next), 900);
-    return () => clearTimeout(timer);
-  }, [value, mutate]);
+    if (next) mutate(next);
+  };
 
   return (
     <div>
@@ -69,6 +72,13 @@ export default function SecretField({
           autoComplete="off"
           value={value}
           onChange={(event) => setValue(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur(); // triggers onBlur → commit
+            }
+          }}
           placeholder={configured ? "•••••• (digite para substituir)" : placeholder}
           className="input min-w-0 flex-1 sm:min-w-[280px] sm:flex-none sm:w-auto"
         />

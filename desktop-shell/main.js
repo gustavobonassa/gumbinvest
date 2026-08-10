@@ -90,8 +90,9 @@ function checkHealth(port) {
   });
 }
 
-/** Poll until the server answers — the first run downloads market data and
- *  can take minutes, hence the very patient deadline. */
+/** Poll until the server answers. Normally seconds — the heavy startup work
+ *  (downloads, auto-import) runs behind the served app — but the deadline
+ *  stays patient as a safety margin for slow disks and antivirus scans. */
 async function waitForServer(deadlineMs = 300000) {
   const start = Date.now();
   while (Date.now() - start < deadlineMs) {

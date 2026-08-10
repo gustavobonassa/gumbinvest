@@ -47,8 +47,10 @@ class ServerThread:
     def wait_until_healthy(self, timeout: float = 300.0) -> bool:
         """Poll ``/api/health`` until the app serves.
 
-        Generous timeout: on first run the FastAPI lifespan downloads the full
-        PTAX series and a ~14 MB Tesouro file before accepting traffic.
+        Normally answers within seconds — the heavy startup pass (downloads,
+        auto-import, reclassify) runs in a background thread after the server
+        starts serving. The generous timeout is a safety margin, not the
+        expected wait.
         """
         deadline = time.monotonic() + timeout
         url = f"http://127.0.0.1:{self.port}/api/health"

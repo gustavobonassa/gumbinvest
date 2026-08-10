@@ -25,6 +25,12 @@ import { createPortal } from "react-dom";
 import { kindColor } from "@/lib/colors";
 import { kindLabel, money, percent, shortDate, toneOf } from "@/lib/format";
 
+/** Honour the OS "reduce motion" setting for scripted scrolling. */
+const PREFERS_REDUCED_MOTION =
+  typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
 export function Card({
   children,
   className,
@@ -1271,12 +1277,25 @@ export function Tabs<T extends string>({
     if (next) onChange(next.value);
   };
 
+  const stripRef = useRef<HTMLDivElement>(null);
+  // How many pixels are hidden past each edge. Both zero means every tab fits,
+  // and then none of the scroll affordances below exist at all.
+  const [hidden, setHidden] = useState({ left: 0, right: 0 });
+  const measure = () => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const max = strip.scrollWidth - strip.clientWidth;
+    setHidden({
+      left: Math.max(0, Math.round(strip.scrollLeft)),
+      right: Math.max(0, Math.round(max - strip.scrollLeft)),
+    });
+  };
+
   // Keep the selected tab on screen. The strip scrolls sideways once there are
   // more tabs than fit, so on a phone you could otherwise land on a tab that is
   // off to the right — selected, underlined and invisible. Written as scrollLeft
   // rather than scrollIntoView because the latter also scrolls the page
   // vertically to reach the strip.
-  const stripRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const strip = stripRef.current;
     if (!strip) return;
@@ -1293,7 +1312,12 @@ export function Tabs<T extends string>({
       else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 8;
     };
 
-    align();
+    const settle = () => {
+      align();
+      measure();
+    };
+
+    settle();
     // Aligning once is not enough: the first measurement happens with fallback
     // font metrics, and when the real face swaps in every tab gets wider and
     // the selected one drifts back off screen. Every tab is observed, not just
@@ -1301,79 +1325,160 @@ export function Tabs<T extends string>({
     // selected tab is the tabs *before* it growing. The callback runs after
     // layout, so it sees final geometry, and writing scrollLeft resizes
     // nothing, so it cannot loop.
-    const observer = new ResizeObserver(align);
+    const observer = new ResizeObserver(settle);
     observer.observe(strip);
     strip.querySelectorAll('[role="tab"]').forEach((tab) => observer.observe(tab));
     return () => observer.disconnect();
-  }, [value]);
+  }, [value, options.length]);
+
+  // A plain wheel over an overflowing strip scrolls it sideways. Shift+wheel is
+  // the only built-in way to do it and nobody discovers it; the vertical scroll
+  // is handed back to the page at either end, so a flick that runs past the
+  // last tab still moves the page instead of dead-ending. Registered natively
+  // because React's onWheel is passive — preventDefault there does nothing.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      const max = strip.scrollWidth - strip.clientWidth;
+      if (max <= 1) return;
+      // Firefox reports whole lines rather than pixels.
+      const step = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+      if ((step < 0 && strip.scrollLeft <= 0) || (step > 0 && strip.scrollLeft >= max)) return;
+      event.preventDefault();
+      strip.scrollLeft += step;
+    };
+    strip.addEventListener("wheel", onWheel, { passive: false });
+    return () => strip.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Roughly one screenful minus a sliver, so the tab you were reading at the
+  // edge stays visible as the anchor for where you now are.
+  const nudge = (direction: 1 | -1) => {
+    const strip = stripRef.current;
+    if (!strip) return;
+    strip.scrollBy({
+      left: direction * Math.max(120, strip.clientWidth * 0.75),
+      behavior: PREFERS_REDUCED_MOTION ? "auto" : "smooth",
+    });
+  };
+
+  const more = { left: hidden.left > 1, right: hidden.right > 1 };
+  // Fading the tabs themselves — a mask, not a coloured gradient — is what lets
+  // this work on the page background and inside a card without knowing which it
+  // is. Only the side that actually hides something fades, so a strip scrolled
+  // to its end has a clean edge.
+  const fade =
+    `linear-gradient(to right, transparent 0px, #000 ${more.left ? "44px" : "0px"},` +
+    ` #000 calc(100% - ${more.right ? "44px" : "0px"}), transparent 100%)`;
+  const arrow =
+    "absolute top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-line bg-surface-raised/90 text-ink-secondary shadow-card backdrop-blur-sm transition-colors duration-200 ease-premium animate-fade-in hover:border-line-strong hover:bg-surface-hover hover:text-ink";
 
   return (
-    <div
-      ref={stripRef}
-      className={clsx("no-scrollbar flex gap-1 overflow-x-auto border-b border-line", className)}
-      role="tablist"
-    >
-      {options.map((option) => {
-        const active = option.value === value;
-        const Icon = option.icon;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            onClick={() => onChange(option.value)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowRight") {
-                event.preventDefault();
-                move(1);
-              }
-              if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                move(-1);
-              }
-            }}
-            // A tab carrying its own colour underlines in it, so the class the
-            // table is showing is identifiable without reading the label.
-            style={option.color && active ? { borderBottomColor: option.color } : undefined}
-            className={clsx(
-              "-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors duration-200 ease-premium",
-              active
-                ? clsx("text-ink", !option.color && "border-accent")
-                : "border-transparent text-ink-muted hover:border-line-strong hover:text-ink-secondary",
-            )}
-          >
-            {option.color ? (
-              <span
-                className="h-2 w-2 shrink-0 rounded-sm transition-opacity"
-                style={{ background: option.color, opacity: active ? 1 : 0.55 }}
-                aria-hidden
-              />
-            ) : Icon ? (
-              <Icon size={15} aria-hidden />
-            ) : null}
-            {option.label}
-            {option.count !== undefined ? (
-              <span
-                className={clsx(
-                  "tnum rounded-md px-1.5 py-0.5 text-[11px] font-medium",
-                  active && !option.color && "bg-accent-soft text-accent",
-                  active && option.color && "text-ink",
-                  !active && "bg-surface-hover text-ink-muted",
-                )}
-                style={
-                  option.color && active
-                    ? { background: `color-mix(in srgb, ${option.color} 18%, transparent)` }
-                    : undefined
+    <div className={clsx("relative border-b border-line", className)}>
+      <div
+        ref={stripRef}
+        onScroll={measure}
+        // pb-px gives the tabs' `-mb-px` somewhere to land: the underline of the
+        // selected tab has to overlap the strip's bottom line, and that line now
+        // belongs to the wrapper so the mask cannot eat its ends.
+        className="no-scrollbar flex gap-1 overflow-x-auto overscroll-x-contain pb-px"
+        style={more.left || more.right ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
+        role="tablist"
+      >
+        {options.map((option) => {
+          const active = option.value === value;
+          const Icon = option.icon;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              onClick={() => onChange(option.value)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight") {
+                  event.preventDefault();
+                  move(1);
                 }
-              >
-                {option.count}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  move(-1);
+                }
+              }}
+              // A tab carrying its own colour underlines in it, so the class the
+              // table is showing is identifiable without reading the label.
+              style={option.color && active ? { borderBottomColor: option.color } : undefined}
+              className={clsx(
+                "-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors duration-200 ease-premium",
+                active
+                  ? clsx("text-ink", !option.color && "border-accent")
+                  : "border-transparent text-ink-muted hover:border-line-strong hover:text-ink-secondary",
+              )}
+            >
+              {option.color ? (
+                <span
+                  className="h-2 w-2 shrink-0 rounded-sm transition-opacity"
+                  style={{ background: option.color, opacity: active ? 1 : 0.55 }}
+                  aria-hidden
+                />
+              ) : Icon ? (
+                <Icon size={15} aria-hidden />
+              ) : null}
+              {option.label}
+              {option.count !== undefined ? (
+                <span
+                  className={clsx(
+                    "tnum rounded-md px-1.5 py-0.5 text-[11px] font-medium",
+                    active && !option.color && "bg-accent-soft text-accent",
+                    active && option.color && "text-ink",
+                    !active && "bg-surface-hover text-ink-muted",
+                  )}
+                  style={
+                    option.color && active
+                      ? { background: `color-mix(in srgb, ${option.color} 18%, transparent)` }
+                      : undefined
+                  }
+                >
+                  {option.count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Redundant affordances for the mouse: hidden from the keyboard and from
+          assistive tech, which reach every tab through the tablist's own arrow
+          keys (and that already scrolls the selection into view). Suppressing
+          the mousedown keeps focus on whatever tab had it — the pill is a
+          scroller, not a destination. */}
+      {more.left ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => nudge(-1)}
+          className={clsx(arrow, "left-0")}
+        >
+          <ChevronLeft size={15} />
+        </button>
+      ) : null}
+      {more.right ? (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-hidden
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => nudge(1)}
+          className={clsx(arrow, "right-0")}
+        >
+          <ChevronRight size={15} />
+        </button>
+      ) : null}
     </div>
   );
 }

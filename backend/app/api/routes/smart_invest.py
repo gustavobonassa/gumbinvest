@@ -24,6 +24,7 @@ from app.services import ai_research as research
 from app.services import ai_wallet, smart_invest
 from app.services.ai_providers import active_ai, is_configured, unavailable_reason
 from app.services.jobs import BackgroundJob, JobConflict, JobRegistry, job_payload
+from app.services.user_profile import user_intro
 
 router = APIRouter(prefix="/smart-invest", tags=["smart invest"])
 logger = get_logger(__name__)
@@ -144,6 +145,9 @@ def start_invest(payload: InvestPayload, db: DbSession, portfolio: CurrentPortfo
     labels = [smart_invest.ELIGIBLE_KINDS[kind] for kind in kinds]
     search = research.supports_search(provider_id, model)
     prompt = _invest_prompt(context, macro, amount, currency, labels, search)
+    intro = user_intro(db)
+    if intro:
+        prompt = f"{intro}\n\n{prompt}"
     status_label = f"Analisando seus ativos com {provider['label']} · {model}…"
     portfolio_id = portfolio.id
 

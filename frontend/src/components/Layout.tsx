@@ -35,6 +35,7 @@ import { currencyLabel, dateTime, decimal, kindLabel, money, opLabel, percent, s
 import AssetChat, { AI_CHAT_SLOT_ID } from "@/components/AssetChat";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Notifications from "@/components/Notifications";
+import Onboarding from "@/components/Onboarding";
 import TitleBar from "@/components/TitleBar";
 import { Badge, Skeleton } from "@/components/ui";
 
@@ -648,6 +649,9 @@ export default function Layout() {
           mounts its own asset-scoped panel — only ever one of the two, so they
           never contend for the top-bar slot. */}
       {!/^\/ativos\/./.test(location.pathname) ? <AssetChat ticker={null} /> : null}
+      {/* First-run wizard: decides for itself whether to appear (no data yet,
+          never completed) and covers the whole shell while it does. */}
+      <Onboarding />
     </div>
   );
 }

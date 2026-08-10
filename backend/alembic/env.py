@@ -16,7 +16,9 @@ config.set_main_option(
     "sqlalchemy.url", config.attributes.get("database_url") or settings.database_url
 )
 
-if config.config_file_name is not None:
+# Programmatic callers (the desktop launcher) opt out: fileConfig replaces the
+# root handlers, which would wipe the logging the host process already set up.
+if config.config_file_name is not None and not config.attributes.get("skip_logging_config"):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata

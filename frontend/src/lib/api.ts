@@ -1383,8 +1383,10 @@ export const api = {
       body: JSON.stringify({ source, id }),
     }),
   pipelines: () => request<{ pipelines: PipelineInfo[] }>("/pipelines"),
-  pipelineRuns: (pipeline?: string, limit = 20) =>
-    request<{ runs: PipelineRun[] }>(`/pipelines/runs${query({ pipeline, limit })}`),
+  pipelineRuns: (page = 1, pageSize = 10, pipeline?: string) =>
+    request<{ runs: PipelineRun[]; total: number; page: number; pages: number; page_size: number }>(
+      `/pipelines/runs${query({ pipeline, page, page_size: pageSize })}`,
+    ),
   startPipeline: (key: string, options?: { full_history?: boolean }) =>
     request<{ run_id: number }>(`/pipelines/${encodeURIComponent(key)}/run`, {
       method: "POST",

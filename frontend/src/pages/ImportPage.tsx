@@ -3,17 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarCheck,
   CheckCircle2,
   CloudUpload,
   FileText,
   History,
   Loader2,
+  Workflow,
   XCircle,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import Pipelines from "@/components/Pipelines";
 import StatementCoverage from "@/components/StatementCoverage";
 import { useToast } from "@/components/Toast";
 import { Badge, Card, EmptyState, ErrorState, Pager, SectionTitle, Skeleton, Tabs } from "@/components/ui";
@@ -27,6 +30,7 @@ const MAX_ISSUES_SHOWN = 50;
 
 const TABS = [
   { value: "enviar", label: "Enviar arquivos", icon: CloudUpload },
+  { value: "automacoes", label: "Automações", icon: Workflow },
   { value: "cobertura", label: "Cobertura dos extratos", icon: CalendarCheck },
   { value: "historico", label: "Histórico", icon: History },
 ] as const;
@@ -433,6 +437,26 @@ export default function ImportPage() {
             </Card>
           ) : null}
 
+          {/* A quiet nudge toward the automated collector: the same B3 data
+              without the manual download. Muted on purpose so it helps a
+              first-time uploader discover the second tab without competing
+              with the upload box above. */}
+          <button
+            type="button"
+            onClick={() => setTab("automacoes")}
+            className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-raised/40 p-4 text-left text-sm transition-colors hover:border-accent/40 hover:bg-surface-hover/50"
+          >
+            <Workflow size={16} className="shrink-0 text-accent" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="font-medium">Integre direto com a B3.</span>{" "}
+              <span className="text-ink-secondary">
+                Na aba Automações, conecte sua conta e o app baixa e importa suas movimentações
+                sozinho, toda semana — sem baixar arquivo.
+              </span>
+            </span>
+            <ArrowRight size={15} className="shrink-0 text-ink-muted" aria-hidden />
+          </button>
+
           <Card className="p-5">
             <SectionTitle
               title="Arquivos aceitos"
@@ -452,6 +476,8 @@ export default function ImportPage() {
           </Card>
         </>
       ) : null}
+
+      {tab === "automacoes" ? <Pipelines /> : null}
 
       {tab === "cobertura" ? <StatementCoverage /> : null}
 

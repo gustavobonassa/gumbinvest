@@ -7,18 +7,20 @@ import {
   Bot,
   Database,
   Download,
+  FlaskConical,
   GitMerge,
   RefreshCw,
   SlidersHorizontal,
+  Sparkles,
   TrendingUp,
-  Workflow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 
 import AiSettings from "@/components/AiSettings";
 import CloudBackupCard from "@/components/CloudBackupCard";
-import Pipelines from "@/components/Pipelines";
+import InvestorProfileCard from "@/components/InvestorProfile";
+import { ONBOARDING_PREVIEW_EVENT } from "@/components/Onboarding";
 import AssetSplits from "@/components/AssetSplits";
 import CorporateActions from "@/components/CorporateActions";
 import UpdateCard from "@/components/UpdateCard";
@@ -47,11 +49,13 @@ const TABS = [
   { value: "ia", label: "Inteligência Artificial", icon: Bot },
   { value: "eventos", label: "Eventos corporativos", icon: GitMerge },
   { value: "qualidade", label: "Qualidade dos dados", icon: AlertTriangle },
-  { value: "automacoes", label: "Automações", icon: Workflow },
   { value: "backup", label: "Backup", icon: Database },
 ] as const;
 
-type TabValue = (typeof TABS)[number]["value"];
+/** Only exists when the backend runs with DEV_TOOLS=1 — see the card itself. */
+const DEV_TAB = { value: "dev", label: "Dev", icon: FlaskConical } as const;
+
+type TabValue = (typeof TABS)[number]["value"] | typeof DEV_TAB.value;
 
 /** Links and bookmarks pointing at an old, since-merged-or-removed tab still
     have to land somewhere sensible. */
@@ -132,6 +136,37 @@ function NotificationSettings({
   );
 }
 
+/** Temporary developer helpers — the tab only exists when the backend runs
+ *  with DEV_TOOLS=1 in .env. Nothing in here is mocked: the wizard preview
+ *  drives the real importer, the real B3 pipeline and the real settings. */
+function DevTools() {
+  return (
+    <Card className="p-5">
+      <SectionTitle
+        title="Ferramentas de desenvolvimento"
+        subtitle="Esta aba aparece porque o backend roda com DEV_TOOLS=1 no .env"
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => window.dispatchEvent(new Event(ONBOARDING_PREVIEW_EVENT))}
+        >
+          <Sparkles size={15} /> Abrir configuração inicial
+        </button>
+        <p className="text-sm text-ink-secondary">
+          Reabre o assistente de primeira execução, ignorando a regra de "só sem dados".
+        </p>
+      </div>
+      <p className="mt-3 text-xs text-ink-muted">
+        A prévia é real, não uma simulação: arquivos enviados passam pelo importador de verdade
+        (idempotente, nada duplica), credenciais digitadas são salvas e concluir grava nome,
+        objetivos e a marca de configuração concluída.
+      </p>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -143,9 +178,11 @@ export default function Settings() {
 
   // The tab lives in the URL, so "resolver eventos corporativos" elsewhere in
   // the app can link straight at the section that resolves them.
+  const devEnabled = Boolean(settings.data?.env.dev_tools);
+  const tabs = devEnabled ? [...TABS, DEV_TAB] : [...TABS];
   const [params, setParams] = useSearchParams();
   const requested = params.get("aba");
-  const tab: TabValue = TABS.some((option) => option.value === requested)
+  const tab: TabValue = tabs.some((option) => option.value === requested)
     ? (requested as TabValue)
     : (LEGACY_TABS[requested ?? ""] ?? "geral");
   const setTab = (next: TabValue) =>
@@ -188,6 +225,9 @@ export default function Settings() {
     },
     onError: (error) => toast.error("Não foi possível atualizar o câmbio.", error),
   });
+  // Automações moved to the Importar screen (all data-in on one page); keep old
+  // links and bookmarks working.
+  if (requested === "automacoes") return <Navigate to="/importar?aba=automacoes" replace />;
   if (settings.isError) return <ErrorState error={settings.error} retry={() => settings.refetch()} />;
   if (settings.isLoading || !settings.data) return <Skeleton className="h-80 w-full" />;
 
@@ -196,7 +236,10 @@ export default function Settings() {
   const updatePreference = (key: string, value: unknown) => {
     const next = { ...values, [key]: value };
     setValues(next);
-    save.mutate(next);
+    // The investor-profile card saves its own keys on its own debounce; keep
+    // this whole-blob save from racing it with a stale copy of them.
+    const { user_name: _name, investor_profile: _profile, ...rest } = next;
+    save.mutate(rest);
   };
 
   return (
@@ -209,7 +252,7 @@ export default function Settings() {
       <Tabs
         value={tab}
         onChange={setTab}
-        options={TABS.map((option) =>
+        options={tabs.map((option) =>
           option.value === "qualidade" ? { ...option, count: warnings.data?.length } : { ...option },
         )}
       />
@@ -251,6 +294,8 @@ export default function Settings() {
             </div>
           </div>
         </Card>
+
+        <InvestorProfileCard values={settings.data.values} />
 
         <NotificationSettings
           catalog={settings.data.notification_catalog}
@@ -400,7 +445,7 @@ export default function Settings() {
         </>
       ) : null}
 
-      {tab === "automacoes" ? <Pipelines /> : null}
+      {tab === "dev" && devEnabled ? <DevTools /> : null}
 
       {tab === "backup" ? (
         <>
@@ -417,8 +462,7 @@ export default function Settings() {
           <p className="mt-3 text-xs text-ink-muted">
             O arquivo carrega tudo (carteiras, movimentações, cotações, histórico) e serve para
             levar seus dados a outra instalação (por exemplo, do Docker para o aplicativo desktop):
-            basta arrastá-lo na página Importar de uma instalação vazia. O import é recusado se o
-            destino já tiver movimentações, para nunca misturar duas histórias.
+            basta arrastá-lo na página Importar de uma instalação vazia.
           </p>
         </Card>
         <CloudBackupCard settings={settings.data} />

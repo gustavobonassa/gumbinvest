@@ -23,6 +23,11 @@ def _alembic_config() -> Config:
     config = Config(str(paths.alembic_ini()))
     config.set_main_option("script_location", str(paths.alembic_dir()))
     config.attributes["database_url"] = settings.database_url
+    # alembic.ini's [loggers] section, applied via fileConfig, *replaces* the
+    # root handlers — which silently killed the desktop file log right after
+    # "applying migrations" on every boot. The CLI keeps its config; a
+    # programmatic caller keeps its own logging.
+    config.attributes["skip_logging_config"] = True
     return config
 
 
@@ -38,3 +43,13 @@ def init_db() -> None:
     else:
         logger.info("existing database — applying migrations")
         command.upgrade(_alembic_config(), "head")
+
+    # The Electron shell kills this server rather than asking it to stop, so
+    # the write-ahead log never checkpoints on exit and grows until it rivals
+    # the database itself (a 111 MB WAL was observed) — and every query then
+    # reads through it. Folding it back into the main file at boot keeps reads
+    # fast and the file pair small; on a healthy WAL this is near-instant.
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as connection:
+            result = connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            logger.info("wal checkpoint (busy, log frames, checkpointed): %s", result)

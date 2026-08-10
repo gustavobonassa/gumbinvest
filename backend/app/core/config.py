@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Set by the tray launcher (never by Docker): serve the built SPA from
     # FastAPI and assume the in-process scheduler instead of Celery.
     desktop_mode: bool = False
+    # Shows the temporary "Dev" tab in Configurações (wizard preview etc.).
+    # Off by default; set DEV_TOOLS=1 in .env on a development machine.
+    dev_tools: bool = False
     log_level: str = "INFO"
     base_currency: str = "BRL"
     timezone: str = "America/Sao_Paulo"
@@ -52,6 +55,10 @@ class Settings(BaseSettings):
     # Importer
     auto_import_dir: str = "/data"
     auto_import_on_startup: bool = True
+    # Run the heavy startup pass (downloads, auto-import, reclassify) in a
+    # background thread so the API serves immediately. Tests turn it off to
+    # keep startup deterministic.
+    startup_background: bool = True
 
     # Automated collectors (Configurações → Automações). Credentials usually
     # arrive via the UI (app/services/secrets); env vars are the Docker-first

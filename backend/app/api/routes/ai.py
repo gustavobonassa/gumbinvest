@@ -28,6 +28,7 @@ from app.services.ai_providers import (
     is_configured,
     unavailable_reason,
 )
+from app.services.user_profile import user_intro
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = get_logger(__name__)
@@ -250,11 +251,17 @@ def ai_chat(
         context_json = _portfolio_context(service)
         base_prompt = SYSTEM_PORTFOLIO
         context_label = "Dados atuais da carteira completa do usuário (fonte: GumbInvest, agora):"
+    # The owner's name and goals ride in the dynamic block, never in the two
+    # SYSTEM constants — those must stay byte-identical for the prompt cache.
+    intro = user_intro(db)
+    context_text = f"{context_label}\n{context_json}"
+    if intro:
+        context_text = f"{intro}\n\n{context_text}"
     system = [
         {"type": "text", "text": base_prompt},
         {
             "type": "text",
-            "text": f"{context_label}\n{context_json}",
+            "text": context_text,
             # Cached so follow-up turns in the same conversation reuse the prefix.
             "cache_control": {"type": "ephemeral"},
         },

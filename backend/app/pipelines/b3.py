@@ -366,7 +366,7 @@ class B3Pipeline(Pipeline):
         # the common case; the log says which of the two happened.
         full = bool(ctx.options.get("full_history"))
         try:
-            self._set_period(page, ctx, since, full)
+            self._set_period(page, ctx, since)
             ctx.log(f"Período ajustado para começar em {since.strftime('%d/%m/%Y')}.")
         except Exception:  # noqa: BLE001 — degraded, not broken; see above
             if full:
@@ -447,24 +447,19 @@ class B3Pipeline(Pipeline):
             except Exception:  # noqa: BLE001 — default format will have to do
                 ctx.log("Não consegui escolher o formato; usando o padrão do site.", level="warning")
 
-    def _set_period(self, page, ctx, since, full: bool) -> None:
+    def _set_period(self, page, ctx, since) -> None:
         """Widen the movimentação period to start at ``since``, then apply it.
 
         The default view is one month, so a full backfill must open the period
-        filter (a modal behind the funnel / "Filtrar"), type a start date and,
-        where present, an end date, and confirm. The modal's date inputs render
-        only once it opens, so on a full run its controls are dumped the moment
-        it is open — a wrong field selector is then a one-line fix, not another
-        blind round.
+        filter (a modal behind the funnel / "Filtrar"), type a start date and
+        confirm. Each step logs a short line, so a run's log pinpoints where the
+        filter breaks; on failure the caller dumps the screen for diagnosis.
         """
-        # Open the filter modal unless a date field is already on screen. Each
-        # step logs, so a run's log pinpoints exactly where the filter breaks.
+        # Open the filter modal unless a date field is already on screen.
         if _first_visible(page, _DATE_START_FIELDS) is None:
             ctx.log("Abrindo o filtro de período.")
             _click_first(page, _FILTER_OPEN_BUTTONS, timeout=8_000)
             _wait_visible(page, _DATE_START_FIELDS, 8_000)
-        if full:
-            _dump(ctx, page, "filtro aberto")
 
         start = _first_visible(page, _DATE_START_FIELDS)
         if start is None:
@@ -1037,24 +1032,33 @@ _CONTROLS_JS = """
 
 
 def _dump(ctx, page, step: str) -> None:
+    """Write a screenshot, the page HTML and a control inventory for debugging.
+
+    All three go to files under pipelines-debug/b3. The run log gets a single
+    plain sentence — never the page markup or the control list, which read as
+    noise to whoever is watching the collection run.
+    """
     name = _dump_name(step)
+    saved = False
     try:
         page.screenshot(path=str(ctx.debug_dir() / f"{name}.png"), full_page=True)
         (ctx.debug_dir() / f"{name}.html").write_text(page.content(), encoding="utf-8")
-        ctx.log(f"Capturas salvas em pipelines-debug/b3/{name}.png|.html.", level="warning")
+        saved = True
     except Exception:  # noqa: BLE001 — evidence is best effort, never the failure
         pass
-    # The control inventory is the actionable half: it names the fields and
-    # buttons that were on screen, so a wrong selector is a one-line fix.
+    # The control inventory names the fields/buttons on screen (a wrong selector
+    # becomes a one-line fix) — but it belongs in a file, not the user's log.
     try:
         controls = page.evaluate(_CONTROLS_JS)
         lines = [f"url: {controls['url']}"]
         lines += [f"  {row}" for row in controls["inputs"]] or ["  (nenhum input visível)"]
         lines += [f"  {row}" for row in controls["buttons"][:25]]
         (ctx.debug_dir() / f"{name}.controls.txt").write_text("\n".join(lines), encoding="utf-8")
-        ctx.log("Controles visíveis: " + (", ".join(controls["inputs"]) or "nenhum campo"), level="warning")
+        saved = True
     except Exception:  # noqa: BLE001 — diagnostics are best effort
         pass
+    if saved:
+        ctx.log("Salvei uma captura de diagnóstico desta tela (pasta pipelines-debug/b3).", level="warning")
 
 
 register(B3Pipeline())

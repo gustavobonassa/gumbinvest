@@ -15,6 +15,7 @@ no special case anywhere in the portfolio code.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
@@ -229,9 +230,26 @@ def sync_crypto_fx(db: Session, base_currency: str = "BRL") -> dict:
         asset = by_symbol.get(currency)
         if asset is None:
             continue
-        closes = db.execute(
-            select(PriceHistory.date, PriceHistory.close).where(PriceHistory.asset_id == asset.id)
-        ).all()
+        # Incremental: this runs on every startup and every quote refresh, and
+        # re-upserting thousands of historical rates each time bought nothing —
+        # closes and PTAX never change retroactively. Only the tail since the
+        # last published day (with a week of overlap for late PTAX fixings) is
+        # written; a series with no rows at all still gets the full pass.
+        last_published = db.scalar(
+            select(func.max(FxRate.date)).where(
+                FxRate.base == currency,
+                FxRate.quote == base_currency.upper(),
+                FxRate.source == SOURCE,
+            )
+        )
+        closes_query = select(PriceHistory.date, PriceHistory.close).where(
+            PriceHistory.asset_id == asset.id
+        )
+        if last_published is not None:
+            closes_query = closes_query.where(
+                PriceHistory.date >= last_published - timedelta(days=7)
+            )
+        closes = db.execute(closes_query).all()
         if not closes:
             continue
         covered += 1

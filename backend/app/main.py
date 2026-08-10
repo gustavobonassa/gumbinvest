@@ -1,6 +1,7 @@
 """FastAPI application entrypoint."""
 from __future__ import annotations
 
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from starlette.requests import Request
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
+from app.db.models import AppSetting
 from app.db.session import session_scope
 from app.importer.parser import CsvFormatError
 from app.importer.service import (
@@ -108,12 +110,33 @@ def _ordered_csvs(paths: list[Path]) -> list[tuple[Path, str | None]]:
     return [(path, fmt) for _, path, fmt in ordered]
 
 
+#: Files already imported, as ``{path: [size, mtime_ns]}`` in the settings
+#: table. Parsing a hundred statement PDFs just to have de-duplication call
+#: every row a duplicate used to cost about a minute of every startup; an
+#: unchanged file can be skipped before it is ever opened. A changed or new
+#: file still goes through the importer, whose dedup keeps re-reads safe.
+_SEEN_KEY = "auto_import_seen"
+
+
+def _file_signature(path: Path) -> list[int]:
+    stat = path.stat()
+    return [stat.st_size, stat.st_mtime_ns]
+
+
+def _load_seen(db) -> dict:
+    row = db.get(AppSetting, _SEEN_KEY)
+    value = row.value if row is not None else None
+    seen = value.get("value") if isinstance(value, dict) else None
+    return dict(seen) if isinstance(seen, dict) else {}
+
+
 def auto_import_initial_files() -> None:
     """Import every CSV and statement PDF under ``AUTO_IMPORT_DIR`` on startup.
 
     Re-running is safe: de-duplication means an already-imported file adds
     nothing. This is what makes ``docker compose up`` a one-command setup with
-    the whole history — B3 and offshore — already loaded.
+    the whole history — B3 and offshore — already loaded. Files whose size and
+    mtime match the last successful import are skipped without being parsed.
     """
     directory = Path(settings.auto_import_dir)
     if not settings.auto_import_on_startup or not directory.is_dir():
@@ -122,17 +145,31 @@ def auto_import_initial_files() -> None:
     with session_scope() as db:
         portfolio = get_default_portfolio(db)
         service = ImportService(db, portfolio)
+        seen = _load_seen(db)
+        skipped = 0
+
+        def fresh(paths: list[Path]) -> list[Path]:
+            nonlocal skipped
+            kept = []
+            for path in paths:
+                if seen.get(str(path)) == _file_signature(path):
+                    skipped += 1
+                else:
+                    kept.append(path)
+            return kept
 
         # Recursive: the B3 export sits at the root of the volume while broker
         # and exchange exports are filed per source (``/data/binance``).
         for path, crypto_format in _ordered_csvs(
-            sorted(
-                p
-                for pattern in ("*.csv", "*.xlsx")
-                for p in directory.rglob(pattern)
-                # Excel writes a lock file beside an open workbook; it is not an
-                # export and openpyxl cannot read it.
-                if p.is_file() and not p.name.startswith("~$")
+            fresh(
+                sorted(
+                    p
+                    for pattern in ("*.csv", "*.xlsx")
+                    for p in directory.rglob(pattern)
+                    # Excel writes a lock file beside an open workbook; it is not an
+                    # export and openpyxl cannot read it.
+                    if p.is_file() and not p.name.startswith("~$")
+                )
             )
         ):
             try:
@@ -148,10 +185,11 @@ def auto_import_initial_files() -> None:
                     result.rows_imported,
                     result.rows_duplicate,
                 )
+                seen[str(path)] = _file_signature(path)
             except Exception:  # noqa: BLE001 — startup must never crash on a bad file
                 logger.exception("auto-import failed for %s", path.name)
 
-        statements = _ordered_statements([p for p in directory.rglob("*.pdf") if p.is_file()])
+        statements = _ordered_statements(fresh([p for p in directory.rglob("*.pdf") if p.is_file()]))
         for path, statement in statements:
             try:
                 result = service.import_pdf(path.read_bytes(), path.name, statement)
@@ -161,8 +199,15 @@ def auto_import_initial_files() -> None:
                     result.rows_imported,
                     result.rows_duplicate,
                 )
+                seen[str(path)] = _file_signature(path)
             except Exception:  # noqa: BLE001 — one unreadable statement must not stop the rest
                 logger.exception("auto-import failed for %s", path.name)
+
+        if skipped:
+            logger.info("auto-import: %s unchanged files skipped without parsing", skipped)
+        # Entries for files that were deleted or moved say nothing anymore.
+        seen = {key: value for key, value in seen.items() if Path(key).exists()}
+        db.merge(AppSetting(key=_SEEN_KEY, value={"value": seen}))
 
 
 def bootstrap_fx() -> None:
@@ -233,6 +278,56 @@ def bootstrap_treasury() -> None:
         logger.exception("could not bootstrap Tesouro Direto prices")
 
 
+def startup_reconciliation() -> None:
+    """The heavy half of startup: downloads, auto-import and ledger repair.
+
+    Everything here used to run inline in the lifespan, which meant the server
+    refused connections — and the desktop app sat on its loading screen — until
+    a minute of re-parsing and re-scanning finished. None of it is needed to
+    *serve*: the UI tolerates data appearing and correcting itself moments
+    after it opens. The internal order is unchanged and still matters — see
+    each step's comment.
+    """
+    try:
+        # Rates first: the importer stamps each foreign movement with the rate
+        # of its trade date, and a movement imported before the series exists
+        # would carry no rate at all.
+        if settings.bootstrap_market_data:
+            bootstrap_fx()
+        # Renames first: an import that runs before them creates the new ticker
+        # as a second asset, leaving two rows to merge instead of one to rename.
+        with session_scope() as db:
+            reconcile_ticker_aliases(db)
+        auto_import_initial_files()
+        # `op_type`/`effect` are derived from the raw movement label, so a
+        # classifier improvement must reach rows that were imported earlier.
+        with session_scope() as db:
+            reclassify_transactions(db)
+            # Again after the import, in case a statement introduced an old
+            # spelling that has since been renamed.
+            reconcile_ticker_aliases(db)
+            # `Asset.kind` is inferred on first sight, so it needs the same treatment.
+            reclassify_assets(db)
+            # A company that renamed itself must still be quotable under its new
+            # ticker, without moving the history off the old one.
+            reconcile_market_symbols(db)
+            # Fixed income is valued by accrual; give new papers a 100 % CDI default.
+            ensure_terms_for_fixed_income(db)
+            # A few exchange trades are priced in a coin rather than in money
+            # (``NEARBTC``); publishing that coin's own closes as a rate is what
+            # lets the line below convert them like any other foreign movement.
+            sync_crypto_fx(db)
+            # Movements imported before their rate was known get it filled in now.
+            backfill_transaction_fx(db)
+        if settings.bootstrap_market_data:
+            bootstrap_indices()
+            bootstrap_benchmarks()
+            bootstrap_treasury()
+        logger.info("startup reconciliation finished")
+    except Exception:  # noqa: BLE001 — a failed repair pass must not kill the server
+        logger.exception("startup reconciliation failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     with session_scope() as db:
@@ -240,40 +335,17 @@ async def lifespan(app: FastAPI):
         # API keys saved through the UI override the env from the first
         # request on, not only after the next save.
         apply_stored_secrets(db)
-    # Rates first: the importer stamps each foreign movement with the rate of
-    # its trade date, and a movement imported before the series exists would
-    # carry no rate at all.
-    if settings.bootstrap_market_data:
-        bootstrap_fx()
-    # Renames first: an import that runs before them creates the new ticker as a
-    # second asset, leaving two rows to merge instead of one to rename.
-    with session_scope() as db:
-        reconcile_ticker_aliases(db)
-    auto_import_initial_files()
-    # `op_type`/`effect` are derived from the raw movement label, so a
-    # classifier improvement must reach rows that were imported earlier.
-    with session_scope() as db:
-        reclassify_transactions(db)
-        # Again after the import, in case a statement introduced an old
-        # spelling that has since been renamed.
-        reconcile_ticker_aliases(db)
-        # `Asset.kind` is inferred on first sight, so it needs the same treatment.
-        reclassify_assets(db)
-        # A company that renamed itself must still be quotable under its new
-        # ticker, without moving the history off the old one.
-        reconcile_market_symbols(db)
-        # Fixed income is valued by accrual; give new papers a 100 % CDI default.
-        ensure_terms_for_fixed_income(db)
-        # A few exchange trades are priced in a coin rather than in money
-        # (``NEARBTC``); publishing that coin's own closes as a rate is what
-        # lets the line below convert them like any other foreign movement.
-        sync_crypto_fx(db)
-        # Movements imported before their rate was known get it filled in now.
-        backfill_transaction_fx(db)
-    if settings.bootstrap_market_data:
-        bootstrap_indices()
-        bootstrap_benchmarks()
-        bootstrap_treasury()
+    if settings.startup_background:
+        # Serve first, reconcile behind the first paint. Daemon: an abrupt
+        # shutdown mid-pass is the same contract as the scheduler jobs — every
+        # step is idempotent and simply runs again next start.
+        threading.Thread(
+            target=startup_reconciliation, name="startup-reconcile", daemon=True
+        ).start()
+    else:
+        # Tests (and anyone debugging startup) get the old deterministic
+        # behavior: everything done before the first request is answered.
+        startup_reconciliation()
     yield
 
 

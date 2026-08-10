@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import DbSession
 from app.db.models import AuditLog, PipelineRun
@@ -35,16 +35,29 @@ def list_pipelines(db: DbSession) -> dict:
     return payload
 
 
-@router.get("/runs", response_model=None, summary="Past executions, newest first")
+@router.get("/runs", response_model=None, summary="Past executions, newest first (paginated)")
 def list_runs(
     db: DbSession,
     pipeline: str | None = Query(None, description="Filter by pipeline key"),
-    limit: int = Query(20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
 ) -> dict:
-    stmt = select(PipelineRun).order_by(PipelineRun.id.desc()).limit(limit)
-    if pipeline:
-        stmt = stmt.where(PipelineRun.pipeline == pipeline)
-    return {"runs": [run_payload(run) for run in db.scalars(stmt).all()]}
+    where = PipelineRun.pipeline == pipeline if pipeline else True
+    total = db.scalar(select(func.count()).select_from(PipelineRun).where(where)) or 0
+    runs = db.scalars(
+        select(PipelineRun)
+        .where(where)
+        .order_by(PipelineRun.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": max((total + page_size - 1) // page_size, 1),
+        "runs": [run_payload(run) for run in runs],
+    }
 
 
 class RunOptions(BaseModel):

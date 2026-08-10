@@ -52,6 +52,13 @@ DEFAULT_SETTINGS: dict[str, object] = {
     #: design; the matching secrets live in SECRET_KEYS and never come back.
     "gdrive_client_id": settings.gdrive_client_id,
     "dropbox_app_key": settings.dropbox_app_key,
+    #: First-run wizard: set once when it finishes (or is skipped), so a fresh
+    #: install reads `false` rather than nothing.
+    "onboarding_completed": False,
+    #: The owner's name and declared goals, folded into the AI prompts — see
+    #: services/user_profile.py. Both optional, both editable later.
+    "user_name": "",
+    "investor_profile": {},
 }
 
 
@@ -176,6 +183,7 @@ def get_settings_endpoint(db: DbSession) -> dict:
         # in the UI, so a new producer becomes a new switch on the backend alone.
         "notification_catalog": notification_catalog(),
         "env": {
+            "dev_tools": settings.dev_tools,
             "base_currency": settings.base_currency,
             "timezone": settings.timezone,
             "price_refresh_minutes": settings.price_refresh_minutes,

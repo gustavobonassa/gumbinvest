@@ -24,6 +24,9 @@ os.environ["AUTO_IMPORT_ON_STARTUP"] = "false"
 # Nor download PTAX/index/benchmark series: every `with TestClient(app)` runs
 # the lifespan, and live BCB/Yahoo calls made the suite slow and flaky.
 os.environ["BOOTSTRAP_MARKET_DATA"] = "false"
+# Startup work runs inline in tests: a background thread from one TestClient
+# racing the next test's table wipes would make the suite flaky.
+os.environ["STARTUP_BACKGROUND"] = "false"
 
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402

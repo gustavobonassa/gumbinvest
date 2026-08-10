@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Loader2, Play, Workflow, X } from "lucide-react";
 
 import { api, type PipelineInfo, type PipelineRun } from "@/lib/api";
-import { Badge, Card, EmptyState, Modal, SectionTitle, Skeleton } from "@/components/ui";
+import { Badge, Card, EmptyState, Modal, Pager, SectionTitle, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import SecretField from "@/components/SecretField";
 
@@ -200,7 +200,11 @@ export default function Pipelines() {
     refetchInterval: (query) =>
       query.state.data?.pipelines.some((item) => item.active_run) ? 2_000 : 15_000,
   });
-  const runsQ = useQuery({ queryKey: ["pipeline-runs"], queryFn: () => api.pipelineRuns() });
+  const [runsPage, setRunsPage] = useState(1);
+  const runsQ = useQuery({
+    queryKey: ["pipeline-runs", runsPage],
+    queryFn: () => api.pipelineRuns(runsPage),
+  });
 
   const pipelines = pipelinesQ.data?.pipelines;
 
@@ -320,6 +324,18 @@ export default function Pipelines() {
               </tbody>
             </table>
           </div>
+          {runsQ.data && runsQ.data.pages > 1 ? (
+            <div className="p-4">
+              <Pager
+                page={runsQ.data.page}
+                pages={runsQ.data.pages}
+                total={runsQ.data.total}
+                pageSize={runsQ.data.page_size}
+                onChange={setRunsPage}
+                noun="coletas"
+              />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <Card className="p-5">

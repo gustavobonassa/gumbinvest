@@ -89,6 +89,11 @@ And the whole interface is responsive — usable from the phone on your couch
 - Reads the **Binance spot exports** (transaction, trade and order history). A
   trade on an exchange is a swap, so both sides are booked: buying Ether with
   Tether spends the Tether.
+- **Coleta automática (Automações)** — a weekly pipeline signs into the B3
+  Área do Investidor with your CPF, exports the movimentação and imports it,
+  no manual download involved. If B3 asks for a verification code, the app
+  asks you for it on screen (Configurações → Automações); everything collected
+  goes through the same idempotent importer as a manual upload.
 
 **Portfolio**
 - Weighted-average cost (*preço médio*), the Brazilian convention.
@@ -185,6 +190,9 @@ And the whole interface is responsive — usable from the phone on your couch
   optionally encrypted with a passphrase — with restore from the cloud on a
   fresh install (Configurações → Backup).
 - Watchlist, asset notes, manual prices, audit log.
+- **Automações** — browser-driven collectors (B3 today, other brokers and data
+  sources as they are added) that run weekly, keep their whole run history,
+  and can be triggered or cancelled from Configurações → Automações.
 
 ---
 

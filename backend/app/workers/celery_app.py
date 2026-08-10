@@ -121,6 +121,16 @@ schedule["ai-wallet-snapshot"] = {
     "schedule": crontab(hour=23, minute=30),
 }
 
+# The automated collectors (B3 extrato, later other brokers). Monday morning,
+# after the weekend's corporate events have settled into the broker's records
+# but early enough that a 2FA prompt lands while the user is starting the day.
+# The task no-ops for every pipeline whose credentials were never filled in,
+# so scheduling it unconditionally costs nothing.
+schedule["run-pipelines"] = {
+    "task": "app.workers.tasks.run_pipelines_task",
+    "schedule": crontab(hour=7, minute=30, day_of_week=1),
+}
+
 # The asset universe, from B3 and CVM bulk files. Early: the CVM republishes
 # overnight and B3's previous session is settled by then, so this runs before
 # anyone is looking at a screener. The task itself no-ops unless the user has

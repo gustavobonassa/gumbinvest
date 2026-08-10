@@ -16,6 +16,11 @@ orjson==3.10.13
 pdfplumber==0.11.10
 anthropic>=0.79.0
 openpyxl==3.1.5
+# Browser automation for the collectors (Configurações → Automações).
+# Patchright (an un-detected Playwright fork) so B3's Cloudflare challenge is
+# passable; it prefers the user's real Chrome, so no browser download is
+# needed on a machine that has Chrome. See app/pipelines/b3.py.
+patchright==1.61.2
 
 # Desktop-only: the in-process scheduler replacing Celery beat.
 apscheduler==3.10.4

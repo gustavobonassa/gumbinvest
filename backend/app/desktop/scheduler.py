@@ -168,6 +168,24 @@ def _sync_universe() -> dict:
     return {"state": result.get("state")}
 
 
+def _run_pipelines() -> None:
+    """The weekly collectors (B3 extrato…), mirroring the beat's Monday slot.
+
+    Like ``_sync_universe``, it owns its sessions: a run drives a browser for
+    minutes and parks waiting for a 2FA code, and holding SQLite's writer lock
+    through that would freeze the UI. Each run audits and notifies itself;
+    only the roll-up is recorded here.
+    """
+    from app.pipelines.runner import run_scheduled
+
+    try:
+        result = run_scheduled()
+        with session_scope() as db:
+            db.add(AuditLog(action="pipeline.scheduled", detail={k: str(v) for k, v in result.items()}))
+    except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+        logger.exception("scheduled job pipeline.scheduled failed")
+
+
 def _hhmm(value: str, fallback: tuple[int, int]) -> tuple[int, int]:
     try:
         hour, minute = value.split(":")
@@ -231,6 +249,14 @@ def build_scheduler() -> BackgroundScheduler:
 
     # Mirrors the beat schedule's 05:40 slot; no-ops unless the user enabled it.
     scheduler.add_job(_sync_universe, cron(5, 40), id="sync-universe")
+
+    # Mirrors the beat schedule's Monday 07:30 slot; no-ops for pipelines
+    # whose credentials were never filled in.
+    scheduler.add_job(
+        _run_pipelines,
+        CronTrigger(day_of_week="mon", hour=7, minute=30, timezone=settings.timezone),
+        id="run-pipelines",
+    )
 
     if settings.backup_time:
         backup_hour, backup_minute = _hhmm(settings.backup_time, (3, 30))

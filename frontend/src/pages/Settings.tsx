@@ -11,12 +11,14 @@ import {
   RefreshCw,
   SlidersHorizontal,
   TrendingUp,
+  Workflow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import AiSettings from "@/components/AiSettings";
 import CloudBackupCard from "@/components/CloudBackupCard";
+import Pipelines from "@/components/Pipelines";
 import AssetSplits from "@/components/AssetSplits";
 import CorporateActions from "@/components/CorporateActions";
 import UpdateCard from "@/components/UpdateCard";
@@ -45,6 +47,7 @@ const TABS = [
   { value: "ia", label: "Inteligência Artificial", icon: Bot },
   { value: "eventos", label: "Eventos corporativos", icon: GitMerge },
   { value: "qualidade", label: "Qualidade dos dados", icon: AlertTriangle },
+  { value: "automacoes", label: "Automações", icon: Workflow },
   { value: "backup", label: "Backup", icon: Database },
 ] as const;
 
@@ -396,6 +399,8 @@ export default function Settings() {
           <AssetSplits />
         </>
       ) : null}
+
+      {tab === "automacoes" ? <Pipelines /> : null}
 
       {tab === "backup" ? (
         <>

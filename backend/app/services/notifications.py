@@ -95,6 +95,11 @@ KINDS: tuple[NotificationKind, ...] = (
         "Backup na nuvem",
         "Cada envio para o Google Drive ou Dropbox, e as falhas que precisam de atenção.",
     ),
+    NotificationKind(
+        "pipeline",
+        "Automações",
+        "Quando uma coleta automática termina — e quando ela está parada esperando um código de verificação.",
+    ),
 )
 
 #: Everything, which is what an installation that never touched the setting gets.

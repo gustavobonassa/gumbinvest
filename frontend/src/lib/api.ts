@@ -1333,6 +1333,43 @@ export interface UniverseQuery {
   min_volume?: number;
 }
 
+// --- pipelines (Configurações → Automações) --------------------------------
+export interface PipelineLogEntry {
+  at: string;
+  level: "info" | "warning" | "error";
+  message: string;
+}
+
+/** One execution of an automated collector — live (poll while `active`) or past. */
+export interface PipelineRun {
+  id: number;
+  pipeline: string;
+  trigger: "manual" | "scheduled";
+  status: "running" | "waiting_input" | "success" | "failed" | "cancelled";
+  active: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  log: PipelineLogEntry[];
+  /** Set while the run is parked on a 2FA challenge — the modal's content. */
+  input_request: { prompt: string; kind: string; requested_at: string } | null;
+  /** Per-run knobs the trigger chose, e.g. `{ full_history: true }`. */
+  options: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface PipelineInfo {
+  key: string;
+  name: string;
+  description: string;
+  schedule: string;
+  configured: boolean;
+  /** Write-only credentials: whether each is set, never its value. */
+  credentials: { key: string; label: string; configured: boolean }[];
+  active_run: PipelineRun | null;
+  last_run: PipelineRun | null;
+}
+
 // --- endpoints -----------------------------------------------------------
 export const api = {
   overview: () => request<Overview>("/portfolio/overview"),
@@ -1345,6 +1382,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ source, id }),
     }),
+  pipelines: () => request<{ pipelines: PipelineInfo[] }>("/pipelines"),
+  pipelineRuns: (pipeline?: string, limit = 20) =>
+    request<{ runs: PipelineRun[] }>(`/pipelines/runs${query({ pipeline, limit })}`),
+  startPipeline: (key: string, options?: { full_history?: boolean }) =>
+    request<{ run_id: number }>(`/pipelines/${encodeURIComponent(key)}/run`, {
+      method: "POST",
+      body: JSON.stringify(options ?? {}),
+    }),
+  answerPipelineRun: (runId: number, value: string) =>
+    request<{ accepted: boolean }>(`/pipelines/runs/${runId}/input`, {
+      method: "POST",
+      body: JSON.stringify({ value }),
+    }),
+  cancelPipelineRun: (runId: number) =>
+    request<{ cancelling: boolean }>(`/pipelines/runs/${runId}/cancel`, { method: "POST" }),
   positions: (includeClosed = false) =>
     request<PositionRow[]>(`/portfolio/positions${query({ include_closed: includeClosed })}`),
   allocation: (groupBy: "asset" | "kind" | "broker" | "currency" = "asset") =>

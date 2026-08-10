@@ -799,6 +799,7 @@ so `market/service.py` decides the `.SA` suffix from the asset's *currency*.
 | `backfill_history_task` | on demand | Download full daily closes |
 | `sync_indices_task` | daily 09:20 | CDI/Selic/IPCA from Banco Central |
 | `sync_treasury_task` | daily 11:15 | Tesouro Direto prices from Tesouro Transparente |
+| `run_pipelines_task` | Mondays 07:30 | The automated collectors (§9c) |
 
 Tasks own their session via `session_scope()` and write to `audit_logs`.
 
@@ -865,6 +866,42 @@ its poller, uses `JobRegistry`. OAuth is deliberately redirect-free (Google's
 device-code flow, Dropbox's no-redirect PKCE): the desktop build has no fixed
 port to register a callback on, and a pasted code works everywhere.
 
+### 9c. Automated collectors (`app/pipelines/`)
+
+The manual loop the importer was built around — sign into the broker, export
+a file, drag it onto the Importar page — is itself automatable, and a
+*pipeline* is that loop as code: a Playwright-driven browser does the walk and
+hands the downloaded file to the same `ImportService` an upload reaches. That
+hand-off is the design's load-bearing wall. The automation never writes
+financial data; it only fetches files. Every invariant that protects a manual
+upload — idempotent dedup, loud parser failures, raw-line audit columns —
+therefore protects the automated path without a single new rule, and a
+mis-scripted click can cost at most a failed run, never a wrong position.
+
+Pipelines register like PDF parsers do (`b3.py` today; an Avenue or
+Fundamentus collector is a new module calling `register()`), and their runs
+live in a real table, `pipeline_runs`, rather than the in-memory
+`JobRegistry`: the weekly run executes in the Celery worker while the UI
+polls the backend container, and runs are history the user scrolls back
+through. The row is the whole channel — the worker thread appends to `log`
+and touches `heartbeat_at`, the API polls, and a heartbeat gone stale marks
+the run failed so a crashed process never leaves a phantom lock.
+
+2FA is the part that cannot be automated away, so it is a *state* instead of
+an obstacle: when B3 asks for a code, the run parks on `waiting_input`, rings
+the notification bell, and `RunContext.request_input` polls the row until the
+code the user types into the Automações modal lands in `input_response` (or a
+15-minute timeout fails the run with instructions to run it manually).
+Session cookies are persisted next to the downloads, so in practice a code is
+asked on the first run and then only when B3 expires the device — a weekly
+schedule usually stays inside that window. Downloads land under
+`AUTO_IMPORT_DIR/<pipeline>/` on purpose: the startup auto-import replays
+them into a database restored from backup, and re-importing is free by the
+dedup invariant. B3's screens are found by candidate selector lists ordered
+newest-first; when the site is redesigned the failing step dumps a screenshot
+and the page HTML into `pipelines-debug/`, which turns "the robot broke" into
+a diff against the new markup.
+
 React 18 + TypeScript + Vite, Tailwind for styling, TanStack Query for server
 state, Recharts for charts, React Router for navigation. No global state library:
 everything on screen is server state, and Query already models that.
@@ -914,6 +951,11 @@ they apply to every plotted form:
 ---
 
 ## 12. Extending the system
+
+**A new automated source** (another broker's export, a data scraper) → one
+module in `app/pipelines/` with a `PipelineSpec` and a `run(ctx)`, plus its
+credential keys in `services/secrets.py` and `core/config.py`. The runner,
+the API, the weekly slot and the Automações tab pick it up from the registry.
 
 **A new broker wording** → one entry in `_RULES` in `importer/classifier.py`.
 Existing transactions pick up the fix on the next import; already-imported rows can

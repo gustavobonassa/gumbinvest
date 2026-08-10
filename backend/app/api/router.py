@@ -13,6 +13,7 @@ from app.api.routes import (
     imports,
     investors,
     misc,
+    pipelines,
     portfolio,
     reports,
     smart_invest,
@@ -27,6 +28,7 @@ api_router.include_router(portfolio.router)
 api_router.include_router(assets.router)
 api_router.include_router(transactions.router)
 api_router.include_router(imports.router)
+api_router.include_router(pipelines.router)
 api_router.include_router(cloud_backup.router)
 api_router.include_router(reports.router)
 api_router.include_router(fixed_income.router)

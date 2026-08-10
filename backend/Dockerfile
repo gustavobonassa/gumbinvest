@@ -14,6 +14,13 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Chromium for the automated collectors (app/pipelines), via Patchright's CLI.
+# --with-deps pulls the shared libraries a browser needs on slim. Note the B3
+# collector needs a headed real Chrome to pass Cloudflare, which a headless
+# server cannot provide — this keeps the image self-contained for any future
+# pipeline that does not, and for local debugging.
+RUN patchright install --with-deps chromium
+
 COPY . .
 
 RUN chmod +x /app/entrypoint.sh

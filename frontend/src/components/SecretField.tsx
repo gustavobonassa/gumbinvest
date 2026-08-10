@@ -35,6 +35,7 @@ export default function SecretField({
     onSuccess: (_data, next) => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       queryClient.invalidateQueries({ queryKey: ["cloud-backup"] });
+      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
       if (!next) {
         toast.success(`Chave removida: ${label}.`);
       } else if (latest.current === next) {

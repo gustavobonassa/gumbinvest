@@ -18,3 +18,7 @@ pdfplumber==0.11.10
 cryptography==50.0.0
 anthropic>=0.79.0
 openpyxl==3.1.5
+# Patchright, not vanilla Playwright: an un-detected fork that patches the
+# DevTools-protocol tells Cloudflare Turnstile uses to loop the B3 login
+# challenge. Drop-in API (`patchright.sync_api`). See app/pipelines/b3.py.
+patchright==1.61.2

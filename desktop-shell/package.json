@@ -1,6 +1,6 @@
 {
   "name": "gumbinvest-desktop",
-  "version": "1.2.0",
+  "version": "1.4.3",
   "description": "GumbInvest — gerenciador de carteira de investimentos",
   "author": "Gustavo Bonassa",
   "main": "main.js",

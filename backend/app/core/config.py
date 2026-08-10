@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     auto_import_dir: str = "/data"
     auto_import_on_startup: bool = True
 
+    # Automated collectors (Configurações → Automações). Credentials usually
+    # arrive via the UI (app/services/secrets); env vars are the Docker-first
+    # alternative. Headless off is the debugging mode: the desktop build can
+    # show the browser doing the walk.
+    b3_cpf: str = ""
+    b3_password: str = ""
+    pipeline_headless: bool = True
+    # The collector needs a real, headed browser to clear Cloudflare, but the
+    # weekly run should not steal the screen — so the window is moved off-screen
+    # by default and only brought back if a challenge needs solving by hand.
+    # Set true to always watch it run (useful while debugging a broker's flow).
+    pipeline_show_browser: bool = False
+
     # First-run downloads (PTAX, index series, Ibovespa, Tesouro) at startup.
     # The test suite switches this off: every `with TestClient(app)` runs the
     # lifespan, and hundreds of app starts against live BCB/Yahoo made the

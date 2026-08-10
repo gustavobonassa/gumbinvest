@@ -14,11 +14,14 @@ ROOT = Path(SPECPATH).parent          # repo root
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))      # so collect_submodules can see `app`
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 hiddenimports = (
     # uvicorn loads the app and its own components from strings.
     collect_submodules("app")
+    # Patchright drives the browser through its node driver via `_impl`
+    # submodules it imports dynamically — module analysis misses them.
+    + collect_submodules("patchright")
     + [
         "uvicorn.logging",
         "uvicorn.loops.auto",
@@ -35,7 +38,11 @@ a = Analysis(
         (str(ROOT / "frontend" / "dist"), "frontend/dist"),
         (str(BACKEND / "alembic"), "alembic"),
         (str(BACKEND / "alembic.ini"), "."),
-    ],
+    ]
+    # Patchright's node driver is package data, invisible to module analysis.
+    # The Chromium build itself is NOT bundled — B3 uses the user's system
+    # Chrome, and the fallback download lands in %LOCALAPPDATA%/GumbInvest.
+    + collect_data_files("patchright"),
     hiddenimports=hiddenimports,
     excludes=[
         "celery",

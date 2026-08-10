@@ -30,6 +30,11 @@ SECRET_KEYS = (
     "gdrive_refresh_token",
     "dropbox_refresh_token",
     "cloud_backup_passphrase",
+    # Broker credentials for the automated collectors (app/pipelines). The CPF
+    # is not exactly a secret, but write-only treatment is the right shape for
+    # anything typed into a credential slot.
+    "b3_cpf",
+    "b3_password",
 )
 
 #: What the environment provided, captured before any UI override mutates the

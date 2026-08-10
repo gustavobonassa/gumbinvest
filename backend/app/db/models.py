@@ -806,6 +806,58 @@ class Notification(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PipelineRun(Base):
+    """One execution of an automated collector (see :mod:`app.pipelines`).
+
+    A row is the *whole* channel between the worker thread driving a browser
+    and the UI watching it: the thread appends to ``log`` and flips ``status``,
+    the API polls the row, and when the broker asks for a 2FA code the thread
+    parks on ``waiting_input`` until the user's answer lands in
+    ``input_response``. A database row rather than an in-process registry
+    because under Docker the scheduled run lives in the worker container and
+    the poll in the backend container — memory they do not share.
+
+    Runs are history the user scrolls back through ("did last Monday's
+    collection work?"), which is why this is a table and not a settings blob.
+    """
+
+    __tablename__ = "pipeline_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: Registry key of the pipeline that ran (``b3``, later ``avenue``…).
+    pipeline: Mapped[str] = mapped_column(String(40), index=True)
+    #: ``manual`` (button) or ``scheduled`` (weekly slot).
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")
+    #: ``running`` | ``waiting_input`` | ``success`` | ``failed`` | ``cancelled``.
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Touched on every log line and every wait tick. A "running" row whose
+    #: heartbeat is minutes old is a crashed process, not a live run — the
+    #: claim check treats it as such, so no phantom lock survives a restart.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: ``[{"at": iso, "level": "info"|"warning"|"error", "message": str}]`` —
+    #: the narration the UI shows live and keeps afterwards.
+    log: Mapped[list] = mapped_column(JSON, default=list)
+    #: Set while parked: ``{"prompt": str, "kind": "code", "requested_at": iso}``.
+    input_request: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: The user's answer, written by the API for the worker to pick up.
+    input_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    #: Per-run knobs the trigger chose, e.g. ``{"full_history": true}`` for a
+    #: first-time backfill. Null for a plain incremental run.
+    options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    #: What the run produced (import counts, downloaded file) — the sentence
+    #: the history table shows.
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    portfolio_id: Mapped[int | None] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+
+
 class AiWallet(Base, TimestampMixin):
     """A virtual portfolio managed entirely by an AI model.
 

@@ -23,6 +23,11 @@ def configure_environment() -> None:
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{db_file}")
     os.environ.setdefault("BACKUP_DIR", str(paths.backups_dir()))
     os.environ.setdefault("AUTO_IMPORT_DIR", str(paths.auto_import_dir()))
+    # The desktop machine has a real display, and a visible real-browser
+    # session is what clears the broker portals' anti-bot challenges (B3 sits
+    # behind Cloudflare). Docker has no display, so it keeps the headless
+    # default from config.py. Either can be overridden with PIPELINE_HEADLESS.
+    os.environ.setdefault("PIPELINE_HEADLESS", "0")
 
 
 def port() -> int:

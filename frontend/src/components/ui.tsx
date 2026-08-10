@@ -221,6 +221,17 @@ export function Modal({
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Read through a ref so the effect below does not depend on `onClose`'s
+  // identity. Callers pass an inline arrow (`onClose={() => setOpen(false)}`),
+  // which is a new function on every render: with it in the dependency list
+  // the effect tore down and re-ran on each keystroke, and its cleanup handed
+  // focus back to the opener — typing in a field inside a modal lost focus
+  // after every character.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return undefined;
     // Focus moves into the dialog on open and back to the opener on close —
@@ -228,7 +239,7 @@ export function Modal({
     const opener = document.activeElement as HTMLElement | null;
     dialogRef.current?.focus();
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
       if (event.key === "Tab" && dialogRef.current) {
         const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -251,7 +262,9 @@ export function Modal({
       window.removeEventListener("keydown", handler);
       opener?.focus?.();
     };
-  }, [open, onClose]);
+    // `open` only: this effect captures the opener and restores focus to it on
+    // teardown, so it must run exactly once per open/close — see onCloseRef.
+  }, [open]);
 
   if (!open) return null;
   // Portalled to <body> on purpose: `position: fixed` is relative to the

@@ -255,7 +255,14 @@ class YahooChartProvider(MarketDataProvider):
     name = "yahoo"
     BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
     HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; GumbInvest/1.0)"}
-    QUOTE_PARAMS = {"range": "5d", "interval": "1d"}
+    #: One day, and it has to stay one day. The quote reads
+    #: ``meta.chartPreviousClose``, which is the close immediately *before the
+    #: requested range begins* — not the previous session's. With ``5d`` that
+    #: was a week-old price, so "variação do dia" silently reported a five-day
+    #: move: MPT showed -12.9% on a day it rose 1%, because it was still
+    #: measuring against the close from before its drop. Any wider range
+    #: reintroduces exactly that bug.
+    QUOTE_PARAMS = {"range": "1d", "interval": "1d"}
 
     @staticmethod
     def market_symbol(symbol: str) -> str:

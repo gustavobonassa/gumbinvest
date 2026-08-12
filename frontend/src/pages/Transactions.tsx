@@ -20,7 +20,7 @@ import {
   Skeleton,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { kindLabel, money, opLabel, quantity, shortDate } from "@/lib/format";
+import { baseCurrency, kindLabel, money, opLabel, quantity, shortDate } from "@/lib/format";
 
 /** Today as `yyyy-mm-dd` in the local calendar, which is what DateField speaks. */
 function isoToday(): string {
@@ -138,6 +138,10 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const chosen = (operations.data ?? []).find((item) => item.code === operation);
   const needs = chosen?.needs ?? "trade";
+  // Shown next to the money fields when the asset does not trade in the
+  // portfolio's currency, so a US purchase is not typed in as if it were reais.
+  const foreignCurrency =
+    picked?.currency && picked.currency.toUpperCase() !== baseCurrency() ? picked.currency : null;
   const cleanTicker = ticker.trim().toUpperCase();
   const known = (held.data ?? []).some((asset) => asset.ticker === cleanTicker);
 
@@ -286,7 +290,10 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
                 const remote = (market.data?.items ?? []).find((item) => item.ticker === code);
                 const match = local ?? remote;
                 if (match && !name.trim()) setName(match.name);
-                setPicked(remote && !local ? { kind: remote.kind, currency: remote.currency } : null);
+                // Held assets count too: the form needs the currency to label
+                // its amount fields, and for one already on file the server
+                // ignores what is sent and keeps the asset's own.
+                setPicked(match ? { kind: match.kind, currency: match.currency } : null);
               }}
               options={suggestions}
               emptyHint="Nenhum ativo encontrado. Continue digitando para criar um novo."
@@ -329,7 +336,10 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
           ) : null}
           {needs === "trade" ? (
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Preço unitário</span>
+              <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+                Preço unitário
+                {foreignCurrency ? <span className="ml-1 text-warning">em {foreignCurrency}</span> : null}
+              </span>
               <input
                 className="input tnum"
                 inputMode="decimal"
@@ -350,6 +360,7 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium text-ink-muted">
               {needs === "amount" ? "Valor" : "Total"}
+              {foreignCurrency ? <span className="ml-1 text-warning">em {foreignCurrency}</span> : null}
             </span>
             <input
               className="input tnum"
@@ -650,7 +661,9 @@ export default function Transactions() {
                         </span>
                       </td>
                       <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">{quantity(transaction.quantity)}</td>
-                      <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">{money(transaction.unit_price)}</td>
+                      <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">
+                        {money(transaction.unit_price, { currency: transaction.currency })}
+                      </td>
                       {/* Shows the gross magnitude; the colour carries the
                           direction of the net cash flow. The tooltip makes
                           the pairing explicit instead of looking like a bug. */}
@@ -660,9 +673,9 @@ export default function Transactions() {
                           Number(transaction.net_amount) > 0 && "text-positive",
                           Number(transaction.net_amount) < 0 && "text-negative",
                         )}
-                        title={`Líquido: ${money(transaction.net_amount)}`}
+                        title={`Líquido: ${money(transaction.net_amount, { currency: transaction.currency })}`}
                       >
-                        {money(transaction.gross_amount)}
+                        {money(transaction.gross_amount, { currency: transaction.currency })}
                       </td>
                       <td className="hidden px-4 py-2.5 text-xs text-ink-muted xl:table-cell">{transaction.broker ?? "-"}</td>
                       {/* Only hand-entered rows: an imported one is reproducible

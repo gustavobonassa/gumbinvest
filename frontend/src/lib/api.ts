@@ -352,6 +352,14 @@ export interface TransactionRow {
   taxes: number;
   gross_amount: number;
   net_amount: number;
+  /**
+   * The currency every amount on this row is expressed in — the one the
+   * movement was actually made in, not the portfolio's. A US purchase is in
+   * dollars and labelling it "R$" overstates it fivefold.
+   */
+  currency: string;
+  /** Rate to the portfolio's currency on the trade date; null when not needed. */
+  fx_rate: number | null;
   broker: string | null;
   notes: string | null;
   /** Hand-entered rather than imported — the only kind that may be deleted. */

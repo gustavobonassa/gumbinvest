@@ -115,6 +115,11 @@ def list_transactions(
                 "taxes": t.taxes,
                 "gross_amount": t.gross_amount,
                 "net_amount": t.net_amount,
+                # Every amount above is in the currency the movement was made
+                # in, not the portfolio's — a US purchase is dollars. Without
+                # this the page can only guess, and it guessed reais.
+                "currency": t.currency or "BRL",
+                "fx_rate": t.fx_rate,
                 "broker": b.canonical_name if b else None,
                 "notes": t.notes,
                 # Only a hand-entered row may be deleted from the UI: an
@@ -204,6 +209,7 @@ def create_transaction(payload: ManualPayload, db: DbSession, portfolio: Current
         "unit_price": movement.unit_price,
         "gross_amount": movement.gross_amount,
         "net_amount": movement.net_amount,
+        "currency": movement.currency or "BRL",
     }
 
 

@@ -456,6 +456,39 @@ def test_the_dashboard_and_the_proventos_page_quote_the_same_income(client: Test
     assert position["income_withheld"] == pytest.approx(15.0)
 
 
+def test_a_transaction_carries_the_currency_it_was_made_in(client: TestClient, db: Session):
+    """The ledger page can only label an amount if the row says what it is.
+
+    Every figure on a movement is in the currency of the trade, not of the
+    portfolio, and the endpoint used to omit that — so the page had nothing to
+    go on and printed "R$" over a US purchase, overstating it fivefold.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    from app.services import manual_entries
+
+    upload(client)  # a BRL history to sit alongside
+    portfolio = get_default_portfolio(db)
+    manual_entries.create(
+        db,
+        portfolio.id,
+        operation="BUY",
+        ticker="VOO",
+        name="Vanguard S&P 500 ETF",
+        kind="ETF_INTL",
+        currency="USD",
+        when=date(2026, 4, 14),
+        quantity=Decimal("0.23513"),
+        unit_price=Decimal("637.94"),
+    )
+
+    items = client.get("/api/transactions").json()["items"]
+    by_ticker = {item["ticker"]: item for item in items}
+    assert by_ticker["VOO"]["currency"] == "USD"
+    assert by_ticker["PETR4"]["currency"] == "BRL"
+
+
 def test_transaction_filters_and_export(client: TestClient):
     upload(client)
     filtered = client.get("/api/transactions", params={"op_type": ["DIVIDEND"]}).json()

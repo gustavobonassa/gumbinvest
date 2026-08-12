@@ -467,6 +467,7 @@ New broker wordings, statement layouts and exchange exports are the most
 valuable contributions — and usually the smallest: a classifier row plus a test.
 
 ```bash
+git config core.hooksPath .githooks   # once per clone: the commit-message checks
 cd backend && python -m pytest -q     # must stay green
 cd frontend && npm run typecheck      # no ESLint configured; tsc is the gate
 ```

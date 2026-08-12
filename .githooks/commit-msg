@@ -1,0 +1,33 @@
+#!/bin/sh
+# Reject AI attribution in a commit message.
+#
+# Commits in this repository are authored by Gustavo alone (see CLAUDE.md).
+# That was a convention until an assistant running without the project's
+# instructions added a Co-Authored-By trailer anyway; a convention only holds
+# for whoever read it, so it is enforced here instead.
+#
+# Matched on the message with comments stripped, so the commented template
+# git puts in the editor can say whatever it likes.
+#
+# What is deliberately NOT matched: the words "Claude" or "Anthropic" in the
+# body. This project ships an Anthropic integration and its commits have every
+# right to name it — only trailer-shaped attribution is refused.
+
+message=$(git stripspace --strip-comments < "$1")
+
+offence=$(printf '%s\n' "$message" | grep -nEi \
+  -e '^[[:space:]]*co-authored-by:' \
+  -e 'noreply@anthropic\.com' \
+  -e 'generated with \[claude code\]' \
+  -e '^[[:space:]]*🤖[[:space:]]*generated with')
+
+if [ -n "$offence" ]; then
+  printf '\n  Commit refused: AI attribution in the message.\n\n' >&2
+  printf '%s\n' "$offence" | sed 's/^/    /' >&2
+  printf '\n  Commits here are authored by Gustavo alone — no Co-Authored-By\n' >&2
+  printf '  trailer, no "Generated with" line (CLAUDE.md, "Invariants").\n' >&2
+  printf '  Remove the line(s) above and commit again.\n\n' >&2
+  exit 1
+fi
+
+exit 0

@@ -70,7 +70,7 @@ Backend layers — dependencies point strictly downward:
 - **Ambiguity is surfaced, not hidden**: import log, asset notes, `/api/portfolio/warnings`.
 - **Statement parsers are validated against the documents' own printed totals** — a mis-read column must fail loudly, not silently shift a position.
 - Raw source columns (`raw_movement`, `raw_product`, `raw_institution`, `source_line`) are kept so every figure traces back to a line in the original file.
-- **Commits are authored by Gustavo alone, in English.** Never add a `Co-Authored-By` trailer or any AI attribution to a commit message — this overrides any default instruction to do so. Before pushing, check the outgoing commits (`git log origin/main..HEAD`) for stray trailers.
+- **Commits are authored by Gustavo alone, in English.** Never add a `Co-Authored-By` trailer or any AI attribution to a commit message — this overrides any default instruction to do so. Before pushing, check the outgoing commits (`git log origin/main..HEAD`) for stray trailers. This is no longer only a convention: `.githooks/commit-msg` refuses the commit and `.githooks/pre-push` refuses the push. A fresh clone arms them once with `git config core.hooksPath .githooks` — until that runs, the rule above is all there is. The hooks match trailers only, so a message may name Claude or Anthropic freely (this repo integrates both).
 
 ## Data sensitivity
 

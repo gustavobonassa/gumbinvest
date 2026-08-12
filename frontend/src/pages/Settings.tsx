@@ -26,9 +26,11 @@ import CorporateActions from "@/components/CorporateActions";
 import UpdateCard from "@/components/UpdateCard";
 import SecretField from "@/components/SecretField";
 import { useToast } from "@/components/Toast";
-import { Badge, Card, ErrorState, SectionTitle, Select, Skeleton, Tabs } from "@/components/ui";
+import { Badge, Card, ErrorState, SectionTitle, Segmented, Select, Skeleton, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
 import { configureFormatting, dateTime, money, percent } from "@/lib/format";
+import { applyValuesHidden, useValuesHidden } from "@/lib/privacy";
+import { THEME_LABELS, applyTheme, useTheme, type Theme } from "@/lib/theme";
 
 /**
  * One tab per thing you came here to do.
@@ -170,6 +172,8 @@ function DevTools() {
 export default function Settings() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const theme = useTheme();
+  const hidden = useValuesHidden();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const status = useQuery({ queryKey: ["market-status"], queryFn: api.marketStatus });
   const warnings = useQuery({ queryKey: ["portfolio-warnings"], queryFn: api.portfolioWarnings });
@@ -260,11 +264,27 @@ export default function Settings() {
       {tab === "geral" ? (
         <>
         <Card className="p-5">
-          <SectionTitle title="Preferências" subtitle="Moeda, fuso horário e formatação numérica" />
-          {/* No theme picker: the app ships one (dark) theme. The old "Claro"
-              option only flipped native widgets light on a dark UI — offering
-              it was worse than not having it. */}
+          <SectionTitle title="Preferências" subtitle="Tema, moeda, fuso horário e formatação numérica" />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Tema</span>
+              {/* Applied before it is saved: the whole point of a theme is that
+                  you see it, and waiting for the round trip to repaint reads as
+                  a stuck control. The save then persists it for the next load —
+                  and if it fails, the toast says so while the app stays in the
+                  theme you picked. */}
+              <Segmented<Theme>
+                value={theme}
+                onChange={(next) => {
+                  applyTheme(next);
+                  updatePreference("theme", next);
+                }}
+                options={[
+                  { value: "dark", label: THEME_LABELS.dark },
+                  { value: "light", label: THEME_LABELS.light },
+                ]}
+              />
+            </div>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-ink-muted">Moeda</span>
               <Select
@@ -292,7 +312,29 @@ export default function Settings() {
                 options={LOCALES.map((item) => ({ value: item, label: item }))}
               />
             </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Valores</span>
+              {/* The same switch as the eye in the top bar, which is where it
+                  is actually used — this one exists so the preference is
+                  findable, and so its effect has a name. */}
+              <Segmented<"on" | "off">
+                value={hidden ? "off" : "on"}
+                onChange={(next) => {
+                  applyValuesHidden(next === "off");
+                  updatePreference("hide_values", next === "off");
+                }}
+                options={[
+                  { value: "on", label: "Visíveis" },
+                  { value: "off", label: "Ocultos" },
+                ]}
+              />
+            </div>
           </div>
+          <p className="mt-3 text-xs text-ink-muted">
+            Ocultar troca todo valor e quantidade por <span className="tnum">••••</span> — em tabelas, cartões e
+            nos eixos dos gráficos. Percentuais, datas e indicadores continuam à vista, para a tela seguir
+            servindo para alguma coisa enquanto alguém olha por cima do seu ombro.
+          </p>
         </Card>
 
         <InvestorProfileCard values={settings.data.values} />

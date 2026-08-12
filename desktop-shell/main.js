@@ -16,10 +16,22 @@ const path = require("path");
 const http = require("http");
 
 const DEV = process.argv.includes("--dev");
-const SURFACE = "#10151c";
-const INK = "#e6efe9";
-const CANVAS = "#0b1210";
 const TITLEBAR_HEIGHT = 36;
+
+/**
+ * Window chrome per theme — the native min/max/close buttons Windows draws in
+ * our colours, and the paint behind the page before it loads.
+ *
+ * The page itself is themed by the SPA; these three colours are the only part
+ * of the app the stylesheet cannot reach, so the renderer pushes its choice
+ * over `theme:set` (see preload.js) and it is remembered in the data dir for
+ * the next launch — otherwise a light-theme window would open wearing dark
+ * window buttons until the SPA finished booting.
+ */
+const THEMES = {
+  dark: { surface: "#10151c", ink: "#e6efe9", canvas: "#0b1210" },
+  light: { surface: "#ffffff", ink: "#171b22", canvas: "#f1f3f7" },
+};
 
 // Must match backend/app/desktop/paths.py: the server writes port.txt into
 // its data root and this shell reads it — a mismatch means "server not found".
@@ -28,6 +40,7 @@ const dataDir =
     ? path.join(os.homedir(), "Library", "Application Support", "GumbInvest")
     : path.join(process.env.LOCALAPPDATA || os.homedir(), "GumbInvest");
 const portFile = path.join(dataDir, "port.txt");
+const themeFile = path.join(dataDir, "theme.txt");
 
 let mainWindow = null;
 let tray = null;
@@ -227,21 +240,64 @@ function scheduleStartupCheck() {
   }, 15000);
 }
 
+// ---------------------------------------------------------------- theme
+
+function storedTheme() {
+  try {
+    const value = fs.readFileSync(themeFile, "utf8").trim();
+    if (value === "light" || value === "dark") return value;
+  } catch {
+    /* never written, or unreadable: dark is the default */
+  }
+  return "dark";
+}
+
+function applyTheme(theme) {
+  const palette = THEMES[theme] || THEMES.dark;
+  if (!mainWindow) return;
+  mainWindow.setBackgroundColor(palette.canvas);
+  try {
+    mainWindow.setTitleBarOverlay({
+      color: palette.surface,
+      symbolColor: palette.ink,
+      height: TITLEBAR_HEIGHT,
+    });
+  } catch {
+    // Only Windows (and newer Linux) draws the overlay; elsewhere the OS owns
+    // those buttons and there is nothing to recolour.
+  }
+}
+
+function registerThemeIpc() {
+  ipcMain.handle("theme:set", (_event, theme) => {
+    if (theme !== "light" && theme !== "dark") return;
+    applyTheme(theme);
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(themeFile, theme, "utf8");
+    } catch {
+      // Forgetting it only costs a wrongly-coloured title bar for the first
+      // second of the next launch; never a reason to fail the call.
+    }
+  });
+}
+
 // ---------------------------------------------------------------- window
 
 function createWindow() {
+  const palette = THEMES[storedTheme()];
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: CANVAS,
+    backgroundColor: palette.canvas,
     show: false,
     autoHideMenuBar: true,
     // Window Controls Overlay: our HTML is the title bar; Windows draws only
     // the min/max/close buttons, in these colors.
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: SURFACE, symbolColor: INK, height: TITLEBAR_HEIGHT },
+    titleBarOverlay: { color: palette.surface, symbolColor: palette.ink, height: TITLEBAR_HEIGHT },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -286,7 +342,9 @@ async function openPhoneQr() {
     minimizable: false,
     maximizable: false,
     autoHideMenuBar: true,
-    backgroundColor: CANVAS,
+    // qr.html is a dark page of its own, like the loading and error screens —
+    // shell surfaces, not app surfaces, so they do not follow the app's theme.
+    backgroundColor: THEMES.dark.canvas,
     title: "Abrir no celular",
   });
   const query = new URLSearchParams({ qr: dataUrl, url }).toString();
@@ -318,6 +376,7 @@ if (!hasLock) {
 
   app.whenReady().then(async () => {
     registerUpdateIpc();
+    registerThemeIpc();
     startServer();
     createTray();
     createWindow();

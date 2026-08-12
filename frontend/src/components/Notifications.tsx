@@ -196,16 +196,18 @@ export default function Notifications() {
         ref={buttonRef}
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
-        className="btn-ghost relative px-2 py-2"
+        className="btn-topbar-icon relative"
         aria-label={unread ? `Notificações (${unread} não lidas)` : "Notificações"}
         title="Notificações"
       >
-        <Bell size={15} aria-hidden />
+        {/* 18px, like the other icon-only buttons in the top bar — the bell was
+            the odd one out at 15. */}
+        <Bell size={18} aria-hidden />
         {/* The dot straddles the button's top-right corner rather than sitting
             inside it, where it read as part of the bell instead of as a mark on
             top of it. Sitting *on* the edge is what the offset buys: the button
-            is 33px square with a 12px radius, so the corner's own outline runs
-            about 3.5px in from each side — a -1px inset lands the 8px dot's
+            is 40px square with a 14px radius, so the corner's own outline runs
+            about 4px in from each side — a -1px inset lands the 8px dot's
             centre on that curve, half over the button and half over the header.
             The ping ring is free to spill past it; nothing here clips. */}
         {unread ? (

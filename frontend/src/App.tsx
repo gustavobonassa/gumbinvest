@@ -5,6 +5,8 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "@/components/Layout";
 import { api } from "@/lib/api";
 import { configureFormatting } from "@/lib/format";
+import { applyValuesHidden, useValuesHidden } from "@/lib/privacy";
+import { applyTheme, isTheme, useTheme } from "@/lib/theme";
 
 // Lazy routes: each page (and Recharts, which only pages import) stays out of
 // the entry bundle, so the shell paints before chart code even downloads.
@@ -29,15 +31,27 @@ const Transactions = lazy(() => import("@/pages/Transactions"));
 export default function App() {
   // Apply the stored locale/currency/theme once, then let pages render.
   const { data } = useQuery({ queryKey: ["settings"], queryFn: api.settings, staleTime: 5 * 60_000 });
+  const theme = useTheme();
+  // Subscribed, not read: privacy mode masks values inside the formatters, so
+  // what makes the app follow the switch is this component re-rendering. It
+  // reaches every page because nothing between here and them is memoised.
+  useValuesHidden();
 
   useEffect(() => {
     if (!data) return;
     configureFormatting(String(data.values.number_format ?? "pt-BR"), String(data.values.currency ?? "BRL"));
-    document.documentElement.dataset.theme = String(data.values.theme ?? "dark");
+    // The pre-paint script already applied the mirrored choice; this is the
+    // stored preference having the final word, and a no-op when they agree.
+    applyTheme(isTheme(data.values.theme) ? data.values.theme : "dark");
+    applyValuesHidden(data.values.hide_values === true);
   }, [data]);
 
   return (
-    <Routes>
+    // Charts paint their colours into SVG attributes, which no restyling can
+    // reach — so a theme change remounts the tree and lets them redraw. It costs
+    // nothing the rest of the time: the key only changes when the theme does,
+    // and the query cache survives the remount.
+    <Routes key={theme}>
       <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="ativos" element={<Assets />} />

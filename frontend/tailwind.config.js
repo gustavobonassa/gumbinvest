@@ -1,11 +1,20 @@
 /**
  * Design tokens for the app.
  *
+ * Every chrome colour resolves through a CSS variable rather than a literal, so
+ * one `data-theme` on <html> repaints the app — see the two token blocks in
+ * `styles.css`. Variables hold bare `R G B` channels precisely so Tailwind's
+ * opacity modifiers (`bg-surface/80`, `border-line/70`) keep working.
+ *
  * The `series` scale is the validated categorical palette from the data-viz
- * guidelines (dark steps, checked against the #12141a chart surface: all eight
- * slots clear the lightness band, chroma floor, CVD separation and 3:1
- * contrast). Assign slots in order — never cycle, never recolour by rank.
+ * guidelines, and it is deliberately *not* themed: an asset class keeps one
+ * colour everywhere, and the eight steps clear the lightness band, chroma
+ * floor, CVD separation and contrast checks against both the dark (#12141a)
+ * and the light (#ffffff) chart surface. Assign slots in order — never cycle,
+ * never recolour by rank.
  */
+const themed = (name) => `rgb(var(${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -13,28 +22,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: "#0b0d11",
+        canvas: themed("--c-canvas"),
         surface: {
-          DEFAULT: "#12141a",
-          raised: "#171a21",
-          hover: "#1d212a",
+          DEFAULT: themed("--c-surface"),
+          raised: themed("--c-surface-raised"),
+          hover: themed("--c-surface-hover"),
         },
         line: {
-          DEFAULT: "#232833",
-          strong: "#2f3542",
+          DEFAULT: themed("--c-line"),
+          strong: themed("--c-line-strong"),
         },
         ink: {
-          DEFAULT: "#f4f6fb",
-          secondary: "#a4adbf",
-          muted: "#6c7689",
+          DEFAULT: themed("--c-ink"),
+          secondary: themed("--c-ink-secondary"),
+          muted: themed("--c-ink-muted"),
         },
         accent: {
-          DEFAULT: "#3987e5",
-          soft: "rgba(57,135,229,0.14)",
+          DEFAULT: themed("--c-accent"),
+          // A fixed wash rather than a channel triplet: it is only ever used as
+          // a background at its own alpha, never with an opacity modifier.
+          soft: "var(--c-accent-soft)",
         },
-        positive: "#199e70",
-        negative: "#e66767",
-        warning: "#c98500",
+        positive: themed("--c-positive"),
+        negative: themed("--c-negative"),
+        warning: themed("--c-warning"),
         series: {
           1: "#3987e5",
           2: "#d95926",
@@ -51,10 +62,12 @@ export default {
         mono: ["JetBrains Mono", "SF Mono", "Consolas", "monospace"],
       },
       borderRadius: { xl: "0.875rem", "2xl": "1.125rem", "3xl": "1.5rem" },
+      // Themed as well: the depth that reads as elevation on a near-black page
+      // reads as dirt on a white one, so each theme brings its own.
       boxShadow: {
-        card: "0 1px 2px rgba(0,0,0,0.35), 0 8px 24px -12px rgba(0,0,0,0.6)",
-        raised: "0 2px 4px rgba(0,0,0,0.4), 0 18px 40px -18px rgba(0,0,0,0.75)",
-        glow: "0 0 0 1px rgba(57,135,229,0.35), 0 8px 30px -10px rgba(57,135,229,0.35)",
+        card: "var(--shadow-card)",
+        raised: "var(--shadow-raised)",
+        glow: "var(--shadow-glow)",
       },
       keyframes: {
         "fade-up": {

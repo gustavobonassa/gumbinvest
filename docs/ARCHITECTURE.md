@@ -820,8 +820,8 @@ itself (same-origin, so LAN/phone access needs no CORS or proxy). The window
 and tray belong to the Electron shell in `desktop-shell/`: it spawns
 `headless.py` (via the PyInstaller `gumbinvest-server` bundle), reads
 `port.txt` from the data dir, shows a loading page until `/api/health`
-answers, and draws the title bar in the app theme through Electron's Window
-Controls Overlay — a custom-chrome attempt with pywebview was reverted
+answers, and draws the title bar in the app's current theme through Electron's
+Window Controls Overlay — a custom-chrome attempt with pywebview was reverted
 because its drag machinery and JS bridge race the SPA. Nothing in `app.main`
 imports `app.desktop` — Docker never loads it; the guarded SPA block in
 `main.py` is switched by `DESKTOP_MODE`, which only the desktop entrypoint
@@ -906,6 +906,42 @@ React 18 + TypeScript + Vite, Tailwind for styling, TanStack Query for server
 state, Recharts for charts, React Router for navigation. No global state library:
 everything on screen is server state, and Query already models that.
 
+**Themes.** Every chrome colour is a CSS variable holding bare `R G B` channels
+(`styles.css`), which Tailwind's tokens compose with their own alpha — that is
+what keeps `bg-surface/80` and `border-line/70` working through a theme swap.
+One `data-theme` on `<html>` repaints the app; dark is the default and light is
+a *selected* theme rather than an inversion, its inks and status colours stepped
+down until each clears 4.5:1 on the light canvas (the dark green fails there at
+3.07:1), with its own softer elevation shadows. Three things live outside CSS's
+reach and are handled explicitly:
+
+- **The first paint.** The choice is stored in the backend settings like every
+  other preference, but a round trip cannot precede the first paint, so it is
+  mirrored to `localStorage` and re-applied by an inline script in `index.html`;
+  the settings query then has the final word. Without that, a light-theme user
+  gets a dark flash on every load.
+- **Charts**, which paint into SVG attributes. `lib/colors.ts` keeps a token set
+  per theme and `lib/theme.ts` switches it; because Recharts cannot be restyled
+  in place, `App.tsx` keys the router on the theme so a change remounts and
+  redraws. The categorical palette itself is *not* themed — it passes the
+  validator on both surfaces, and an asset class keeps one colour everywhere.
+- **The desktop window buttons**, drawn by Electron: the renderer pushes the
+  theme over the `theme:set` bridge and the shell remembers it in
+  `theme.txt`, so the next launch opens with the right chrome.
+
+**Modo privacidade** (`lib/privacy.ts`) works the same way and for the same
+reasons — mirrored to `localStorage` because pages paint before the settings
+query answers, and a stored choice applied only on the round trip would flash
+the balances it exists to hide. The mask itself lives *inside the formatters*
+(`money`, `quantity` in `lib/format.ts`), not at the call sites: a page added
+later is covered by the mere act of formatting its numbers and cannot forget to
+opt in. What that leaves visible is deliberate — percentages, dates, tickers and
+public fundamentals, so the screen still answers questions with the amounts off;
+`money(v, { market: true })` is the one opt-out, for quotes and exchange rates,
+which say what the world costs rather than what you own. Two limits worth
+knowing: AI answers are prose written by a model and are not masked, and CSV /
+`.gumbinvest` exports are explicit actions, so they always carry real values.
+
 **Charts** follow a fixed set of rules encoded in `src/lib/colors.ts` and
 `src/components/charts.tsx`:
 
@@ -922,8 +958,11 @@ everything on screen is server state, and Query already models that.
 - magnitude uses a **sequential** wash — one hue, varying intensity
   (`sequentialFill`) — as in the income matrix, never a categorical hue.
 
-The palette was validated against the app's chart surface (`#12141a`) for
-lightness band, chroma, colour-vision-deficiency separation and 3:1 contrast.
+The palette was validated against both chart surfaces — the dark `#12141a` and
+the light `#ffffff` — for lightness band, chroma, colour-vision-deficiency
+separation and 3:1 contrast, which is why it survives a theme change unchanged.
+(On white the yellow slot lands at 2.99:1 and carries the documented relief:
+legend, direct labels and a table view are present on every chart here.)
 
 Two behaviours are set globally in `styles.css` rather than per chart, because
 they apply to every plotted form:

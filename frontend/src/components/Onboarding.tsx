@@ -472,10 +472,9 @@ export default function Onboarding() {
       aria-modal="true"
       aria-label="Configuração inicial"
       className="desktop-shell-anchored fixed inset-0 z-[70] overflow-y-auto bg-canvas"
-      style={{
-        backgroundImage:
-          "radial-gradient(900px 600px at 12% -10%, rgba(57, 135, 229, 0.09), transparent 60%), radial-gradient(700px 500px at 95% 0%, rgba(25, 158, 112, 0.07), transparent 55%)",
-      }}
+      // The wizard covers the page, so it repaints the page's own two washes
+      // rather than letting the body's show through.
+      style={{ backgroundImage: "var(--page-glow)" }}
     >
       <div className="flex min-h-full flex-col px-6 py-5">
         <div className="flex h-8 justify-end">

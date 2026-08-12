@@ -21,7 +21,7 @@ import {
 } from "@/components/charts";
 import { Card, ErrorState, KindTag, SectionTitle, Segmented, Skeleton } from "@/components/ui";
 import { api, type PerformanceRow, type PerformanceWindow, type ProfitRange } from "@/lib/api";
-import { BENCHMARK_STYLE, OTHER_COLOR, SERIES, TOKENS, kindColor, kindRank } from "@/lib/colors";
+import { SERIES, TOKENS, benchmarkStyle, kindColor, kindRank } from "@/lib/colors";
 import { kindLabel, money, percent, periodLabel } from "@/lib/format";
 
 const RANGE_LABELS: Record<ProfitRange, string> = {
@@ -189,12 +189,12 @@ export default function Reports() {
 
     const codes = [...new Set(points.flatMap((point) => Object.keys(point.benchmarks)))].sort();
     for (const code of codes) {
-      const style = BENCHMARK_STYLE[code];
+      const style = benchmarkStyle(code);
       lines.push({
         key: code,
         label: BENCHMARK_LABELS[code] ?? code,
-        color: style?.color ?? OTHER_COLOR,
-        dash: style?.dash,
+        color: style.color,
+        dash: style.dash,
       });
     }
 

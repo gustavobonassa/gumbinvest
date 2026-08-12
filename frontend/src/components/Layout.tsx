@@ -36,6 +36,7 @@ import AssetChat, { AI_CHAT_SLOT_ID } from "@/components/AssetChat";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Notifications from "@/components/Notifications";
 import Onboarding from "@/components/Onboarding";
+import PrivacyToggle from "@/components/PrivacyToggle";
 import TitleBar from "@/components/TitleBar";
 import { Badge, Skeleton } from "@/components/ui";
 
@@ -542,7 +543,7 @@ export default function Layout() {
                     </span>
                   )}
                   <span className="tnum font-medium text-ink" title={`Cotação de ${dateTime(coin.fetched_at)}`}>
-                    {money(coin.price_base, { decimals: 2 })}
+                    {money(coin.price_base, { decimals: 2, market: true })}
                   </span>
                 </span>
               </p>
@@ -553,7 +554,8 @@ export default function Layout() {
               <p key={series.pair} className="mb-2 flex items-baseline justify-between gap-2">
                 <span className="text-ink-secondary">{currencyLabel(series.base)}</span>
                 <span className="tnum font-medium text-ink" title={`PTAX de ${shortDate(series.end)}`}>
-                  {money(series.rate, { decimals: 4 })}
+                  {/* A rate, like the index level above it: public, so it stays. */}
+                  {money(series.rate, { decimals: 4, market: true })}
                 </span>
               </p>
             ))}
@@ -587,7 +589,7 @@ export default function Layout() {
         <header className="z-20 flex h-16 shrink-0 items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-xl sm:px-6">
           <button
             type="button"
-            className="btn-ghost px-2 py-2 lg:hidden"
+            className="btn-topbar-icon lg:hidden"
             onClick={() => setSidebarOpen(true)}
             aria-label="Abrir menu"
           >
@@ -607,6 +609,7 @@ export default function Layout() {
           <div className="ml-auto flex items-center gap-2">
             {/* Filled by whichever AssetChat is mounted — see AI_CHAT_SLOT_ID. */}
             <div id={AI_CHAT_SLOT_ID} className="flex items-center" />
+            <PrivacyToggle />
             <Notifications />
           </div>
         </header>

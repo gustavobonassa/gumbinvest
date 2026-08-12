@@ -12,7 +12,7 @@ import { ChartFrame, ReturnLinesChart, type ReturnPoint, type ReturnSeries } fro
 import { Segmented, StatTile } from "@/components/ui";
 import type { AiWalletDetail, AiWalletRange } from "@/lib/api";
 import { api } from "@/lib/api";
-import { BENCHMARK_STYLE, SERIES } from "@/lib/colors";
+import { SERIES, benchmarkStyle } from "@/lib/colors";
 import { money, percent } from "@/lib/format";
 
 export default function OverviewTab({ wallet }: { wallet: AiWalletDetail }) {
@@ -30,7 +30,7 @@ export default function OverviewTab({ wallet }: { wallet: AiWalletDetail }) {
     let walletIndex = 0;
     const mapped: ReturnSeries[] = data.series.map((item) => {
       if (item.benchmark) {
-        const style = BENCHMARK_STYLE[item.key] ?? { color: "#9aa3b2", dash: "4 4" };
+        const style = benchmarkStyle(item.key);
         return { key: item.key, label: item.label, color: style.color, dash: style.dash };
       }
       const color = SERIES[walletIndex % SERIES.length];

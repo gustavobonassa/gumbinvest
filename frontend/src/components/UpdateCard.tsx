@@ -28,8 +28,11 @@ type UpdateState = {
   error: string | null;
 };
 
+/** Everything the Electron preload exposes; see desktop-shell/preload.js. */
 type UpdateBridge = {
   version: () => Promise<string>;
+  /** Repaints the native window chrome — `lib/theme.ts` is its only caller. */
+  setTheme?: (theme: "dark" | "light") => Promise<void>;
   checkForUpdates: () => Promise<UpdateState>;
   downloadUpdate: () => Promise<UpdateState>;
   installUpdate: () => Promise<UpdateState>;

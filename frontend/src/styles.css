@@ -3,10 +3,87 @@
 @tailwind utilities;
 
 @layer base {
+  /* ---------------------------------------------------------------------
+     Themes.
+
+     Dark is the default and the design's home: these are the literals the app
+     shipped with, moved behind variables unchanged. Light is a *selected*
+     theme, not an inversion — its inks, status colours and accent are stepped
+     down until each clears 4.5:1 on the light canvas (the dark values fail
+     there: #199e70 green lands at 3.07:1), and its elevation is a soft grey
+     shadow rather than the near-black one that reads as dirt on white.
+
+     Colours are bare `R G B` channels because Tailwind composes them with its
+     own alpha (`bg-surface/80`); anything that needs a fixed alpha, a gradient
+     or a shadow is a whole-value variable instead.
+     --------------------------------------------------------------------- */
   :root {
     color-scheme: dark;
-    /* Chart surface the categorical palette was validated against. */
+
+    --c-canvas: 11 13 17;
+    --c-surface: 18 20 26;
+    --c-surface-raised: 23 26 33;
+    --c-surface-hover: 29 33 42;
+    --c-line: 35 40 51;
+    --c-line-strong: 47 53 66;
+    --c-ink: 244 246 251;
+    --c-ink-secondary: 164 173 191;
+    --c-ink-muted: 108 118 137;
+    --c-accent: 57 135 229;
+    --c-accent-soft: rgba(57, 135, 229, 0.14);
+    --c-positive: 25 158 112;
+    --c-negative: 230 103 103;
+    --c-warning: 201 133 0;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    --shadow-raised: 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 40px -18px rgba(0, 0, 0, 0.75);
+    --shadow-glow: 0 0 0 1px rgba(57, 135, 229, 0.35), 0 8px 30px -10px rgba(57, 135, 229, 0.35);
+
+    /* The two washes behind the whole page, and the sweep across a loading
+       placeholder — light on dark, so both flip with the theme. */
+    --page-glow:
+      radial-gradient(900px 600px at 12% -10%, rgba(57, 135, 229, 0.09), transparent 60%),
+      radial-gradient(700px 500px at 95% 0%, rgba(25, 158, 112, 0.07), transparent 55%);
+    --shimmer: rgba(255, 255, 255, 0.05);
+
+    /* Chart surface the categorical palette was validated against — the card
+       the marks sit on, which is what `lib/colors.ts` paints slice gaps in. */
     --chart-surface: #12141a;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+
+    /* "raised" keeps its meaning — a surface that stands out from the card it
+       sits on — but on white that means a step *down* in lightness: an input or
+       a chip at 98% white would be invisible on a white card. The order of the
+       scale (card → raised → hover) is the same as in the dark theme; only its
+       direction flips. */
+    --c-canvas: 241 243 247;
+    --c-surface: 255 255 255;
+    --c-surface-raised: 238 241 246;
+    --c-surface-hover: 227 232 240;
+    --c-line: 222 227 236;
+    --c-line-strong: 198 206 222;
+    --c-ink: 23 27 34;
+    --c-ink-secondary: 74 83 97;
+    --c-ink-muted: 100 110 125;
+    --c-accent: 28 104 197;
+    --c-accent-soft: rgba(28, 104, 197, 0.12);
+    --c-positive: 15 120 86;
+    --c-negative: 197 52 52;
+    --c-warning: 143 94 0;
+
+    --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 24px -14px rgba(16, 24, 40, 0.18);
+    --shadow-raised: 0 2px 6px rgba(16, 24, 40, 0.08), 0 18px 40px -20px rgba(16, 24, 40, 0.28);
+    --shadow-glow: 0 0 0 1px rgba(28, 104, 197, 0.3), 0 8px 30px -12px rgba(28, 104, 197, 0.4);
+
+    --page-glow:
+      radial-gradient(900px 600px at 12% -10%, rgba(28, 104, 197, 0.08), transparent 60%),
+      radial-gradient(700px 500px at 95% 0%, rgba(15, 120, 86, 0.06), transparent 55%);
+    --shimmer: rgba(255, 255, 255, 0.75);
+
+    --chart-surface: #ffffff;
   }
 
   /* Electron desktop window: the title bar strip is 36px tall, so the whole app
@@ -33,10 +110,6 @@
     top: calc(4rem + 36px);
   }
 
-  :root[data-theme="light"] {
-    color-scheme: light;
-  }
-
   /* The app fills its box exactly and the document itself never scrolls — the
      shell chains these percentages down to <main>, the single scroll container
      (Layout.tsx). Keeping the scroll off the document is what confines the
@@ -55,9 +128,7 @@
        tables and strips that get their own scroll containers. */
     overflow: hidden;
     font-feature-settings: "cv02", "cv03", "cv04", "ss01";
-    background-image:
-      radial-gradient(900px 600px at 12% -10%, rgba(57, 135, 229, 0.09), transparent 60%),
-      radial-gradient(700px 500px at 95% 0%, rgba(25, 158, 112, 0.07), transparent 55%);
+    background-image: var(--page-glow);
     background-attachment: fixed;
   }
 
@@ -116,6 +187,20 @@
     @apply btn border border-line bg-surface-raised text-ink-secondary hover:border-line-strong hover:text-ink;
   }
 
+  /* Top-bar controls.
+     Four separate components own the buttons in that row — the menu button in
+     Layout, the AI trigger portalled in from AssetChat, the bell from
+     Notifications, the eye from PrivacyToggle — so their shared size lives here
+     instead of being retyped (and drifting) in each: they had grown to three
+     different heights. One height, the search field's `h-10`, and square icon
+     buttons, which is what makes the cluster read as one strip. */
+  .btn-topbar {
+    @apply btn-ghost h-10 px-3.5;
+  }
+  .btn-topbar-icon {
+    @apply btn-ghost h-10 w-10 px-0 py-0;
+  }
+
   .input {
     @apply w-full rounded-xl border border-line bg-surface-raised px-3 py-2 text-sm text-ink
       placeholder:text-ink-muted transition-colors focus:border-accent/60;
@@ -127,7 +212,7 @@
   .skeleton::after {
     content: "";
     @apply absolute inset-0 -translate-x-full;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+    background: linear-gradient(90deg, transparent, var(--shimmer), transparent);
     animation: shimmer 1.6s infinite;
   }
 

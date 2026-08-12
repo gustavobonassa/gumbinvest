@@ -1,8 +1,12 @@
 /**
  * Chart colour tokens.
  *
- * `SERIES` is the validated categorical order (dark steps, checked against the
- * #12141a chart surface). Rules that must not be broken:
+ * `SERIES` is the validated categorical order. Checked with the data-viz
+ * palette validator against *both* chart surfaces — the dark #12141a and the
+ * light #ffffff — and it passes on each, so an asset class keeps one colour
+ * whichever theme is on. (On the light surface the yellow slot lands at 2.99:1
+ * and carries the documented relief: every chart here ships a legend, direct
+ * labels and a table view.) Rules that must not be broken:
  *
  * 1. Slots are assigned in **fixed order** and never cycled — a 9th series
  *    folds into "Outros" (see `withOther`).
@@ -10,6 +14,12 @@
  *    key so filtering a chart never repaints the survivors.
  * 3. Status colours (positive/negative) are reserved and never reused as a
  *    categorical slot.
+ *
+ * What *is* themed is the chrome — surface, grid, axis, ink — plus the status
+ * pair, which has to clear 4.5:1 as a number as well as 3:1 as a mark. Charts
+ * paint into SVG attributes that no stylesheet reaches, so those values are
+ * kept here in TypeScript rather than as CSS variables, and `setChartTheme`
+ * (called by `lib/theme.ts`) swaps the set.
  */
 export const CHART_SURFACE = "#12141a";
 
@@ -88,41 +98,95 @@ export function kindRank(kind: string): number {
 }
 
 /**
- * Benchmark lines: the market, not the portfolio.
+ * Per-theme chart chrome.
  *
- * Deliberately outside the categorical palette. A benchmark is a *reference*,
- * so it is drawn recessive and dashed — that reads as "comparison" at a glance
- * and, more practically, keeps every one of the eight categorical slots free
- * for the classes, which is what the reader is actually being asked to tell
- * apart. The two greys sit far enough apart in lightness to separate under any
- * colour vision, and the dash patterns distinguish them again on their own.
+ * `surface` is the card the marks sit on — it is what slice gaps and marker
+ * rings are painted in, so it must be the card colour, not the page's.
+ * `grid` is deliberately near-invisible (1.2:1 against its surface in both
+ * themes): a grid line that competes with the data is noise.
+ *
+ * The greys under `benchmark` are outside the categorical palette on purpose.
+ * A benchmark is a *reference*, so it is drawn recessive and dashed — that
+ * reads as "comparison" at a glance and keeps all eight categorical slots free
+ * for the classes, which is what the reader is being asked to tell apart. The
+ * two greys sit ~2:1 apart in lightness in either theme, so they separate under
+ * any colour vision, and the dash patterns distinguish them again on their own.
  */
-export const BENCHMARK_STYLE: Record<string, { color: string; dash: string }> = {
-  IBOV: { color: "#9aa3b2", dash: "7 4" },
-  CDI: { color: "#6f7a8d", dash: "2 3" },
-};
+const THEMES = {
+  dark: {
+    positive: "#199e70",
+    negative: "#e66767",
+    accent: "#3987e5",
+    grid: "#232833",
+    axis: "#6c7689",
+    ink: "#f4f6fb",
+    inkSecondary: "#a4adbf",
+    surface: CHART_SURFACE,
+    /** Fill of the band a bar/column tooltip highlights under the cursor. */
+    cursor: "rgba(255,255,255,0.04)",
+    benchmark: { IBOV: "#9aa3b2", CDI: "#6f7a8d" },
+  },
+  light: {
+    positive: "#0f7856",
+    negative: "#c53434",
+    accent: "#1c68c5",
+    grid: "#e6eaf1",
+    axis: "#646e7d",
+    ink: "#171b22",
+    inkSecondary: "#4a5361",
+    surface: "#ffffff",
+    cursor: "rgba(16,24,40,0.05)",
+    benchmark: { IBOV: "#4f5866", CDI: "#7c8798" },
+  },
+} as const;
 
-export const TOKENS = {
-  positive: "#199e70",
-  negative: "#e66767",
-  accent: "#3987e5",
-  grid: "#232833",
-  axis: "#6c7689",
-  ink: "#f4f6fb",
-  inkSecondary: "#a4adbf",
-  surface: CHART_SURFACE,
-};
+type ChartTheme = keyof typeof THEMES;
+type ChartTokens = (typeof THEMES)[ChartTheme];
+
+let active: ChartTokens = THEMES.dark;
+
+/** Called by `lib/theme.ts` — nothing else should switch this. */
+export function setChartTheme(theme: ChartTheme) {
+  active = THEMES[theme];
+}
+
+/**
+ * Live chart chrome. Getters rather than a plain object because the values are
+ * read all over `charts.tsx`, and a copy taken at import time would freeze the
+ * theme that happened to be on when the module loaded.
+ */
+export const TOKENS: { [K in Exclude<keyof ChartTokens, "benchmark">]: string } = Object.freeze(
+  Object.defineProperties(
+    {},
+    Object.fromEntries(
+      (["positive", "negative", "accent", "grid", "axis", "ink", "inkSecondary", "surface", "cursor"] as const).map(
+        (key) => [key, { get: () => active[key], enumerable: true }],
+      ),
+    ),
+  ),
+) as { [K in Exclude<keyof ChartTokens, "benchmark">]: string };
+
+/** Benchmark line styling; the dash pattern is fixed, the grey is themed. */
+export const BENCHMARK_DASH: Record<string, string> = { IBOV: "7 4", CDI: "2 3" };
+
+export function benchmarkStyle(key: string): { color: string; dash: string } {
+  const grey = active.benchmark[key as keyof ChartTokens["benchmark"]];
+  return { color: grey ?? active.axis, dash: BENCHMARK_DASH[key] ?? "4 4" };
+}
 
 /**
  * Sequential wash for magnitude (one hue, low -> high), expressed as alpha over
  * the chart surface. Keeping a single hue and varying only its intensity is the
- * sequential rule; doing it with alpha also guarantees the cell never gets light
- * enough to break contrast with the primary ink on top.
+ * sequential rule; doing it with alpha also guarantees the cell never gets so
+ * close to the surface that it breaks contrast with the ink on top — which is
+ * why it is alpha over the *current* accent rather than eight baked steps: the
+ * light theme washes a darker blue over white and stays legible unchanged.
  */
 export function sequentialFill(ratio: number): string {
   if (!Number.isFinite(ratio) || ratio <= 0) return "transparent";
   const alpha = 0.08 + Math.min(Math.max(ratio, 0), 1) * 0.47;
-  return `rgba(57, 135, 229, ${alpha.toFixed(3)})`;
+  const [r, g, b] = [1, 3, 5].map((offset) => parseInt(active.accent.slice(offset, offset + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
 
 /** Deterministic slot for a key, so a series keeps its colour across filters. */

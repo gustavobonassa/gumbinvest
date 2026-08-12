@@ -37,7 +37,8 @@ import { Table2, TrendingUp } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { OTHER_COLOR, OTHER_KIND, SERIES, TOKENS, kindColor, kindRank, sequentialFill } from "@/lib/colors";
-import { kindLabel, money, percent, periodLabel, shortDate } from "@/lib/format";
+import { MASK, kindLabel, money, percent, periodLabel, shortDate } from "@/lib/format";
+import { getValuesHidden as valuesHidden } from "@/lib/privacy";
 import { Card, EmptyState, ErrorState, SectionTitle } from "@/components/ui";
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -55,17 +56,30 @@ const ANIMATE = !PREFERS_REDUCED_MOTION;
 /** Spread onto every animated Recharts primitive. */
 const MOTION = { isAnimationActive: ANIMATE } as const;
 
-const AXIS_PROPS = {
-  stroke: TOKENS.axis,
-  tickLine: false,
-  axisLine: false,
-  tick: { fill: TOKENS.axis, fontSize: 11 },
-} as const;
+/**
+ * Axis and grid chrome, read at render time rather than frozen at import: the
+ * theme can change under a mounted chart, and a module-level literal would keep
+ * painting the theme that was on when this file first loaded.
+ */
+const axisProps = () =>
+  ({
+    stroke: TOKENS.axis,
+    tickLine: false,
+    axisLine: false,
+    tick: { fill: TOKENS.axis, fontSize: 11 },
+  }) as const;
 
-const GRID = <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" vertical={false} />;
+const grid = () => <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" vertical={false} />;
 
+/** Band a bar/column tooltip highlights under the cursor. */
+const cursorFill = () => ({ fill: TOKENS.cursor });
+
+/** Axis ticks format their own numbers, so they mask their own numbers too —
+    the plot keeps its shape, the scale beside it stops naming amounts. */
 const compact = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  valuesHidden()
+    ? MASK
+    : new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
 
 /** Shared tooltip shell: crosshair values, never a number on every point. */
 function TooltipCard({
@@ -294,9 +308,9 @@ export function PortfolioHistoryChart({ data, height = 300 }: { data: HistorySer
             <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        {GRID}
-        <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
           cursor={{ stroke: TOKENS.axis, strokeDasharray: "4 4" }}
           // While a range is being dragged the readout above answers the
@@ -386,12 +400,12 @@ export function YearlyFinancialsBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="28%" barGap={2}>
-        {GRID}
-        <XAxis dataKey="year" {...AXIS_PROPS} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="year" {...axisProps()} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <ReferenceLine y={0} stroke={TOKENS.grid} strokeWidth={1} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -432,11 +446,11 @@ export function DividendPerShareBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 20, right: 8, bottom: 0, left: 8 }} barCategoryGap="28%">
-        {GRID}
-        <XAxis dataKey="year" {...AXIS_PROPS} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="year" {...axisProps()} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -496,14 +510,14 @@ export function ProjectionChart({ data, height = 320 }: { data: ProjectionPoint[
             <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        {GRID}
+        {grid()}
         <XAxis
           dataKey="period"
-          {...AXIS_PROPS}
+          {...axisProps()}
           tickFormatter={(value) => String(value).slice(0, 4)}
           minTickGap={40}
         />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
           cursor={{ stroke: TOKENS.axis, strokeDasharray: "4 4" }}
           content={({ active, payload, label }) =>
@@ -565,11 +579,11 @@ export function ProjectionBreakdownBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="22%">
-        {GRID}
-        <XAxis dataKey="period" {...AXIS_PROPS} minTickGap={12} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="period" {...axisProps()} minTickGap={12} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -656,9 +670,9 @@ export function ReturnLinesChart({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-        {GRID}
-        <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
-        <YAxis {...AXIS_PROPS} width={56} tickFormatter={(value) => `${Math.round(value)}%`} />
+        {grid()}
+        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
+        <YAxis {...axisProps()} width={56} tickFormatter={(value) => `${Math.round(value)}%`} />
         <ReferenceLine y={0} stroke={TOKENS.axis} strokeWidth={1} />
         <Tooltip
           cursor={{ stroke: TOKENS.axis, strokeDasharray: "4 4" }}
@@ -925,11 +939,11 @@ export function IncomeBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="22%">
-        {GRID}
-        <XAxis dataKey="period" {...AXIS_PROPS} tickFormatter={periodLabel} minTickGap={12} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="period" {...axisProps()} tickFormatter={periodLabel} minTickGap={12} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label: period }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -965,11 +979,11 @@ export function ContributionBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="24%" barGap={2}>
-        {GRID}
-        <XAxis dataKey="period" {...AXIS_PROPS} tickFormatter={periodLabel} minTickGap={12} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="period" {...axisProps()} tickFormatter={periodLabel} minTickGap={12} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -1009,12 +1023,12 @@ export function ReturnsBars({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="22%">
-        {GRID}
-        <XAxis dataKey="period" {...AXIS_PROPS} tickFormatter={periodLabel} minTickGap={12} />
-        <YAxis {...AXIS_PROPS} width={52} tickFormatter={(value) => `${value}%`} />
+        {grid()}
+        <XAxis dataKey="period" {...axisProps()} tickFormatter={periodLabel} minTickGap={12} />
+        <YAxis {...axisProps()} width={52} tickFormatter={(value) => `${value}%`} />
         <ReferenceLine y={0} stroke={TOKENS.grid} strokeWidth={1} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -1053,11 +1067,11 @@ export function ProfitByAssetChart({
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }} barCategoryGap="18%">
         <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" {...AXIS_PROPS} tickFormatter={compact} />
-        <YAxis type="category" dataKey="ticker" {...AXIS_PROPS} width={72} />
+        <XAxis type="number" {...axisProps()} tickFormatter={compact} />
+        <YAxis type="category" dataKey="ticker" {...axisProps()} width={72} />
         <ReferenceLine x={0} stroke={TOKENS.grid} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard label={String(label)} rows={[{ name: "Resultado", value: money(Number(payload[0]?.value)) }]} />
@@ -1137,11 +1151,11 @@ export function IncomeBreakdownBars({
         }}
         style={onSelect ? { cursor: "pointer" } : undefined}
       >
-        {GRID}
-        <XAxis dataKey="period" {...AXIS_PROPS} tickFormatter={periodLabel} minTickGap={12} />
-        <YAxis {...AXIS_PROPS} width={58} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="period" {...axisProps()} tickFormatter={periodLabel} minTickGap={12} />
+        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             const point = payload[0].payload as Record<string, number>;
@@ -1246,10 +1260,10 @@ export function TopPayersBars({
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 8 }} barCategoryGap="20%">
         <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" {...AXIS_PROPS} tickFormatter={compact} />
-        <YAxis type="category" dataKey="ticker" {...AXIS_PROPS} width={78} />
+        <XAxis type="number" {...axisProps()} tickFormatter={compact} />
+        <YAxis type="category" dataKey="ticker" {...axisProps()} width={78} />
         <Tooltip
-          cursor={{ fill: "rgba(255,255,255,0.04)" }}
+          cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
               <TooltipCard
@@ -1384,9 +1398,9 @@ export function PriceLine({
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <LineChart data={data} margin={{ top: 16, right: 8, bottom: 0, left: 8 }}>
-        {GRID}
-        <XAxis dataKey="date" {...AXIS_PROPS} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
-        <YAxis {...AXIS_PROPS} width={58} domain={["auto", "auto"]} tickFormatter={compact} />
+        {grid()}
+        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
+        <YAxis {...axisProps()} width={58} domain={["auto", "auto"]} tickFormatter={compact} />
         {extremes ? (
           <>
             <ReferenceDot

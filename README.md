@@ -190,6 +190,14 @@ And the whole interface is responsive — usable from the phone on your couch
   optionally encrypted with a passphrase — with restore from the cloud on a
   fresh install (Configurações → Backup).
 - Watchlist, asset notes, manual prices, audit log.
+- **Modo privacidade** — the eye in the top bar hides every amount and quantity
+  behind `••••`, on every page and in the chart axes, for the person standing
+  behind you. Percentages, dates, tickers and market quotes stay, so the screen
+  is still worth looking at. The choice is stored, so it survives a reload.
+- **Tema escuro ou claro** — Configurações → Geral. Dark is the default and the
+  design's home; light is its own set of steps (not an inversion), stored with
+  the rest of your preferences and applied before the first paint, so there is
+  no flash on load. In the desktop app the native window buttons follow it too.
 - **Automações** — browser-driven collectors (B3 today, other brokers and data
   sources as they are added) that run weekly, keep their whole run history,
   and can be triggered or cancelled from Configurações → Automações.
@@ -271,8 +279,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 
 What the installed app does:
 
-- Opens its own window with the title bar drawn in the app's dark theme
-  (Electron Window Controls Overlay); closing it quits the app. A tray icon
+- Opens its own window with the title bar drawn in the app's own theme, dark or
+  light (Electron Window Controls Overlay); closing it quits the app. A tray icon
   carries the secondary actions: **Abrir** (bring the window back), **Abrir
   no celular** (QR code with the LAN address — allow GumbInvest on *private
   networks* when the Windows Firewall asks, or the phone can't connect),

@@ -8,6 +8,28 @@ export function configureFormatting(nextLocale?: string, nextCurrency?: string) 
   if (nextCurrency) currency = nextCurrency;
 }
 
+/**
+ * Modo privacidade — see `lib/privacy.ts`, which owns the switch. Masking here
+ * rather than at the call sites is what makes it complete: a page added later
+ * is covered by having formatted its numbers, and cannot forget to opt in.
+ */
+let valuesHidden = false;
+
+export function setValuesHidden(hidden: boolean) {
+  valuesHidden = hidden;
+}
+
+export const MASK = "••••";
+
+/** The mask keeps the currency symbol, so a column of amounts still reads as
+    money and the layout does not jump when the switch is flicked. */
+function maskedMoney(code: string): string {
+  const symbol = new Intl.NumberFormat(locale, { style: "currency", currency: code })
+    .formatToParts(0)
+    .find((part) => part.type === "currency")?.value;
+  return symbol ? `${symbol} ${MASK}` : MASK;
+}
+
 const num = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -19,13 +41,19 @@ const num = (value: unknown): number => {
  * `currency` overrides the portfolio's own — a US holding is shown in the
  * dollars it was actually bought with, so the asset page can label its figures
  * honestly instead of printing dollars with a "R$" in front of them.
+ *
+ * `market` marks an amount as a *public* price — a quote, an exchange rate —
+ * which privacy mode leaves alone: it says what the world costs, not what you
+ * own, and masking it while the Ibovespa level sits unmasked beside it would
+ * be theatre. Default is to hide, so a new call site is private by omission.
  */
 export function money(
   value: unknown,
-  options: { compact?: boolean; decimals?: number; currency?: string } = {},
+  options: { compact?: boolean; decimals?: number; currency?: string; market?: boolean } = {},
 ): string {
   const amount = num(value);
   const code = options.currency ?? currency;
+  if (valuesHidden && !options.market) return maskedMoney(code);
   if (options.compact && Math.abs(amount) >= 1000) {
     return new Intl.NumberFormat(locale, {
       style: "currency",
@@ -54,6 +82,9 @@ export function decimal(value: unknown, decimals = 2): string {
 
 /** Quantities: hide decimals when the amount is whole (B3 mixes both). */
 export function quantity(value: unknown): string {
+  // Masked along with the money: quantity times a public price is the balance
+  // again, so hiding only the amounts would leak what they add up to.
+  if (valuesHidden) return MASK;
   const amount = num(value);
   const decimals = Number.isInteger(amount) ? 0 : Math.abs(amount) < 1 ? 6 : 2;
   return new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: decimals }).format(amount);
@@ -70,6 +101,8 @@ export function percent(value: unknown, decimals = 2, withSign = false): string 
 
 export function signedMoney(value: unknown, options?: { compact?: boolean; currency?: string }): string {
   const amount = num(value);
+  // The sign survives the mask on purpose: up or down is already written in the
+  // colour and in the percentage beside it, and "+R$ ••••" reads as a result.
   return `${amount > 0 ? "+" : ""}${money(amount, options)}`;
 }
 

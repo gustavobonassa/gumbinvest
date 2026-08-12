@@ -256,7 +256,12 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
               type="button"
               onClick={() => setOpen((current) => !current)}
               aria-expanded={open}
-              className={clsx("btn-ghost", open && "bg-accent-soft text-accent")}
+              // Square while the label is hidden, so on a phone it matches the
+              // icon buttons beside it; padded again once "Analista IA" shows.
+              className={clsx(
+                "btn-topbar w-10 px-0 sm:w-auto sm:px-3.5",
+                open && "bg-accent-soft text-accent",
+              )}
               title={`Conversar com a IA sobre ${scopeLabel}`}
             >
               <Sparkles size={15} aria-hidden />

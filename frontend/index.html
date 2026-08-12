@@ -6,6 +6,23 @@
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0b0d11" />
     <title>GumbInvest: Portfólio</title>
+    <!-- The theme lives in the backend settings, which cannot be waited on
+         before the first paint: a light-theme user would get a dark flash on
+         every load. The choice is mirrored into localStorage (see
+         src/lib/theme.ts, which owns the key) and re-applied here, ahead of the
+         stylesheet. Blocking and inline on purpose — deferring it is the flash. -->
+    <script>
+      try {
+        var gumbTheme = localStorage.getItem("gumbinvest.theme");
+        if (gumbTheme === "light" || gumbTheme === "dark") {
+          document.documentElement.dataset.theme = gumbTheme;
+          document.querySelector('meta[name="theme-color"]').content =
+            gumbTheme === "light" ? "#f1f3f7" : "#0b0d11";
+        }
+      } catch (error) {
+        /* Storage blocked: the dark default in the <html> tag stands. */
+      }
+    </script>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233987e5'/%3E%3Cpath d='M8 21l5-6 4 4 7-9' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

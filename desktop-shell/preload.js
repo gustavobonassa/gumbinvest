@@ -3,15 +3,19 @@
  *
  * The window loads the SPA from the local Python server, so the page and the
  * shell are separate worlds: `contextIsolation` keeps Node out of the page and
- * this file hand-picks what crosses over. Everything here is about updates —
- * the version to display, the three actions, and a subscription to the
- * updater's progress. A browser or a phone has no `window.gumbinvest`, which
- * is exactly how the UI knows to hide the update card.
+ * this file hand-picks what crosses over. Most of it is about updates — the
+ * version to display, the three actions, and a subscription to the updater's
+ * progress — plus the one thing the page's own stylesheet cannot reach: the
+ * colour of the native window buttons. A browser or a phone has no
+ * `window.gumbinvest`, which is exactly how the UI knows to hide the update
+ * card (and how the theme switch knows there is no window to recolour).
  */
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("gumbinvest", {
   version: () => ipcRenderer.invoke("app:version"),
+  /** "dark" | "light" — repaints the window chrome and remembers the choice. */
+  setTheme: (theme) => ipcRenderer.invoke("theme:set", theme),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
   /** Quits and runs the installer; the app relaunches on the new version. */

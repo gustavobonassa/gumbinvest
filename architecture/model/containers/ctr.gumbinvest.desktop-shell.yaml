@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.desktop-shell
+kind: container
+name: Desktop Shell
+description: Electron window and tray that start the bundled Python server and display the app; also handles in-app updates.
+system: sys.gumbinvest
+technology: Electron, Node.js
+shape: box
+tags: []

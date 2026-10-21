@@ -1,0 +1,146 @@
+apiVersion: archflow/v1
+relationships:
+  - id: rel.new-1
+    from: per.investor
+    to: ctr.gumbinvest.frontend
+    description: Uses the dashboard in a browser
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-10
+    from: ctr.gumbinvest.worker
+    to: sys.yahoo-finance
+    description: Refreshes quotes, history and splits
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-11
+    from: ctr.gumbinvest.worker
+    to: sys.brapi
+    description: Fetches B3 quotes when brapi is selected
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-12
+    from: ctr.gumbinvest.worker
+    to: sys.banco-central
+    description: Syncs CDI, Selic, IPCA and PTAX series
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-13
+    from: ctr.gumbinvest.worker
+    to: sys.tesouro-transparente
+    description: Syncs Tesouro Direto prices
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-14
+    from: ctr.gumbinvest.worker
+    to: sys.b3
+    description: Collects the movimentação via browser automation and reads B3 bulk files
+    technology: Patchright, HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-15
+    from: ctr.gumbinvest.worker
+    to: sys.cvm
+    description: Downloads company and FII data for the asset universe
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-16
+    from: ctr.gumbinvest.backend
+    to: sys.sec-edgar
+    description: Fetches 13F portfolios of famous investors
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-17
+    from: ctr.gumbinvest.backend
+    to: sys.ai-providers
+    description: Sends prompts with portfolio context and web search
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-18
+    from: ctr.gumbinvest.worker
+    to: sys.cloud-storage
+    description: Uploads weekly encrypted backups
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-2
+    from: per.investor
+    to: ctr.gumbinvest.desktop-shell
+    description: Uses the desktop app
+    technology: ""
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-3
+    from: ctr.gumbinvest.desktop-shell
+    to: ctr.gumbinvest.backend
+    description: Starts the server and displays its SPA
+    technology: HTTP
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-4
+    from: ctr.gumbinvest.frontend
+    to: ctr.gumbinvest.backend
+    description: Calls the API
+    technology: JSON/HTTPS
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-5
+    from: ctr.gumbinvest.backend
+    to: ctr.gumbinvest.db
+    description: Reads and writes data
+    technology: SQLAlchemy, PostgreSQL
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-6
+    from: ctr.gumbinvest.worker
+    to: ctr.gumbinvest.db
+    description: Reads and writes data
+    technology: SQLAlchemy, PostgreSQL
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-7
+    from: ctr.gumbinvest.beat
+    to: ctr.gumbinvest.redis
+    description: Enqueues scheduled jobs
+    technology: Redis
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-8
+    from: ctr.gumbinvest.worker
+    to: ctr.gumbinvest.redis
+    description: Consumes jobs and stores results
+    technology: Redis
+    level: c2
+    bidirectional: false
+    tags: []
+  - id: rel.new-9
+    from: ctr.gumbinvest.backend
+    to: sys.yahoo-finance
+    description: Fetches quotes and history for browsed assets
+    technology: HTTPS
+    level: c2
+    bidirectional: false
+    tags: []

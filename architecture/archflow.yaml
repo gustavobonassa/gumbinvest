@@ -1,0 +1,7 @@
+apiVersion: archflow/v1
+repo: gustavobonassa/gumbinvest
+role: attached
+name: gustavobonassa/gumbinvest
+main: gi2/architecture
+roots:
+  - sys.gumbinvest

@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.redis
+kind: container
+name: Redis
+description: Celery broker and result backend.
+system: sys.gumbinvest
+technology: Redis
+shape: queue
+tags: []

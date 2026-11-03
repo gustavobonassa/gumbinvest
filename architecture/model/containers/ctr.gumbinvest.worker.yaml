@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.worker
+kind: container
+name: Celery Worker
+description: "Runs background jobs: quote refresh, history backfill, index/FX/treasury sync, snapshots, backups, collectors and universe sync."
+system: sys.gumbinvest
+technology: Python, Celery
+shape: box
+tags: []

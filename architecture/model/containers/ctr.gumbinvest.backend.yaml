@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.backend
+kind: container
+name: Backend API
+description: HTTP API, importers (CSV, PDF, exchange exports), portfolio engine, market data, AI features, backups and automated collectors.
+system: sys.gumbinvest
+technology: Python, FastAPI, SQLAlchemy
+shape: box
+tags: []

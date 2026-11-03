@@ -1,0 +1,95 @@
+apiVersion: archflow/v1
+id: c2/sys.gumbinvest
+level: c2
+scope: sys.gumbinvest
+nodes:
+  ctr.gumbinvest.backend:
+    x: 523
+    y: 815
+    w: 250
+    h: 150
+  ctr.gumbinvest.beat:
+    x: 829
+    y: 815
+    w: 250
+    h: 150
+  ctr.gumbinvest.db:
+    x: 1430
+    y: 1295
+    w: 250
+    h: 150
+  ctr.gumbinvest.desktop-shell:
+    x: 787
+    y: 471
+    w: 250
+    h: 150
+  ctr.gumbinvest.frontend:
+    x: 481
+    y: 471
+    w: 250
+    h: 150
+  ctr.gumbinvest.redis:
+    x: 916
+    y: 1295
+    w: 250
+    h: 150
+  ctr.gumbinvest.worker:
+    x: 1631
+    y: 815
+    w: 250
+    h: 150
+  per.investor:
+    x: 540
+    y: 30
+    w: 190
+    h: 130
+  sys.ai-providers:
+    x: 127
+    y: 1770
+    w: 250
+    h: 150
+  sys.b3:
+    x: 1657
+    y: 1770
+    w: 250
+    h: 150
+  sys.banco-central:
+    x: 1351
+    y: 1770
+    w: 250
+    h: 150
+  sys.brapi:
+    x: 2575
+    y: 1770
+    w: 250
+    h: 150
+  sys.cloud-storage:
+    x: 1963
+    y: 1770
+    w: 250
+    h: 150
+  sys.cvm:
+    x: 1045
+    y: 1770
+    w: 250
+    h: 150
+  sys.sec-edgar:
+    x: 433
+    y: 1770
+    w: 250
+    h: 150
+  sys.tesouro-transparente:
+    x: 2269
+    y: 1770
+    w: 250
+    h: 150
+  sys.yahoo-finance:
+    x: 739
+    y: 1770
+    w: 250
+    h: 150
+manual:
+  - per.investor
+collapsed: []
+includes: []
+excludes: []

@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.frontend
+kind: container
+name: Web Frontend
+description: React single-page app served by nginx, which also proxies /api to the backend.
+system: sys.gumbinvest
+technology: React, TypeScript, Vite, nginx
+shape: browser
+tags: []

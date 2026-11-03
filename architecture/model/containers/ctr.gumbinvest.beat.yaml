@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.beat
+kind: container
+name: Celery Beat
+description: Scheduler that enqueues the periodic jobs defined in celery_app.py.
+system: sys.gumbinvest
+technology: Python, Celery
+shape: box
+tags: []

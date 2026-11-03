@@ -1,0 +1,9 @@
+apiVersion: archflow/v1
+id: ctr.gumbinvest.db
+kind: container
+name: Database
+description: Stores portfolios, transactions, quotes, price history, index series, universe and AI wallets. SQLite in the desktop build.
+system: sys.gumbinvest
+technology: PostgreSQL
+shape: cylinder
+tags: []

@@ -110,6 +110,88 @@ def test_multi_turn_history_is_labelled_and_left_open() -> None:
 
 
 # ---------------------------------------------------------------------------
+# System prompt fora da linha de comando
+
+
+#: Maior que o teto de 32.767 caracteres da linha de comando do Windows — o
+#: tamanho de uma carteira real no system prompt do Analista IA.
+_HUGE_SYSTEM = "Carteira: ação ITSA4 — preço médio R$ 10,00\n" * 2_000
+
+
+class _FakeProcess:
+    """Popen falso que lê o arquivo de system prompt enquanto "roda"."""
+
+    seen: dict = {}
+
+    def __init__(self, argv: list[str], **kwargs) -> None:
+        import io
+        from pathlib import Path
+
+        path = argv[argv.index("--system-prompt-file") + 1]
+        _FakeProcess.seen = {
+            "argv": argv,
+            "path": path,
+            "content": Path(path).read_text(encoding="utf-8"),
+        }
+        self.stdin = io.StringIO()
+        result = '{"type": "result", "is_error": false, "result": "ok"}\n'
+        self.stdout = io.StringIO(result)
+        self.stderr = io.StringIO("")
+        self.returncode = 0
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+    def poll(self) -> int:
+        return 0
+
+    def kill(self) -> None:  # pragma: no cover - nunca trava aqui
+        pass
+
+
+def _assert_system_went_by_file() -> None:
+    from pathlib import Path
+
+    seen = _FakeProcess.seen
+    assert _HUGE_SYSTEM not in seen["argv"]
+    assert "--system-prompt" not in seen["argv"]
+    assert sum(len(arg) for arg in seen["argv"]) < 2_000
+    assert seen["content"] == _HUGE_SYSTEM  # utf-8 intacto
+    assert not Path(seen["path"]).exists()  # apagado depois da chamada
+
+
+def test_stream_passes_huge_system_prompt_by_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regressão do WinError 206: o Analista IA com carteira grande não abria."""
+    monkeypatch.setattr(claude_code, "cli_path", lambda **_: "claude")
+    monkeypatch.setattr(claude_code.subprocess, "Popen", _FakeProcess)
+
+    events = list(
+        claude_code.stream_events(
+            _HUGE_SYSTEM, [{"role": "user", "content": "Oi"}], "sonnet", search=False
+        )
+    )
+
+    assert not [e for e in events if e[0] == "error"]
+    _assert_system_went_by_file()
+
+
+def test_call_json_passes_huge_system_prompt_by_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    import subprocess
+
+    def fake_run(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
+        _FakeProcess(argv)
+        return subprocess.CompletedProcess(argv, 0, '{"result": "ok"}', "")
+
+    monkeypatch.setattr(claude_code, "cli_path", lambda **_: "claude")
+    monkeypatch.setattr(claude_code.subprocess, "run", fake_run)
+
+    assert claude_code.call_json(
+        _HUGE_SYSTEM, [{"role": "user", "content": "Oi"}], "sonnet", search=True
+    ) == "ok"
+    _assert_system_went_by_file()
+
+
+# ---------------------------------------------------------------------------
 # Disponibilidade
 
 

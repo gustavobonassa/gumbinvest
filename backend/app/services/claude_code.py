@@ -18,6 +18,10 @@ Decisões que vieram de medir o CLI real, não da documentação:
 * **``--system-prompt`` substitui o do Claude Code**, derrubando o overhead de
   ~7.300 para ~1.200 tokens de input por chamada. Como o GumbInvest manda o seu
   próprio system prompt, isso é economia direta de cota da assinatura.
+* **O system prompt também vai por arquivo (``--system-prompt-file``), não por
+  argv.** O do Analista IA carrega a carteira inteira, e no Windows a linha de
+  comando inteira tem teto de 32.767 caracteres: passado disso o ``CreateProcess``
+  falha com WinError 206 antes de o CLI sequer rodar.
 * **Busca web exige ``--tools`` E ``--allowed-tools``.** Só com ``--tools`` a
   ferramenta é oferecida mas negada por permissão, e o modelo responde pedindo
   autorização em vez de pesquisar.
@@ -40,6 +44,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -262,14 +267,43 @@ def logout() -> None:
 # Chamadas ao modelo
 
 
-def _argv(binary: str, model: str, system: str, search: bool, *, stream: bool) -> list[str]:
+@contextmanager
+def _system_prompt_file(system: str) -> Iterator[str]:
+    """O system prompt num arquivo temporário, apagado ao fim da chamada.
+
+    Arquivo próprio por chamada (chats podem rodar em paralelo) e fechado antes
+    de o CLI abrir — no Windows um arquivo aberto com ``delete=True`` não pode
+    ser lido por outro processo.
+    """
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        suffix=".txt",
+        prefix="system-",
+        dir=_neutral_cwd(),
+        delete=False,
+    )
+    try:
+        with handle:
+            handle.write(system)
+        yield handle.name
+    finally:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            logger.warning("não foi possível apagar %s", handle.name)
+
+
+def _argv(
+    binary: str, model: str, system_file: str, search: bool, *, stream: bool
+) -> list[str]:
     argv = [
         binary,
         "-p",  # prompt vem pelo stdin
         "--model",
         model,
-        "--system-prompt",
-        system,
+        "--system-prompt-file",
+        system_file,
         "--disable-slash-commands",
         "--no-session-persistence",
     ]
@@ -324,18 +358,20 @@ def call_json(system: str, messages: list[dict], model: str, *, search: bool) ->
     if binary is None:
         raise ClaudeCodeError("Claude Code não encontrado nesta máquina.")
     try:
-        completed = subprocess.run(  # noqa: S603 — argv fixo, sem shell
-            _argv(binary, model, system, search, stream=False),
-            input=_flatten(messages),
-            capture_output=True,
-            timeout=CALL_TIMEOUT,
-            **_popen_kwargs(),
-        )
+        with _system_prompt_file(system) as system_file:
+            completed = subprocess.run(  # noqa: S603 — argv fixo, sem shell
+                _argv(binary, model, system_file, search, stream=False),
+                input=_flatten(messages),
+                capture_output=True,
+                timeout=CALL_TIMEOUT,
+                **_popen_kwargs(),
+            )
     except subprocess.TimeoutExpired as exc:
         raise ClaudeCodeError(
             "A chamada ao Claude Code excedeu o tempo limite. Tente novamente."
         ) from exc
     except OSError as exc:
+        logger.exception("claude -p falhou ao iniciar")
         raise ClaudeCodeError("Não foi possível executar o Claude Code.") from exc
 
     if completed.returncode != 0:
@@ -366,7 +402,13 @@ def stream_events(
         yield ("error", "Claude Code não encontrado nesta máquina.")
         return
 
-    argv = _argv(binary, model, system, search, stream=True)
+    with _system_prompt_file(system) as system_file:
+        yield from _stream_process(
+            _argv(binary, model, system_file, search, stream=True), messages
+        )
+
+
+def _stream_process(argv: list[str], messages: list[dict]) -> Iterator[tuple[str, str]]:
     try:
         process = subprocess.Popen(  # noqa: S603 — argv fixo, sem shell
             argv,

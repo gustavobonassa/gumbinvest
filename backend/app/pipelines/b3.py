@@ -22,6 +22,7 @@ Two things keep it honest against a site we do not control:
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -668,6 +669,46 @@ def _profile_dir() -> Path:
     return path
 
 
+def _silence_translate(profile: Path) -> None:
+    """Turn off Chrome's "Translate this page?" bubble in the automation profile.
+
+    B3 serves pt-BR while the profile's UI language follows the system (often
+    English), so Chrome offers to translate on every page. The bubble is a
+    separate popup that Windows clamps back onto the visible desktop, so it
+    shows up by itself, apparently out of nowhere, while the window is parked
+    off-screen. Playwright's ``--disable-features=Translate`` no longer stops
+    it in current Chrome; the profile preference does.
+
+    It is written into ``Default/Preferences`` before launch instead of being
+    passed as a launch flag, so it adds no automation tell (see
+    :func:`_launch_context`) and no page can observe it. Every other key in the
+    file is merged in as it was. If anything goes wrong the run continues,
+    because the bubble is only a nuisance.
+    """
+    prefs_path = profile / "Default" / "Preferences"
+    try:
+        prefs = json.loads(prefs_path.read_text(encoding="utf-8")) if prefs_path.exists() else {}
+        if not isinstance(prefs, dict):
+            return
+        translate = prefs.get("translate")
+        translate = translate if isinstance(translate, dict) else {}
+        blocked = prefs.get("translate_blocked_languages")
+        blocked = list(blocked) if isinstance(blocked, list) else []
+        if translate.get("enabled") is False and "pt" in blocked:
+            return
+        translate["enabled"] = False
+        prefs["translate"] = translate
+        if "pt" not in blocked:
+            blocked.append("pt")
+        prefs["translate_blocked_languages"] = blocked
+        prefs_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = prefs_path.with_suffix(".gumbinvest-tmp")
+        tmp.write_text(json.dumps(prefs, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, prefs_path)
+    except (OSError, ValueError):
+        pass
+
+
 def _launch_context(p, ctx):
     """A persistent context launched the way Patchright wants for max stealth.
 
@@ -680,10 +721,12 @@ def _launch_context(p, ctx):
     on first use) only when no system Chrome exists.
     """
     headless = settings.pipeline_headless
+    profile = _profile_dir()
+    _silence_translate(profile)
 
     def build(channel: str | None, allow_install: bool):
         kwargs = dict(
-            user_data_dir=str(_profile_dir()),
+            user_data_dir=str(profile),
             channel=channel,
             headless=headless,
             accept_downloads=True,

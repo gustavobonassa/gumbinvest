@@ -187,3 +187,127 @@ def test_enrich_allocations_prices_quantities():
     assert fi["approx_quantity"] is None  # renda fixa is bought in value
     assert us["current_price"] == Decimal(100)
     assert us["price_currency"] == "USD"
+
+
+# ---------------------------------------------------------------------------
+# Options: observações, categorias livres, ativos novos
+
+
+def test_system_prompt_defaults_keep_the_original_rules():
+    from app.api.routes import smart_invest as route
+
+    default = route._system_prompt(True, False)
+    assert "nunca proponha ativos novos" in default
+    assert "distribua o aporte entre TODAS" in default
+    assert "PERMITIDAS, não obrigatórias" not in default
+
+
+def test_system_prompt_free_categories_and_new_assets():
+    from app.api.routes import smart_invest as route
+
+    prompt = route._system_prompt(False, True)
+    assert "PERMITIDAS, não obrigatórias" in prompt
+    assert "distribua o aporte entre TODAS" not in prompt
+    assert "nunca proponha ativos novos" not in prompt
+    assert "não é obrigado a sugerir nenhum" in prompt
+
+
+def test_invest_prompt_carries_notes_only_when_given():
+    from app.api.routes import smart_invest as route
+
+    args = ([{"ticker": "AAAA3"}], {}, Decimal(1000), "BRL", ["Ações"], False)
+    plain = route._invest_prompt(*args)
+    assert "Observações do usuário" not in plain
+    assert '"novo"' not in plain
+
+    noted = route._invest_prompt(*args, notes="Não quero AAAA3.", allow_new_assets=True)
+    assert "Observações do usuário para este aporte:\nNão quero AAAA3." in noted
+    assert '"novo": false}]}' in noted
+
+
+def _hit(ticker, kind, currency="BRL", name=None):
+    from app.market.lookup import MarketHit
+
+    suffix = ".SA" if currency == "BRL" else ""
+    return MarketHit(
+        ticker=ticker, name=name or ticker, kind=kind, currency=currency,
+        market_symbol=ticker + suffix, exchange="",
+    )
+
+
+def test_verify_new_assets_gates_on_market_and_category(monkeypatch):
+    hits = {
+        "WEGE3": _hit("WEGE3", "STOCK"),
+        "TAEE11": _hit("TAEE11", "UNIT"),
+        "HGLG11": _hit("HGLG11", "FII"),  # real, but FIIs were not selected
+        "AAAA3.SA": _hit("AAAA3", "STOCK"),  # the user's own, spelled the Yahoo way
+    }
+    monkeypatch.setattr(smart_invest.lookup, "resolve", lambda ticker: hits.get(ticker))
+    monkeypatch.setattr(smart_invest, "_quote_price", lambda symbol: Decimal(40))
+    data = {
+        "allocations": [
+            {"ticker": "AAAA3", "amount": 100},
+            {"ticker": "WEGE3", "amount": 100, "novo": True},
+            {"ticker": "TAEE11", "amount": 100, "novo": True},
+            {"ticker": "HGLG11", "amount": 100, "novo": True},
+            {"ticker": "FAKE3", "amount": 100, "novo": True},
+            {"ticker": "AAAA3.SA", "amount": 100},
+        ]
+    }
+
+    new_facts, aliases = smart_invest.verify_new_assets(data, FACTS, ["STOCK"], "BRL", None)
+
+    assert set(new_facts) == {"WEGE3", "TAEE11"}
+    assert new_facts["TAEE11"]["kind"] == "STOCK"  # units fold into Ações
+    assert new_facts["WEGE3"]["is_new"] is True
+    assert new_facts["WEGE3"]["price_in_currency"] == Decimal(40)
+    assert aliases == {"AAAA3.SA": "AAAA3"}
+
+    items, skipped = smart_invest.normalize_allocations(
+        data, {**FACTS, **new_facts}, Decimal(10000), aliases
+    )
+    assert [item["ticker"] for item in items] == ["AAAA3", "WEGE3", "TAEE11"]
+    assert skipped == ["HGLG11", "FAKE3"]
+
+    out = smart_invest.enrich_allocations(items, {**FACTS, **new_facts})
+    assert [item["is_new"] for item in out] == [False, True, True]
+    assert out[1]["approx_quantity"] == Decimal(2)  # 100 / 40, whole shares
+
+
+def test_verify_new_assets_crypto_needs_a_price(monkeypatch):
+    monkeypatch.setattr(smart_invest.lookup, "resolve", lambda ticker: None)
+    prices = {"SOL-USD": Decimal(150)}
+    monkeypatch.setattr(smart_invest, "_quote_price", lambda symbol: prices.get(symbol))
+    data = {"allocations": [{"ticker": "SOL"}, {"ticker": "NOPECOIN"}, {"ticker": "USDT"}]}
+
+    new_facts, _ = smart_invest.verify_new_assets(
+        data, {}, ["CRYPTO"], "BRL", Decimal(5)
+    )
+
+    assert list(new_facts) == ["SOL"]
+    assert new_facts["SOL"]["price_in_currency"] == Decimal(750)  # USD → BRL
+
+
+def test_verify_new_assets_caps_market_lookups(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        smart_invest.lookup, "resolve", lambda ticker: calls.append(ticker) or None
+    )
+    data = {"allocations": [{"ticker": f"NEW{i}3"} for i in range(12)]}
+
+    smart_invest.verify_new_assets(data, {}, ["STOCK"], "BRL", None)
+
+    assert len(calls) == smart_invest.MAX_NEW_ASSETS
+
+
+def test_renda_fixa_never_gets_new_assets(monkeypatch):
+    monkeypatch.setattr(
+        smart_invest.lookup, "resolve", lambda ticker: _hit("WEGE3", "STOCK")
+    )
+    data = {"allocations": [{"ticker": "WEGE3"}]}
+
+    new_facts, _ = smart_invest.verify_new_assets(
+        data, {}, ["FIXED_INCOME", "TREASURY"], "BRL", None
+    )
+
+    assert new_facts == {}

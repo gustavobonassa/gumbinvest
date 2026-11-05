@@ -3,8 +3,13 @@
 This is the one AI feature that DOES see the real portfolio — that is its whole
 point: the user says how much new money arrived today and which classes it may
 go to, and the model ranks the holdings they already have by what deserves the
-marginal real right now. Nothing is executed and no new tickers are proposed —
-the output is a suggestion the user carries to their broker.
+marginal real right now. Nothing is executed — the output is a suggestion the
+user carries to their broker.
+
+By default no new tickers are proposed. When the user opts in, the model may
+also name assets they do not hold yet; each one must survive the market gate
+(:func:`verify_new_assets`) — resolved by the market, inside a selected
+category — or it is dropped and surfaced, exactly like a hallucinated ticker.
 
 The route builds the context and per-ticker facts here in the request, the
 background job runs the model turn, and the same facts price the reply into
@@ -17,12 +22,17 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.logging import get_logger
 from app.db.models import SmartInvestRun
+from app.importer.crypto import symbols as coins
+from app.market import lookup
 from app.market.fx import load_table
 from app.portfolio.service import PortfolioService
 from app.services import ai_wallet
 from app.services.ai_research import decode_escapes
 from app.services.jobs import _jsonable
+
+logger = get_logger(__name__)
 
 ZERO = Decimal(0)
 CENT = Decimal("0.01")
@@ -57,6 +67,14 @@ _QTY_STEP: dict[str, Decimal | None] = {
     "FIXED_INCOME": None,
     "TREASURY": None,
 }
+
+#: Kinds a *new* asset may be proposed in. Renda fixa and Tesouro have no
+#: ticker the market can confirm — a "new CDB" would be unverifiable text.
+NEW_ASSET_KINDS = frozenset(ELIGIBLE_KINDS) - {"FIXED_INCOME", "TREASURY"}
+
+#: Upper bound on market lookups per run — each is a network round-trip, and
+#: a reply naming twenty strangers is not a split of *this* aporte anyway.
+MAX_NEW_ASSETS = 5
 
 
 def _round2(value: Decimal | None) -> float | None:
@@ -168,16 +186,131 @@ def invest_context(
     return context, facts
 
 
+def _selected_kind(hit_kind: str, kinds: set[str]) -> str | None:
+    """The selected kind a market hit belongs to, or None when it fits none.
+
+    Units (TAEE11, KLBN11) are shares in every sense an aporte cares about, but
+    the lookup classifies them apart — fold them into Ações when selected.
+    """
+    if hit_kind in kinds:
+        return hit_kind
+    if hit_kind == "UNIT" and "STOCK" in kinds:
+        return "STOCK"
+    return None
+
+
+def _quote_price(market_symbol: str) -> Decimal | None:
+    from app.market.providers import get_provider  # local: avoids a cycle
+
+    provider = get_provider()
+    if provider.name == "none":
+        return None
+    try:
+        quote = provider.get_quotes([market_symbol]).get(market_symbol)
+    except Exception:  # noqa: BLE001 — an unpriced pick still shows, in value
+        logger.warning("smart invest: quote failed for %s", market_symbol, exc_info=True)
+        return None
+    return quote.price if quote is not None and quote.price else None
+
+
+def _new_fact(
+    ticker: str, name: str, kind: str, asset_currency: str, price: Decimal | None,
+    currency: str, usd_brl: Decimal | None,
+) -> dict:
+    return {
+        "ticker": ticker,
+        "name": name,
+        "kind": kind,
+        "label": ELIGIBLE_KINDS[kind],
+        "currency": asset_currency,
+        "price": price,
+        "price_in_currency": _price_in(price, asset_currency, currency, usd_brl),
+        "is_new": True,
+    }
+
+
+def _verify_one(
+    ticker: str, kinds: set[str], currency: str, usd_brl: Decimal | None
+) -> dict | None:
+    """Market facts for one proposed stranger, or None when it fails the gate."""
+    market_kinds = kinds & (NEW_ASSET_KINDS - {"CRYPTO"})
+    if market_kinds:
+        hit = lookup.resolve(ticker)
+        if hit is not None:
+            kind = _selected_kind(hit.kind, market_kinds)
+            if kind is not None:
+                return _new_fact(
+                    hit.ticker, hit.name[:255], kind, hit.currency,
+                    _quote_price(hit.market_symbol), currency, usd_brl,
+                )
+    if "CRYPTO" in kinds:
+        symbol = coins.asset_symbol(ticker)
+        if symbol and not coins.is_fiat(symbol) and not coins.is_stablecoin(symbol):
+            price = _quote_price(coins.market_symbol_for(symbol))
+            if price is not None:  # a coin nobody can price is as good as nonexistent
+                return _new_fact(
+                    symbol, coins.coin_name(symbol), "CRYPTO", "USD", price, currency, usd_brl
+                )
+    return None
+
+
+def verify_new_assets(
+    data: dict | None,
+    facts: dict[str, dict],
+    kinds: list[str],
+    currency: str,
+    usd_brl: Decimal | None,
+    *,
+    limit: int = MAX_NEW_ASSETS,
+) -> tuple[dict[str, dict], dict[str, str]]:
+    """(facts for verified new assets, raw ticker → canonical ticker).
+
+    Runs in the job thread — network only, no database. A proposed ticker the
+    market resolves to something already held (``ITSA4.SA``) is aliased to the
+    held position instead of becoming a "new" one.
+    """
+    raw = data.get("allocations") if isinstance(data, dict) else None
+    wanted = set(kinds)
+    new_facts: dict[str, dict] = {}
+    aliases: dict[str, str] = {}
+    tried = 0
+    for entry in raw or []:
+        if not isinstance(entry, dict):
+            continue
+        ticker = str(entry.get("ticker") or "").strip().upper()
+        if not ticker or ticker in facts or ticker in aliases or ticker in new_facts:
+            continue
+        if tried >= limit:
+            break
+        tried += 1
+        fact = _verify_one(ticker, wanted, currency, usd_brl)
+        if fact is None:
+            continue
+        canonical = fact["ticker"]
+        if canonical in facts:
+            aliases[ticker] = canonical
+            continue
+        new_facts.setdefault(canonical, fact)
+        if canonical != ticker:
+            aliases[ticker] = canonical
+    return new_facts, aliases
+
+
 def normalize_allocations(
-    data: dict | None, facts: dict[str, dict], amount: Decimal
+    data: dict | None,
+    facts: dict[str, dict],
+    amount: Decimal,
+    aliases: dict[str, str] | None = None,
 ) -> tuple[list[dict], list[str]]:
     """Validate the model's reply into ``[{ticker, amount, rationale}]``.
 
-    Unknown tickers are dropped and surfaced (the model was told "only what
-    the user holds" — a stranger here is a hallucination, not a pick), and a
-    sum over the aporte is scaled down proportionally rather than rejected.
+    Unknown tickers are dropped and surfaced (either the model was told "only
+    what the user holds", or the stranger failed :func:`verify_new_assets` —
+    a hallucination, not a pick), and a sum over the aporte is scaled down
+    proportionally rather than rejected.
     """
     raw = data.get("allocations") if isinstance(data, dict) else None
+    aliases = aliases or {}
     items: list[dict] = []
     skipped: list[str] = []
     seen: set[str] = set()
@@ -185,6 +318,7 @@ def normalize_allocations(
         if not isinstance(entry, dict):
             continue
         ticker = str(entry.get("ticker") or "").strip().upper()
+        ticker = aliases.get(ticker, ticker)
         if not ticker or ticker in seen:
             continue
         seen.add(ticker)
@@ -264,6 +398,7 @@ def enrich_allocations(items: list[dict], facts: dict[str, dict]) -> list[dict]:
                 "current_price": fact["price"],
                 "price_currency": fact["currency"],
                 "rationale": item["rationale"],
+                "is_new": bool(fact.get("is_new")),
             }
         )
     return out

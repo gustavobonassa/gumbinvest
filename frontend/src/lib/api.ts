@@ -1149,6 +1149,15 @@ export interface SmartInvestAllocation {
   current_price: string | null;
   price_currency: string;
   rationale: string;
+  /** Not held yet — proposed under "permitir ativos novos". Absent on old runs. */
+  is_new?: boolean;
+}
+
+/** What the user asks for beyond amount and categories. All optional. */
+export interface SmartInvestOptions {
+  notes?: string;
+  require_all_categories?: boolean;
+  allow_new_assets?: boolean;
 }
 
 export interface SmartInvestResult {
@@ -1161,6 +1170,10 @@ export interface SmartInvestResult {
   leftover: string;
   skipped: string[];
   used_search: boolean;
+  // The options the run was made with; absent on runs from before they existed.
+  notes?: string | null;
+  require_all_categories?: boolean;
+  allow_new_assets?: boolean;
   provider: string;
   provider_label: string;
   model: string;
@@ -1594,7 +1607,9 @@ export const api = {
   smartInvestOptions: () =>
     request<{ categories: SmartInvestCategory[] }>("/smart-invest/options"),
   smartInvestJob: () => request<AiWalletJob>("/smart-invest"),
-  startSmartInvest: (payload: { amount: number; currency: "BRL" | "USD"; kinds: string[] }) =>
+  startSmartInvest: (
+    payload: { amount: number; currency: "BRL" | "USD"; kinds: string[] } & SmartInvestOptions,
+  ) =>
     request<AiWalletJob>("/smart-invest", { method: "POST", body: JSON.stringify(payload) }),
   smartInvestHistory: () => request<SmartInvestRun[]>("/smart-invest/history"),
   deleteSmartInvestRun: (id: number) =>

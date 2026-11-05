@@ -39,6 +39,11 @@ export default function AporteInteligente() {
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"BRL" | "USD">("BRL");
   const [kinds, setKinds] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
+  // Defaults reproduce the original behaviour: every selected category gets
+  // something, and only assets already held are considered.
+  const [freeCategories, setFreeCategories] = useState(false);
+  const [allowNew, setAllowNew] = useState(false);
   // Completion feedback only for a run started in this visit — not for an
   // hour-old result the registry still remembers when the page reopens.
   const watchingRef = useRef(false);
@@ -69,7 +74,15 @@ export default function AporteInteligente() {
   const keyConfigured = Boolean(activeProvider?.key_configured);
 
   const start = useMutation({
-    mutationFn: () => api.startSmartInvest({ amount: Number(amount), currency, kinds }),
+    mutationFn: () =>
+      api.startSmartInvest({
+        amount: Number(amount),
+        currency,
+        kinds,
+        notes: notes.trim() || undefined,
+        require_all_categories: !freeCategories,
+        allow_new_assets: allowNew,
+      }),
     onSuccess: () => {
       watchingRef.current = true;
       queryClient.invalidateQueries({ queryKey: ["smart-invest-job"] });
@@ -193,6 +206,39 @@ export default function AporteInteligente() {
             </div>
           </div>
 
+          <div className="mt-4 max-w-xl space-y-3">
+            <OptionCheckbox
+              checked={freeCategories}
+              onChange={setFreeCategories}
+              disabled={running}
+              title="A IA decide quais categorias usar"
+              description="As categorias selecionadas viram opções, não obrigação: a IA pode concentrar o aporte em uma só ou dividir entre algumas, conforme sua carteira e o momento do mercado."
+            />
+            <OptionCheckbox
+              checked={allowNew}
+              onChange={setAllowNew}
+              disabled={running}
+              title="Permitir sugerir ativos novos"
+              description="Além do que você já tem, a IA pode indicar ativos novos nas categorias selecionadas, mas só se fizerem muito sentido; ela não é obrigada a sugerir nenhum. Cada ticker é conferido no mercado. Renda fixa e Tesouro ficam só com o que você já possui."
+            />
+          </div>
+
+          <div className="mt-4 max-w-xl">
+            <label htmlFor="aporte-notes" className="mb-1.5 block text-xs font-medium text-ink-muted">
+              Observações para a IA (opcional)
+            </label>
+            <textarea
+              id="aporte-notes"
+              className="input w-full resize-y"
+              rows={2}
+              maxLength={1000}
+              value={notes}
+              disabled={running}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Ex.: não quero aportar em PETR4; prefiro ativos que paguem dividendos"
+            />
+          </div>
+
           {!keyConfigured && !settingsQ.isLoading ? (
             <p className="mt-4 text-sm text-ink-muted">
               Informe a chave{activeProvider ? ` da ${activeProvider.label}` : " de um provedor de IA"} em{" "}
@@ -269,7 +315,12 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
   const leftover = Number(result.leftover);
   // A selected category the model left empty is a decision, not an omission —
   // it must be visible, next to the strategy that should be justifying it.
-  const emptyCategories = result.categories.filter((label) => !groups.has(label));
+  // Unless the user made categories optional: then leaving one out is the
+  // freedom they asked for, not something to warn about.
+  const requireAll = result.require_all_categories !== false; // old runs: required
+  const emptyCategories = requireAll
+    ? result.categories.filter((label) => !groups.has(label))
+    : [];
 
   return (
     <>
@@ -280,8 +331,16 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
         <Badge tone={result.used_search ? "positive" : "neutral"}>
           {result.used_search ? "com busca na web" : "sem busca na web"}
         </Badge>
+        {!requireAll ? <Badge>IA escolheu as categorias</Badge> : null}
+        {result.allow_new_assets ? <Badge>ativos novos permitidos</Badge> : null}
         <span className="text-xs text-ink-muted">{dateTime(result.generated_at)}</span>
       </div>
+
+      {result.notes ? (
+        <p className="mt-3 text-xs text-ink-muted">
+          Suas observações: <span className="text-ink-secondary">“{result.notes}”</span>
+        </p>
+      ) : null}
 
       {result.strategy ? (
         <p className="mt-4 rounded-xl border border-line bg-surface-raised/50 p-3 text-sm text-ink-secondary">
@@ -303,13 +362,20 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
                 <li key={item.ticker} className="rounded-xl border border-line p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="min-w-0">
-                      {UNLINKED_KINDS.has(item.kind) ? (
+                      {/* A coin not held has no asset page: the page's market
+                          lookup resolves equities only. */}
+                      {UNLINKED_KINDS.has(item.kind) || (item.is_new && item.kind === "CRYPTO") ? (
                         <span className="font-medium">{item.ticker}</span>
                       ) : (
                         <Link to={`/ativos/${item.ticker}`} className="font-medium text-accent hover:underline">
                           {item.ticker}
                         </Link>
                       )}
+                      {item.is_new ? (
+                        <Badge tone="accent" className="ml-2 align-middle">
+                          novo
+                        </Badge>
+                      ) : null}
                       {item.name && item.name !== item.ticker ? (
                         <span className="ml-2 text-xs text-ink-muted">{item.name}</span>
                       ) : null}
@@ -345,10 +411,44 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
       ) : null}
       {result.skipped.length ? (
         <p className="mt-2 text-xs text-warning">
-          Ignorados por não fazerem parte da sua carteira: {result.skipped.join(", ")}.
+          {result.allow_new_assets
+            ? "Ignorados por não terem sido encontrados no mercado nas categorias selecionadas"
+            : "Ignorados por não fazerem parte da sua carteira"}
+          : {result.skipped.join(", ")}.
         </p>
       ) : null}
     </>
+  );
+}
+
+/** A labelled opt-in with its consequence spelled out underneath. */
+function OptionCheckbox({
+  checked,
+  onChange,
+  disabled,
+  title,
+  description,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  title: string;
+  description: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        className="mt-1"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="text-sm">
+        <span className="font-medium">{title}</span>
+        <span className="mt-1 block text-xs text-ink-muted">{description}</span>
+      </span>
+    </label>
   );
 }
 

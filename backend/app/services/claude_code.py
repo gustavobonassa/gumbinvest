@@ -22,6 +22,11 @@ Decisões que vieram de medir o CLI real, não da documentação:
   argv.** O do Analista IA carrega a carteira inteira, e no Windows a linha de
   comando inteira tem teto de 32.767 caracteres: passado disso o ``CreateProcess``
   falha com WinError 206 antes de o CLI sequer rodar.
+* **Ferramentas da carteira chegam por MCP** (``--mcp-config``): o CLI só
+  alcança ferramentas próprias assim. ``--strict-mcp-config`` impede que os
+  servidores MCP pessoais do usuário entrem na conversa, e ``mcp__gumbinvest``
+  em ``--allowed-tools`` libera as ferramentas sem pedir permissão — no modo
+  ``-p`` não há a quem pedir.
 * **Busca web exige ``--tools`` E ``--allowed-tools``.** Só com ``--tools`` a
   ferramenta é oferecida mas negada por permissão, e o modelo responde pedindo
   autorização em vez de pesquisar.
@@ -294,8 +299,47 @@ def _system_prompt_file(system: str) -> Iterator[str]:
             logger.warning("não foi possível apagar %s", handle.name)
 
 
+#: Nome do servidor MCP da carteira; as ferramentas chegam ao modelo como
+#: ``mcp__gumbinvest__<nome>``.
+MCP_SERVER_NAME = "gumbinvest"
+MCP_TOOL_PREFIX = f"mcp__{MCP_SERVER_NAME}__"
+
+
+@dataclass(frozen=True)
+class McpServer:
+    """Onde o CLI encontra as ferramentas da carteira, e o token que as libera."""
+
+    url: str
+    token: str
+
+
+@contextmanager
+def _mcp_config_file(mcp: McpServer | None) -> Iterator[str | None]:
+    """A config MCP num arquivo temporário (o token nunca vai para o argv)."""
+    if mcp is None:
+        yield None
+        return
+    config = {
+        "mcpServers": {
+            MCP_SERVER_NAME: {
+                "type": "http",
+                "url": mcp.url,
+                "headers": {"Authorization": f"Bearer {mcp.token}"},
+            }
+        }
+    }
+    with _system_prompt_file(json.dumps(config)) as path:
+        yield path
+
+
 def _argv(
-    binary: str, model: str, system_file: str, search: bool, *, stream: bool
+    binary: str,
+    model: str,
+    system_file: str,
+    search: bool,
+    *,
+    stream: bool,
+    mcp_file: str | None = None,
 ) -> list[str]:
     argv = [
         binary,
@@ -307,11 +351,18 @@ def _argv(
         "--disable-slash-commands",
         "--no-session-persistence",
     ]
+    allowed: list[str] = []
     if search:
         # Os dois são necessários: --tools oferece, --allowed-tools autoriza.
-        argv += ["--tools", SEARCH_TOOLS, "--allowed-tools", SEARCH_TOOLS]
+        argv += ["--tools", SEARCH_TOOLS]
+        allowed.append(SEARCH_TOOLS)
     else:
         argv += ["--tools", ""]
+    if mcp_file:
+        argv += ["--mcp-config", mcp_file, "--strict-mcp-config"]
+        allowed.append(f"mcp__{MCP_SERVER_NAME}")
+    if allowed:
+        argv += ["--allowed-tools", ",".join(allowed)]
     if stream:
         argv += ["--output-format", "stream-json", "--include-partial-messages", "--verbose"]
     else:
@@ -388,7 +439,12 @@ def call_json(system: str, messages: list[dict], model: str, *, search: bool) ->
 
 
 def stream_events(
-    system: str, messages: list[dict], model: str, *, search: bool
+    system: str,
+    messages: list[dict],
+    model: str,
+    *,
+    search: bool,
+    mcp: McpServer | None = None,
 ) -> Iterator[tuple[str, str]]:
     """Eventos ``(tipo, valor)`` de uma resposta em streaming.
 
@@ -402,9 +458,10 @@ def stream_events(
         yield ("error", "Claude Code não encontrado nesta máquina.")
         return
 
-    with _system_prompt_file(system) as system_file:
+    with _system_prompt_file(system) as system_file, _mcp_config_file(mcp) as mcp_file:
         yield from _stream_process(
-            _argv(binary, model, system_file, search, stream=True), messages
+            _argv(binary, model, system_file, search, stream=True, mcp_file=mcp_file),
+            messages,
         )
 
 
@@ -458,9 +515,15 @@ def _translate(event: dict) -> Iterator[tuple[str, str]]:
         inner = event.get("event") or {}
         inner_type = inner.get("type")
         if inner_type == "content_block_start":
-            block = (inner.get("content_block") or {}).get("type")
+            content_block = inner.get("content_block") or {}
+            block = content_block.get("type")
+            name = str(content_block.get("name") or "")
             if block == "thinking":
                 yield ("status", "Analisando…")
+            elif block in ("server_tool_use", "tool_use") and name.startswith(MCP_TOOL_PREFIX):
+                from app.services.ai_tools import status_for  # local: no import cycle
+
+                yield ("status", status_for(name[len(MCP_TOOL_PREFIX):]))
             elif block in ("server_tool_use", "tool_use"):
                 yield ("status", "Pesquisando na web…")
             elif block == "text":

@@ -5,7 +5,7 @@ import json
 from datetime import date
 from decimal import Decimal
 
-from app.api.routes.ai import ChatRequest, _portfolio_context
+from app.api.routes.ai import ChatRequest, _portfolio_context, _portfolio_context_full
 from app.db.models import AiChat, Asset, Transaction
 from app.portfolio.service import PortfolioService
 
@@ -22,7 +22,7 @@ def _buy(portfolio, asset, quantity: int, price: int, day: date, key: str) -> Tr
     )
 
 
-def test_portfolio_context_carries_totals_and_positions(db, portfolio):
+def _two_positions(db, portfolio) -> None:
     petr = Asset(ticker="PETR4", name="Petrobras", kind="STOCK", currency="BRL")
     hglg = Asset(ticker="HGLG11", name="CSHG Log", kind="FII", currency="BRL")
     db.add_all([petr, hglg])
@@ -35,7 +35,11 @@ def test_portfolio_context_carries_totals_and_positions(db, portfolio):
     )
     db.commit()
 
-    context = json.loads(_portfolio_context(PortfolioService(db, portfolio.id)))
+
+def test_full_context_carries_totals_and_positions(db, portfolio):
+    """The no-tools fallback (models without function calling) keeps the old shape."""
+    _two_positions(db, portfolio)
+    context = json.loads(_portfolio_context_full(PortfolioService(db, portfolio.id)))
     assert "resumo_da_carteira" in context
     assert context["resumo_da_carteira"]["positions_count"] == 2
 
@@ -55,6 +59,18 @@ def test_portfolio_context_carries_totals_and_positions(db, portfolio):
     kinds = context["alocacao_por_classe_pct"]
     assert set(kinds) == {"STOCK", "FII"}
     assert abs(sum(kinds.values()) - 100) < 0.01
+
+
+def test_default_context_is_a_short_map(db, portfolio):
+    """With tools, the prompt carries totals and weights only — the detail is a call away."""
+    _two_positions(db, portfolio)
+    context = json.loads(_portfolio_context(PortfolioService(db, portfolio.id)))
+    assert context["resumo_da_carteira"]["positions_count"] == 2
+    positions = context["posicoes_abertas"]
+    assert [p["ticker"] for p in positions] == ["HGLG11", "PETR4"]
+    for position in positions:
+        assert set(position) == {"ticker", "classe", "alocacao_pct"}
+    assert abs(sum(p["alocacao_pct"] for p in positions) - 100) < 0.01
 
 
 def test_chat_request_accepts_missing_ticker():

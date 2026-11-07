@@ -304,6 +304,14 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  // Links that open a new window (target="_blank", window.open — AI answers'
+  // sources, "Instalar Claude Code", the Dropbox authorization page) go to the
+  // user's own browser. Left to Electron they would open as a bare app window
+  // carrying this one's preload bridge, with none of the user's sign-ins.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => {
     mainWindow = null;

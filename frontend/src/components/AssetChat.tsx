@@ -7,8 +7,8 @@
  * keeps the conversation and renders the stream as it arrives.
  */
 import clsx from "clsx";
-import { RotateCcw, Send, Sparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDown, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 
@@ -50,22 +50,24 @@ function decodeEscapes(text: string): string {
   return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-/** Minimal renderer: paragraphs, "- " lists and **bold** — nothing else. */
-function MessageText({ text }: { text: string }) {
-  const parts = decodeEscapes(text).split(/\*\*(.+?)\*\*/g);
+// The Markdown parser is the chat's alone; it downloads when a conversation is
+// first rendered, not with the app.
+const ChatMarkdown = lazy(() => import("@/components/ChatMarkdown"));
+
+/** Text exactly as written — the user's own messages, and the answer's
+ *  stand-in for the moment the Markdown renderer is still loading. */
+function PlainText({ text }: { text: string }) {
+  // break-words: answers cite URLs longer than the bubble is wide.
+  return <span className="whitespace-pre-wrap break-words">{text}</span>;
+}
+
+function MessageText({ text, markdown }: { text: string; markdown: boolean }) {
+  const decoded = decodeEscapes(text);
+  if (!markdown) return <PlainText text={decoded} />;
   return (
-    // break-words: answers cite URLs longer than the bubble is wide.
-    <span className="whitespace-pre-wrap break-words">
-      {parts.map((part, index) =>
-        index % 2 === 1 ? (
-          <strong key={index} className="font-semibold text-ink">
-            {part}
-          </strong>
-        ) : (
-          <span key={index}>{part}</span>
-        ),
-      )}
-    </span>
+    <Suspense fallback={<PlainText text={decoded} />}>
+      <ChatMarkdown text={decoded} />
+    </Suspense>
   );
 }
 
@@ -88,9 +90,16 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
   const [streaming, setStreaming] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Whether the view follows the conversation. Changed only by the reader's
+  // own scrolling (and by sending, which always means "show me the answer") —
+  // never by content growing, or one long chunk would silently stop the
+  // follow. A ref, not state: it is read in the same frame tokens land in.
+  const followRef = useRef(true);
+  // Scrolled away while something new arrived below: offer the way back.
+  const [unseenBelow, setUnseenBelow] = useState(false);
 
   // A conversation is about one asset; navigating to another starts fresh.
   useEffect(() => {
@@ -119,6 +128,7 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
           ? chat.ticker?.toUpperCase() === ticker.toUpperCase()
           : chat.ticker === null;
         if (cancelled || !matches) return;
+        followRef.current = true;
         setMessages(chat.messages);
         setChatId(chat.id);
         setOpen(true);
@@ -127,7 +137,6 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker, requested]);
 
   const startNewConversation = () => {
@@ -141,19 +150,74 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
     }
   };
 
-  // Follow the stream only while the reader is already at the bottom: if they
-  // scrolled up to reread something, new tokens must not yank them back down.
-  useEffect(() => {
+  const scrollToLatest = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, status]);
+    followRef.current = true;
+    setUnseenBelow(false);
+    el.scrollTop = el.scrollHeight;
+  };
 
-  // Opening the panel always lands on the latest message.
+  // Follow the stream while the reader is following; if they scrolled up to
+  // reread something, new tokens must not yank them back down. A layout
+  // effect, and an instant jump rather than a smooth one: it lands before the
+  // paint (no flicker), and a smooth scroll restarted on every token lags
+  // behind the text and fires scroll events mid-flight that read as "the
+  // reader moved".
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    if (followRef.current) {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    } else if (messages.length) {
+      setUnseenBelow(true);
+    }
+  }, [messages, status, error, mounted]);
+
+  // Opening the panel always lands on the latest message. Keyed on `mounted`
+  // too: on the first open the panel is not in the document yet when `open`
+  // flips, so the scroll container only exists one render later.
+  useLayoutEffect(() => {
+    if (open && mounted) {
+      scrollToLatest();
+      inputRef.current?.focus();
+    }
+  }, [open, mounted]);
+
+  // The reader's own scrolling is the only thing that changes the follow.
+  // Direction matters, not just distance: in a short answer the very top is
+  // within a few dozen pixels of the bottom, and a distance-only rule would
+  // read "scrolled all the way up" as "still at the bottom".
+  const lastTop = useRef(0);
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const movedUp = el.scrollTop < lastTop.current;
+    lastTop.current = el.scrollTop;
+    if (distance <= 2) {
+      // Truly at the bottom — also where a layout shift (the status line
+      // giving way to text) leaves a reader who never moved.
+      followRef.current = true;
+    } else if (movedUp) {
+      followRef.current = false;
+    } else if (distance < 40) {
+      followRef.current = true; // scrolled back down to the end
+    }
+    if (followRef.current) setUnseenBelow(false);
+  };
+  // A wheel or swipe toward older messages stops the follow immediately,
+  // before its scroll event lands — otherwise a token arriving in between
+  // would snap the view back to the bottom against the reader's hand.
+  const touchY = useRef<number | null>(null);
+  const releaseFollow = () => {
+    followRef.current = false;
+  };
+
+  // Hand the cursor back once an answer finishes, ready for the follow-up.
   useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [open]);
+    if (!streaming && open) inputRef.current?.focus();
+  }, [streaming, open]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -174,6 +238,9 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
     const question = raw.trim();
     if (!question || streaming) return;
     const history: ChatMessage[] = [...messages, { role: "user", content: question }];
+    // Sending means "show me the answer", wherever the reader had scrolled.
+    followRef.current = true;
+    setUnseenBelow(false);
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
     setError(null);
@@ -241,7 +308,9 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
       setStatus(null);
       // An empty assistant bubble (errored before any text) is just noise.
       setMessages((current) =>
-        current.length && current[current.length - 1].content === "" ? current.slice(0, -1) : current,
+        current.length && current[current.length - 1].content === ""
+          ? current.slice(0, -1)
+          : current,
       );
     }
   };
@@ -277,145 +346,207 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
       {mounted
         ? createPortal(
             <>
-          {/* Mobile only: below lg there is no space to push the page aside. */}
-          <button
-            type="button"
-            aria-label="Fechar chat"
-            className={clsx(
-              "desktop-shell-below-topbar fixed inset-x-0 bottom-0 top-16 z-30 cursor-default bg-black/40 backdrop-blur-[2px] lg:hidden",
-              open ? "animate-fade-in" : "pointer-events-none animate-fade-out",
-            )}
-            onClick={() => setOpen(false)}
-          />
-          {/* top-16 = below the sticky top bar: the header (search, Atualizar)
+              {/* Mobile only: below lg there is no space to push the page aside. */}
+              <button
+                type="button"
+                aria-label="Fechar chat"
+                className={clsx(
+                  "desktop-shell-below-topbar fixed inset-x-0 bottom-0 top-16 z-30 cursor-default bg-black/40 backdrop-blur-[2px] lg:hidden",
+                  open ? "animate-fade-in" : "pointer-events-none animate-fade-out",
+                )}
+                onClick={() => setOpen(false)}
+              />
+              {/* top-16 = below the sticky top bar: the header (search, Atualizar)
               stays visible and clickable while the chat is open. */}
-          <aside
-            role="complementary"
-            aria-label={`Chat sobre ${scopeLabel}`}
-            onAnimationEnd={(event) => {
-              // Only the panel's own slide-out — animations bubbling up from
-              // children must not unmount the chat mid-conversation.
-              if (event.target === event.currentTarget && !open) setMounted(false);
-            }}
-            className={clsx(
-              "desktop-shell-below-topbar fixed bottom-0 right-0 top-16 z-30 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-raised",
-              open ? "animate-chat-in" : "animate-chat-out",
-            )}
-          >
-            <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-                <Sparkles size={15} aria-hidden />
-              </span>
-              <div className="min-w-0 leading-tight">
-                <p className="font-semibold">Analista IA</p>
-                <p className="truncate text-[11px] text-ink-muted">
-                  {ticker ? `${ticker} · dados da empresa + sua posição + web` : "carteira completa + web"}
-                </p>
-              </div>
-              <div className="ml-auto flex items-center gap-1">
-                {messages.length ? (
-                  <button
-                    type="button"
-                    onClick={startNewConversation}
-                    className="btn-ghost px-2 py-1.5"
-                    title="Nova conversa (a atual fica salva em Conversas)"
-                  >
-                    <RotateCcw size={15} />
-                  </button>
-                ) : null}
-                <button type="button" onClick={() => setOpen(false)} className="btn-ghost px-2 py-1.5" aria-label="Fechar">
-                  <X size={16} />
-                </button>
-              </div>
-            </header>
-
-            <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-              {!messages.length ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-ink-secondary">
-                    {ticker
-                      ? `Pergunte sobre ${ticker}: fundamentos, notícias, riscos, ou o desempenho da sua posição.`
-                      : "Pergunte sobre sua carteira: diversificação, riscos, desempenho, onde aportar."}{" "}
-                    Eu vejo os dados da carteira e posso pesquisar na web.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => send(suggestion)}
-                        className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-left text-xs text-ink-secondary transition-colors hover:border-accent/40 hover:text-ink"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {messages.map((message, index) =>
-                message.content || message.role === "user" ? (
-                  <div
-                    key={index}
-                    className={clsx(
-                      "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-                      message.role === "user"
-                        ? "ml-auto bg-accent-soft text-ink"
-                        : "mr-auto bg-surface-raised text-ink-secondary",
-                    )}
-                  >
-                    <MessageText text={message.content} />
-                  </div>
-                ) : null,
-              )}
-
-              {status ? (
-                <p className="flex items-center gap-2 text-xs text-ink-muted">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-                  {status}
-                </p>
-              ) : null}
-              {error ? <p className="text-xs text-negative">{error}</p> : null}
-              <div ref={bottomRef} />
-            </div>
-
-            <footer className="border-t border-line p-3">
-              <form
-                className="flex items-end gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void send(input);
+              <aside
+                role="complementary"
+                aria-label={`Chat sobre ${scopeLabel}`}
+                onAnimationEnd={(event) => {
+                  // Only the panel's own slide-out — animations bubbling up from
+                  // children must not unmount the chat mid-conversation.
+                  if (event.target === event.currentTarget && !open) setMounted(false);
                 }}
+                className={clsx(
+                  "desktop-shell-below-topbar fixed bottom-0 right-0 top-16 z-30 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-raised",
+                  open ? "animate-chat-in" : "animate-chat-out",
+                )}
               >
-                <textarea
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
+                <header className="flex items-center gap-2.5 border-b border-line px-4 py-3">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                    <Sparkles size={15} aria-hidden />
+                  </span>
+                  <div className="min-w-0 leading-tight">
+                    <p className="font-semibold">Analista IA</p>
+                    <p className="truncate text-[11px] text-ink-muted">
+                      {ticker
+                        ? `${ticker} · dados da empresa + sua posição + web`
+                        : "carteira completa + web"}
+                    </p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-1">
+                    {messages.length ? (
+                      <button
+                        type="button"
+                        onClick={startNewConversation}
+                        className="btn-ghost px-2 py-1.5"
+                        title="Nova conversa (a atual fica salva em Conversas)"
+                      >
+                        <RotateCcw size={15} />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="btn-ghost px-2 py-1.5"
+                      aria-label="Fechar"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </header>
+
+                <div className="relative flex min-h-0 flex-1 flex-col">
+                  <div
+                    ref={scrollRef}
+                    onScroll={onScroll}
+                    onWheel={(event) => {
+                      if (event.deltaY < 0) releaseFollow();
+                    }}
+                    onTouchStart={(event) => {
+                      touchY.current = event.touches[0]?.clientY ?? null;
+                    }}
+                    onTouchMove={(event) => {
+                      const y = event.touches[0]?.clientY;
+                      // Finger moving down drags the content toward older messages.
+                      if (touchY.current !== null && y !== undefined && y > touchY.current + 4) {
+                        releaseFollow();
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (["ArrowUp", "PageUp", "Home"].includes(event.key)) releaseFollow();
+                    }}
+                    tabIndex={-1}
+                    className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 focus:outline-none"
+                  >
+                    {!messages.length ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-ink-secondary">
+                          {ticker
+                            ? `Pergunte sobre ${ticker}: fundamentos, notícias, riscos, ou o desempenho da sua posição.`
+                            : "Pergunte sobre sua carteira: diversificação, riscos, desempenho, onde aportar."}{" "}
+                          Eu vejo os dados da carteira e posso pesquisar na web.
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {suggestions.map((suggestion) => (
+                            <button
+                              key={suggestion}
+                              type="button"
+                              onClick={() => send(suggestion)}
+                              className="rounded-full border border-line bg-surface-raised px-3 py-1.5 text-left text-xs text-ink-secondary transition-colors hover:border-accent/40 hover:text-ink"
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {messages.map((message, index) =>
+                      message.content || message.role === "user" ? (
+                        <div
+                          key={index}
+                          className={clsx(
+                            "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                            message.role === "user"
+                              ? "ml-auto bg-accent-soft text-ink"
+                              : "mr-auto bg-surface-raised text-ink-secondary",
+                          )}
+                        >
+                          <MessageText
+                            text={message.content}
+                            markdown={message.role === "assistant"}
+                          />
+                        </div>
+                      ) : null,
+                    )}
+
+                    {status ? (
+                      <p className="flex items-center gap-2 text-xs text-ink-muted">
+                        <span
+                          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                          aria-hidden
+                        />
+                        {status}
+                      </p>
+                    ) : null}
+                    {error ? <p className="text-xs text-negative">{error}</p> : null}
+                  </div>
+                  {unseenBelow ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        scrollToLatest();
+                        inputRef.current?.focus();
+                      }}
+                      className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line-strong bg-surface-raised px-3 py-1.5 text-xs font-medium text-ink shadow-raised transition-colors hover:border-accent/50 hover:text-accent"
+                    >
+                      <ArrowDown size={13} aria-hidden />
+                      {streaming ? "Acompanhar resposta" : "Ir para o fim"}
+                    </button>
+                  ) : null}
+                </div>
+
+                <footer className="border-t border-line p-3">
+                  <form
+                    className="flex items-end gap-2"
+                    onSubmit={(event) => {
                       event.preventDefault();
                       void send(input);
-                    }
-                  }}
-                  rows={2}
-                  placeholder={`Perguntar sobre ${scopeLabel}…`}
-                  className="input flex-1 resize-none text-sm"
-                  disabled={streaming}
-                />
-                <button
-                  type="submit"
-                  className="btn-primary px-3 py-2.5"
-                  disabled={streaming || !input.trim()}
-                  aria-label="Enviar"
-                >
-                  <Send size={15} />
-                </button>
-              </form>
-              <p className="mt-2 text-[10px] leading-snug text-ink-muted">
-                Análise gerada por IA com seus dados e busca na web. Conteúdo educacional, não é
-                recomendação de investimento.
-              </p>
-            </footer>
-          </aside>
+                    }}
+                  >
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={(event) => setInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void send(input);
+                        }
+                      }}
+                      rows={2}
+                      placeholder={`Perguntar sobre ${scopeLabel}…`}
+                      // Stays editable while an answer streams: the follow-up
+                      // can be written meanwhile and sent with Enter once it ends.
+                      className="input flex-1 resize-none text-sm"
+                    />
+                    {streaming ? (
+                      <button
+                        type="button"
+                        onClick={() => abortRef.current?.abort()}
+                        className="btn-ghost border border-line-strong px-3 py-2.5"
+                        aria-label="Parar resposta"
+                        title="Parar resposta"
+                      >
+                        <Square size={14} className="fill-current" />
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="btn-primary px-3 py-2.5"
+                        disabled={!input.trim()}
+                        aria-label="Enviar"
+                      >
+                        <Send size={15} />
+                      </button>
+                    )}
+                  </form>
+                  <p className="mt-2 text-[10px] leading-snug text-ink-muted">
+                    Análise gerada por IA com seus dados e busca na web. Conteúdo educacional, não é
+                    recomendação de investimento.
+                  </p>
+                </footer>
+              </aside>
             </>,
             document.body,
           )

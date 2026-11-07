@@ -17,6 +17,7 @@ from app.api.routes import (
     portfolio,
     reports,
     smart_invest,
+    taxes,
     transactions,
     treasury,
     universe,
@@ -39,3 +40,4 @@ api_router.include_router(ai_wallet.router)
 api_router.include_router(smart_invest.router)
 api_router.include_router(investors.router)
 api_router.include_router(universe.router)
+api_router.include_router(taxes.router)

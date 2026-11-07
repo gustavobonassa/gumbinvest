@@ -5,6 +5,16 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "@/App";
 import { ToastProvider } from "@/components/Toast";
+// Fonts are bundled, not loaded from Google: no render-blocking cross-origin
+// stylesheet, no request leaving the machine on every page load, and the
+// desktop app keeps its typeface offline. Latin subset only — it covers
+// pt-BR accents, the "•" privacy mask and the dashes/ellipsis the UI prints.
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-700.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
 import "@/styles.css";
 
 // A lazy-loaded chunk fails to fetch when the running page is older than the

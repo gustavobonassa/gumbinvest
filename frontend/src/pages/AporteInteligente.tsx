@@ -10,14 +10,42 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Check, ChevronDown, History, PiggyBank, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  History,
+  PiggyBank,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { useToast } from "@/components/Toast";
-import { Badge, Card, EmptyState, ErrorState, SectionTitle, Select, Skeleton, Tabs } from "@/components/ui";
-import { api, ApiError, type SmartInvestResult, type SmartInvestRun } from "@/lib/api";
-import { dateTime, money, quantity as qty } from "@/lib/format";
+import {
+  Badge,
+  Card,
+  Delta,
+  EmptyState,
+  ErrorState,
+  KindTag,
+  SectionTitle,
+  Select,
+  SidePanel,
+  Skeleton,
+  Tabs,
+} from "@/components/ui";
+import {
+  api,
+  ApiError,
+  type PositionRow,
+  type SmartInvestAllocation,
+  type SmartInvestResult,
+  type SmartInvestRun,
+} from "@/lib/api";
+import { dateTime, money, percent, quantity as qty, shortDate, signedMoney } from "@/lib/format";
 
 /** Kinds with no ticker page to link to. */
 const UNLINKED_KINDS = new Set(["FIXED_INCOME", "TREASURY"]);
@@ -32,9 +60,19 @@ export default function AporteInteligente() {
   const setAba = (next: string) =>
     setParams(next === "novo" ? {} : { aba: next }, { replace: true });
 
-  const optionsQ = useQuery({ queryKey: ["smart-invest-options"], queryFn: api.smartInvestOptions });
-  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: api.settings, staleTime: 5 * 60_000 });
-  const historyQ = useQuery({ queryKey: ["smart-invest-history"], queryFn: api.smartInvestHistory });
+  const optionsQ = useQuery({
+    queryKey: ["smart-invest-options"],
+    queryFn: api.smartInvestOptions,
+  });
+  const settingsQ = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings,
+    staleTime: 5 * 60_000,
+  });
+  const historyQ = useQuery({
+    queryKey: ["smart-invest-history"],
+    queryFn: api.smartInvestHistory,
+  });
 
   const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState<"BRL" | "USD">("BRL");
@@ -88,19 +126,27 @@ export default function AporteInteligente() {
       queryClient.invalidateQueries({ queryKey: ["smart-invest-job"] });
     },
     onError: (error) =>
-      toast.error("Não foi possível iniciar a análise.", error instanceof ApiError ? error : undefined),
+      toast.error(
+        "Não foi possível iniciar a análise.",
+        error instanceof ApiError ? error : undefined,
+      ),
   });
 
   const parsedAmount = Number(amount);
   const canStart =
-    !running && keyConfigured && kinds.length > 0 && Number.isFinite(parsedAmount) && parsedAmount > 0;
+    !running &&
+    keyConfigured &&
+    kinds.length > 0 &&
+    Number.isFinite(parsedAmount) &&
+    parsedAmount > 0;
 
   const toggleKind = (kind: string) =>
     setKinds((current) =>
       current.includes(kind) ? current.filter((item) => item !== kind) : [...current, kind],
     );
 
-  if (optionsQ.isError) return <ErrorState error={optionsQ.error} retry={() => optionsQ.refetch()} />;
+  if (optionsQ.isError)
+    return <ErrorState error={optionsQ.error} retry={() => optionsQ.refetch()} />;
 
   const categories = optionsQ.data?.categories ?? [];
 
@@ -110,10 +156,9 @@ export default function AporteInteligente() {
         <p className="text-sm text-ink-muted">IA</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Aporte inteligente</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Diga quanto você tem para investir hoje e em quais categorias. A IA analisa os ativos
-          que você já possui, preço atual contra preço médio, fundamentos, notícias e cenário
-          macro, e sugere como dividir o valor. Nada é executado: a sugestão é sua para levar
-          à corretora.
+          Diga quanto você tem para investir hoje e em quais categorias. A IA analisa os ativos que
+          você já possui, preço atual contra preço médio, fundamentos, notícias e cenário macro, e
+          sugere como dividir o valor. Nada é executado: a sugestão é sua para levar à corretora.
         </p>
       </header>
 
@@ -149,7 +194,9 @@ export default function AporteInteligente() {
           />
           <div className="grid max-w-xl gap-4 sm:grid-cols-2">
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Valor do aporte</span>
+              <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+                Valor do aporte
+              </span>
               <input
                 type="number"
                 min="0"
@@ -224,7 +271,10 @@ export default function AporteInteligente() {
           </div>
 
           <div className="mt-4 max-w-xl">
-            <label htmlFor="aporte-notes" className="mb-1.5 block text-xs font-medium text-ink-muted">
+            <label
+              htmlFor="aporte-notes"
+              className="mb-1.5 block text-xs font-medium text-ink-muted"
+            >
               Observações para a IA (opcional)
             </label>
             <textarea
@@ -241,7 +291,8 @@ export default function AporteInteligente() {
 
           {!keyConfigured && !settingsQ.isLoading ? (
             <p className="mt-4 text-sm text-ink-muted">
-              Informe a chave{activeProvider ? ` da ${activeProvider.label}` : " de um provedor de IA"} em{" "}
+              Informe a chave
+              {activeProvider ? ` da ${activeProvider.label}` : " de um provedor de IA"} em{" "}
               <Link to="/configuracoes?aba=ia" className="text-accent hover:underline">
                 Configurações → Inteligência Artificial
               </Link>{" "}
@@ -268,7 +319,10 @@ export default function AporteInteligente() {
             ) : null}
             {running ? (
               <p className="flex items-center gap-2 text-sm text-ink-secondary">
-                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
+                <span
+                  className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent"
+                  aria-hidden
+                />
                 {job?.status ?? "Analisando…"}
                 <span className="text-xs text-ink-muted">
                   Pode levar alguns minutos; você pode navegar à vontade.
@@ -304,7 +358,18 @@ function ResultCard({ result }: { result: SmartInvestResult }) {
  *  shared between the live result and expanded history entries. */
 function ResultDetails({ result }: { result: SmartInvestResult }) {
   const fmt = (value: string | number | null | undefined, code?: string) =>
-    value === null || value === undefined ? "—" : money(Number(value), { currency: code ?? result.currency });
+    value === null || value === undefined
+      ? "—"
+      : money(Number(value), { currency: code ?? result.currency });
+
+  // The selected row outlives `panelOpen` so the panel keeps its content while
+  // it slides out.
+  const [panelItem, setPanelItem] = useState<SmartInvestAllocation | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const openPanel = (item: SmartInvestAllocation) => {
+    setPanelItem(item);
+    setPanelOpen(true);
+  };
 
   const groups = new Map<string, typeof result.allocations>();
   for (const item of result.allocations) {
@@ -318,9 +383,7 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
   // Unless the user made categories optional: then leaving one out is the
   // freedom they asked for, not something to warn about.
   const requireAll = result.require_all_categories !== false; // old runs: required
-  const emptyCategories = requireAll
-    ? result.categories.filter((label) => !groups.has(label))
-    : [];
+  const emptyCategories = requireAll ? result.categories.filter((label) => !groups.has(label)) : [];
 
   return (
     <>
@@ -359,37 +422,47 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
             </div>
             <ul className="space-y-2">
               {items.map((item) => (
-                <li key={item.ticker} className="rounded-xl border border-line p-3">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="min-w-0">
-                      {/* A coin not held has no asset page: the page's market
-                          lookup resolves equities only. */}
-                      {UNLINKED_KINDS.has(item.kind) || (item.is_new && item.kind === "CRYPTO") ? (
-                        <span className="font-medium">{item.ticker}</span>
-                      ) : (
-                        <Link to={`/ativos/${item.ticker}`} className="font-medium text-accent hover:underline">
+                <li key={item.ticker}>
+                  {/* The whole card opens the position panel; the asset page is
+                      one click further, from inside it. */}
+                  <button
+                    type="button"
+                    onClick={() => openPanel(item)}
+                    aria-haspopup="dialog"
+                    className="group w-full rounded-xl border border-line p-3 text-left transition-colors hover:border-line-strong hover:bg-surface-hover"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="font-medium text-accent group-hover:underline">
                           {item.ticker}
-                        </Link>
-                      )}
-                      {item.is_new ? (
-                        <Badge tone="accent" className="ml-2 align-middle">
-                          novo
-                        </Badge>
-                      ) : null}
-                      {item.name && item.name !== item.ticker ? (
-                        <span className="ml-2 text-xs text-ink-muted">{item.name}</span>
-                      ) : null}
-                    </span>
-                    <span className="tnum text-sm font-medium">{fmt(item.amount)}</span>
-                  </div>
-                  <p className="tnum mt-0.5 text-xs text-ink-muted">
-                    {item.approx_quantity !== null
-                      ? `≈ ${qty(Number(item.approx_quantity))} × ${fmt(item.current_price, item.price_currency)}`
-                      : "aporte em valor"}
-                  </p>
-                  {item.rationale ? (
-                    <p className="mt-1.5 text-sm text-ink-secondary">{item.rationale}</p>
-                  ) : null}
+                        </span>
+                        {item.is_new ? (
+                          <Badge tone="accent" className="ml-2 align-middle">
+                            novo
+                          </Badge>
+                        ) : null}
+                        {item.name && item.name !== item.ticker ? (
+                          <span className="ml-2 text-xs text-ink-muted">{item.name}</span>
+                        ) : null}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="tnum text-sm font-medium">{fmt(item.amount)}</span>
+                        <ChevronRight
+                          size={15}
+                          className="text-ink-muted transition-transform group-hover:translate-x-0.5"
+                          aria-hidden
+                        />
+                      </span>
+                    </div>
+                    <p className="tnum mt-0.5 text-xs text-ink-muted">
+                      {item.approx_quantity !== null
+                        ? `≈ ${qty(Number(item.approx_quantity))} × ${fmt(item.current_price, item.price_currency)}`
+                        : "aporte em valor"}
+                    </p>
+                    {item.rationale ? (
+                      <p className="mt-1.5 text-sm text-ink-secondary">{item.rationale}</p>
+                    ) : null}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -417,7 +490,210 @@ function ResultDetails({ result }: { result: SmartInvestResult }) {
           : {result.skipped.join(", ")}.
         </p>
       ) : null}
+
+      {panelItem ? (
+        <PositionPanel
+          item={panelItem}
+          resultCurrency={result.currency}
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** Where a recommended asset's full page lives, or null when it has none. */
+function assetPageFor(item: SmartInvestAllocation): { to: string; label: string } | null {
+  if (UNLINKED_KINDS.has(item.kind)) return { to: "/renda-fixa", label: "Abrir Renda fixa" };
+  // A coin not held has no asset page: the page's market lookup resolves
+  // equities only.
+  if (item.is_new && item.kind === "CRYPTO") return null;
+  return { to: `/ativos/${encodeURIComponent(item.ticker)}`, label: "Abrir página do ativo" };
+}
+
+/**
+ * The current position in a recommended asset, beside the recommendation, so
+ * the suggestion can be weighed against what is already held without leaving
+ * the page. Reads the same cached positions list as the dashboard.
+ */
+function PositionPanel({
+  item,
+  resultCurrency,
+  open,
+  onClose,
+}: {
+  item: SmartInvestAllocation;
+  resultCurrency: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const positionsQ = useQuery({
+    queryKey: ["positions"],
+    queryFn: () => api.positions(false),
+    staleTime: 60_000,
+  });
+  const ticker = item.ticker.toUpperCase();
+  const position = positionsQ.data?.find(
+    (row) => row.ticker.toUpperCase() === ticker && row.quantity > 0,
+  );
+  const page = assetPageFor(item);
+
+  return (
+    <SidePanel
+      open={open}
+      onClose={onClose}
+      title={
+        <span className="flex flex-wrap items-center gap-2">
+          {item.ticker}
+          {item.is_new ? <Badge tone="accent">novo</Badge> : null}
+        </span>
+      }
+      subtitle={
+        <span className="flex flex-wrap items-center gap-2">
+          <KindTag kind={item.kind} />
+          {item.name && item.name !== item.ticker ? (
+            <span className="truncate">{item.name}</span>
+          ) : null}
+        </span>
+      }
+      footer={
+        page ? (
+          <Link to={page.to} className="btn-primary w-full justify-center" onClick={onClose}>
+            {page.label} <ArrowRight size={15} aria-hidden />
+          </Link>
+        ) : (
+          <p className="text-xs text-ink-muted">
+            Este ativo ainda não tem uma página no GumbInvest.
+          </p>
+        )
+      }
+    >
+      <div className="rounded-xl border border-accent/30 bg-accent-soft/40 p-3">
+        <p className="text-xs font-medium text-ink-muted">Sugestão da IA</p>
+        <p className="tnum mt-0.5 text-lg font-semibold">
+          {money(Number(item.amount), { currency: resultCurrency })}
+        </p>
+        <p className="tnum text-xs text-ink-muted">
+          {item.approx_quantity !== null && item.current_price !== null
+            ? `≈ ${qty(Number(item.approx_quantity))} × ${money(Number(item.current_price), { currency: item.price_currency })}`
+            : "aporte em valor"}
+        </p>
+      </div>
+
+      <h3 className="mb-2 mt-5 text-sm font-semibold text-ink">Sua posição</h3>
+      {positionsQ.isLoading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : positionsQ.isError ? (
+        <ErrorState error={positionsQ.error} retry={() => positionsQ.refetch()} />
+      ) : position ? (
+        <PositionFacts position={position} item={item} />
+      ) : (
+        <p className="rounded-xl border border-line p-3 text-sm text-ink-secondary">
+          Você ainda não possui {item.ticker}. Este aporte abriria a posição.
+        </p>
+      )}
+    </SidePanel>
+  );
+}
+
+function PositionFacts({ position, item }: { position: PositionRow; item: SmartInvestAllocation }) {
+  const own = (value: number) => money(value, { currency: position.currency });
+  const base = (value: number) => money(value);
+  const vsAverage =
+    position.has_market_price && position.average_price > 0
+      ? (position.current_price / position.average_price - 1) * 100
+      : null;
+
+  // What this contribution does to the position, when it is priced per unit
+  // in the position's own currency: quantity and average cost after the buy.
+  const addQty = item.approx_quantity !== null ? Number(item.approx_quantity) : null;
+  const addPrice = item.current_price !== null ? Number(item.current_price) : null;
+  const after =
+    addQty !== null && addPrice !== null && addQty > 0 && item.price_currency === position.currency
+      ? {
+          quantity: position.quantity + addQty,
+          average:
+            (position.quantity * position.average_price + addQty * addPrice) /
+            (position.quantity + addQty),
+        }
+      : null;
+
+  return (
+    <div className="space-y-4">
+      <dl className="grid grid-cols-2 gap-3">
+        <Fact label="Valor atual" value={base(position.market_value_base)}>
+          {position.is_foreign ? own(position.market_value) : null}
+        </Fact>
+        <Fact label="Alocação" value={percent(position.allocation_pct, 1)}>
+          da carteira
+        </Fact>
+        <Fact label="Quantidade" value={qty(position.quantity)} />
+        <Fact label="Preço médio" value={own(position.average_price)} />
+        <Fact
+          label="Preço atual"
+          value={position.has_market_price ? own(position.current_price) : "—"}
+        >
+          {vsAverage !== null ? (
+            <span
+              className={clsx(
+                vsAverage < 0 ? "text-negative" : vsAverage > 0 ? "text-positive" : "",
+              )}
+            >
+              {percent(Math.abs(vsAverage), 1)} {vsAverage < 0 ? "abaixo" : "acima"} do médio
+            </span>
+          ) : null}
+        </Fact>
+        <Fact label="Custo" value={base(position.cost_basis_base)} />
+        <Fact label="Resultado não realizado" value={signedMoney(position.unrealized_pnl_base)}>
+          <Delta value={position.unrealized_pct} className="text-xs" />
+        </Fact>
+        <Fact label="Proventos recebidos" value={base(position.income_base)} />
+        <Fact label="Retorno total" value={signedMoney(position.total_return_base)}>
+          <Delta value={position.total_return_pct} className="text-xs" />
+        </Fact>
+        <Fact label="Última movimentação" value={shortDate(position.last_trade)} />
+      </dl>
+
+      {after ? (
+        <div className="rounded-xl border border-line p-3">
+          <p className="text-xs font-medium text-ink-muted">Depois deste aporte (estimativa)</p>
+          <dl className="mt-2 grid grid-cols-2 gap-3">
+            <Fact label="Quantidade" value={`${qty(position.quantity)} → ${qty(after.quantity)}`} />
+            <Fact
+              label="Preço médio"
+              value={`${own(position.average_price)} → ${own(after.average)}`}
+            />
+          </dl>
+        </div>
+      ) : null}
+
+      {position.warnings.length ? (
+        <ul className="space-y-1 text-xs text-warning">
+          {position.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function Fact({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-ink-muted">{label}</dt>
+      <dd className="tnum mt-0.5 break-words text-sm font-medium text-ink">{value}</dd>
+      {children ? <dd className="tnum text-xs text-ink-muted">{children}</dd> : null}
+    </div>
   );
 }
 
@@ -465,7 +741,10 @@ function HistoryCard({ runs, loading }: { runs: SmartInvestRun[]; loading: boole
       toast.success("Análise removida do histórico.");
     },
     onError: (error) =>
-      toast.error("Não foi possível remover a análise.", error instanceof ApiError ? error : undefined),
+      toast.error(
+        "Não foi possível remover a análise.",
+        error instanceof ApiError ? error : undefined,
+      ),
   });
 
   if (loading) return <Skeleton className="h-40 w-full" />;

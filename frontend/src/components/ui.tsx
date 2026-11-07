@@ -203,30 +203,26 @@ export function KindTag({ kind, className }: { kind: string; className?: string 
         className,
       )}
     >
-      <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: kindColor(kind) }} aria-hidden />
+      <span
+        className="h-2 w-2 shrink-0 rounded-sm"
+        style={{ background: kindColor(kind) }}
+        aria-hidden
+      />
       {kindLabel(kind)}
     </span>
   );
 }
 
-/** Centred dialog. Closes on backdrop click and on Escape; keyboard focus is
- *  trapped inside while open and returns to the opener on close. */
-export function Modal({
-  open,
-  title,
-  subtitle,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  title: ReactNode;
-  subtitle?: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
-
+/**
+ * Keyboard behaviour shared by the dialogs: focus moves in on open and back to
+ * the opener on close, Tab is trapped inside, Escape closes. Without it a
+ * keyboard user is left tabbing the page behind the dialog.
+ */
+function useDialogFocus(
+  open: boolean,
+  dialogRef: { current: HTMLElement | null },
+  onClose: () => void,
+) {
   // Read through a ref so the effect below does not depend on `onClose`'s
   // identity. Callers pass an inline arrow (`onClose={() => setOpen(false)}`),
   // which is a new function on every render: with it in the dependency list
@@ -240,8 +236,6 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return undefined;
-    // Focus moves into the dialog on open and back to the opener on close —
-    // without this, a keyboard user is left tabbing the page behind the modal.
     const opener = document.activeElement as HTMLElement | null;
     dialogRef.current?.focus();
     const handler = (event: KeyboardEvent) => {
@@ -270,7 +264,113 @@ export function Modal({
     };
     // `open` only: this effect captures the opener and restores focus to it on
     // teardown, so it must run exactly once per open/close — see onCloseRef.
+  }, [open, dialogRef]);
+}
+
+/**
+ * A panel that slides in from the right, for details about one row without
+ * leaving the page. It sits below the top bar, like the AI chat, so the header
+ * (and, in the desktop window, the title bar's controls) stays reachable. It
+ * stays mounted for the slide-out and unmounts on `animationend`, so closing
+ * is a movement rather than a disappearance. Callers keep rendering the
+ * content they showed until then, so it does not blank out mid-slide.
+ */
+export function SidePanel({
+  open,
+  title,
+  subtitle,
+  onClose,
+  footer,
+  children,
+}: {
+  open: boolean;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  footer?: ReactNode;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) setMounted(true);
   }, [open]);
+  useDialogFocus(open, panelRef, onClose);
+
+  if (!mounted) return null;
+  // Portalled for the same reason as Modal: a `.cq` card is a containing block
+  // for `position: fixed` and would trap the panel inside it.
+  return createPortal(
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        onClick={onClose}
+        className={clsx(
+          "desktop-shell-below-topbar fixed inset-x-0 bottom-0 top-16 z-40 cursor-default bg-black/40 backdrop-blur-[2px]",
+          open ? "animate-fade-in" : "pointer-events-none animate-fade-out",
+        )}
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onAnimationEnd={(event) => {
+          // Only the panel's own slide-out: animations bubbling up from the
+          // content must not unmount it.
+          if (event.target === event.currentTarget && !open) setMounted(false);
+        }}
+        className={clsx(
+          "desktop-shell-below-topbar fixed bottom-0 right-0 top-16 z-40 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-raised outline-none",
+          open ? "animate-chat-in" : "pointer-events-none animate-chat-out",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="min-w-0">
+            <div id={titleId} className="font-semibold tracking-tight text-ink">
+              {title}
+            </div>
+            {subtitle ? <div className="mt-0.5 text-sm text-ink-muted">{subtitle}</div> : null}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-ghost px-2.5 py-2.5"
+            aria-label="Fechar"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer ? <div className="border-t border-line px-5 py-3">{footer}</div> : null}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+/** Centred dialog. Closes on backdrop click and on Escape; keyboard focus is
+ *  trapped inside while open and returns to the opener on close. */
+export function Modal({
+  open,
+  title,
+  subtitle,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, dialogRef, onClose);
 
   if (!open) return null;
   // Portalled to <body> on purpose: `position: fixed` is relative to the
@@ -280,7 +380,13 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[10vh] backdrop-blur-sm animate-fade-in">
       {/* Click-to-close only: Escape and the × carry the keyboard path, so the
           backdrop stays out of the tab order. */}
-      <button type="button" tabIndex={-1} className="absolute inset-0 cursor-default" aria-hidden onClick={onClose} />
+      <button
+        type="button"
+        tabIndex={-1}
+        className="absolute inset-0 cursor-default"
+        aria-hidden
+        onClick={onClose}
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -296,7 +402,12 @@ export function Modal({
             </p>
             {subtitle ? <p className="mt-0.5 text-sm text-ink-muted">{subtitle}</p> : null}
           </div>
-          <button type="button" onClick={onClose} className="btn-ghost px-2.5 py-2.5" aria-label="Fechar">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-ghost px-2.5 py-2.5"
+            aria-label="Fechar"
+          >
             <X size={16} />
           </button>
         </div>
@@ -356,7 +467,9 @@ export function AnchoredPanel({
   useLayoutEffect(() => {
     const height = panelRef.current?.offsetHeight ?? 0;
     const next = place(height);
-    setStyle((current) => (current.top === next.top && current.left === next.left ? current : next));
+    setStyle((current) =>
+      current.top === next.top && current.left === next.left ? current : next,
+    );
     // Placement depends on the anchor and the measured height, both settled by
     // the time this runs; re-running on every render would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,7 +543,12 @@ export function Select<T extends string>({
   const selected = options.find((option) => option.value === value);
 
   const openList = () => {
-    setActive(Math.max(0, options.findIndex((option) => option.value === value)));
+    setActive(
+      Math.max(
+        0,
+        options.findIndex((option) => option.value === value),
+      ),
+    );
     setOpen(true);
   };
 
@@ -484,10 +602,15 @@ export function Select<T extends string>({
           className,
         )}
       >
-        <span className={clsx("truncate", !selected && "text-ink-muted")}>{selected?.label ?? "-"}</span>
+        <span className={clsx("truncate", !selected && "text-ink-muted")}>
+          {selected?.label ?? "-"}
+        </span>
         <ChevronDown
           size={15}
-          className={clsx("shrink-0 text-ink-muted transition-transform duration-200", open && "rotate-180")}
+          className={clsx(
+            "shrink-0 text-ink-muted transition-transform duration-200",
+            open && "rotate-180",
+          )}
           aria-hidden
         />
       </button>
@@ -617,7 +740,9 @@ export function MultiSelect<T extends string>({
           className,
         )}
       >
-        <span className={clsx("flex min-w-0 items-center gap-2", !values.length && "text-ink-muted")}>
+        <span
+          className={clsx("flex min-w-0 items-center gap-2", !values.length && "text-ink-muted")}
+        >
           <span className="truncate">{summary}</span>
           {values.length > 1 ? (
             <span className="tnum shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent">
@@ -627,14 +752,22 @@ export function MultiSelect<T extends string>({
         </span>
         <ChevronDown
           size={15}
-          className={clsx("shrink-0 text-ink-muted transition-transform duration-200", open && "rotate-180")}
+          className={clsx(
+            "shrink-0 text-ink-muted transition-transform duration-200",
+            open && "rotate-180",
+          )}
           aria-hidden
         />
       </button>
 
       {open ? (
         <AnchoredPanel anchor={buttonRef.current} onClose={() => setOpen(false)}>
-          <ul role="listbox" aria-multiselectable className="max-h-[300px] overflow-auto" aria-label={ariaLabel}>
+          <ul
+            role="listbox"
+            aria-multiselectable
+            className="max-h-[300px] overflow-auto"
+            aria-label={ariaLabel}
+          >
             {options.map((option, index) => {
               const isSelected = chosen.has(option.value);
               return (
@@ -739,7 +872,8 @@ export function Combobox({
     ? options
         .filter(
           (option) =>
-            option.value.toLowerCase().includes(needle) || option.label.toLowerCase().includes(needle),
+            option.value.toLowerCase().includes(needle) ||
+            option.label.toLowerCase().includes(needle),
         )
         .map((option, index) => ({ option, index, rank: rank(option) }))
         .sort((a, b) => a.rank - b.rank || a.index - b.index)
@@ -823,7 +957,9 @@ export function Combobox({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium text-ink">{option.value}</span>
                       {option.label && option.label !== option.value ? (
-                        <span className="block truncate text-xs text-ink-muted">{option.label}</span>
+                        <span className="block truncate text-xs text-ink-muted">
+                          {option.label}
+                        </span>
                       ) : null}
                     </span>
                     {option.hint ? (
@@ -974,7 +1110,12 @@ export function DateField({
       </button>
 
       {open ? (
-        <AnchoredPanel anchor={buttonRef.current} onClose={() => setOpen(false)} matchWidth={false} minWidth={268}>
+        <AnchoredPanel
+          anchor={buttonRef.current}
+          onClose={() => setOpen(false)}
+          matchWidth={false}
+          minWidth={268}
+        >
           <div className="p-2">
             <div className="mb-2 flex items-center justify-between gap-2">
               <button
@@ -988,7 +1129,9 @@ export function DateField({
               {/* The label is the way up a level: month -> year -> decade. */}
               <button
                 type="button"
-                onClick={() => setView(view === "days" ? "months" : view === "months" ? "years" : "days")}
+                onClick={() =>
+                  setView(view === "days" ? "months" : view === "months" ? "years" : "days")
+                }
                 className="rounded-lg px-2 py-1 text-sm font-medium text-ink transition-colors hover:bg-surface-hover"
                 aria-label={view === "years" ? "Voltar aos dias" : "Escolher período"}
               >
@@ -1042,7 +1185,8 @@ export function DateField({
               <div className="grid grid-cols-3 gap-1">
                 {MONTHS.map((name, index) => {
                   const isCurrent =
-                    selected?.getFullYear() === month.getFullYear() && selected.getMonth() === index;
+                    selected?.getFullYear() === month.getFullYear() &&
+                    selected.getMonth() === index;
                   return (
                     <button
                       key={name}
@@ -1087,7 +1231,11 @@ export function DateField({
             )}
 
             <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
-              <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => pick(new Date())}>
+              <button
+                type="button"
+                className="btn-ghost px-2 py-1 text-xs"
+                onClick={() => pick(new Date())}
+              >
                 Hoje
               </button>
               <button

@@ -584,21 +584,33 @@ class BinancePipeline(Pipeline):
         ctx.log("Simple Earn (aplicações, resgates e rendimentos)…")
         if since >= now:
             return
-        endpoints = (
-            ("flexible/history/subscriptionRecord", "Simple Earn Flexible Subscription", -1, "amount", ("SUCCESS",)),
-            ("flexible/history/redemptionRecord", "Simple Earn Flexible Redemption", 1, "amount", ("PAID",)),
-            ("flexible/history/rewardsRecord", "Simple Earn Flexible Interest", 1, "rewards", None),
-            ("locked/history/subscriptionRecord", "Simple Earn Locked Subscription", -1, "amount", ("SUCCESS",)),
-            ("locked/history/redemptionRecord", "Simple Earn Locked Redemption", 1, "amount", ("PAID",)),
-            ("locked/history/rewardsRecord", "Simple Earn Locked Rewards", 1, "amount", None),
+        # Flexible rewards are split by kind and the endpoint refuses a call
+        # without `type` (-1102), whatever the newer docs say about a default
+        # of ALL. The three kinds are separate credits, so asking for each one
+        # counts every reward once.
+        flexible_rewards = tuple(
+            ("flexible/history/rewardsRecord", {"type": kind}, "Simple Earn Flexible Interest", 1, "rewards", None)
+            for kind in ("BONUS", "REALTIME", "REWARDS")
         )
-        for path, operation, sign, field, ok_statuses in endpoints:
+        endpoints = (
+            ("flexible/history/subscriptionRecord", {}, "Simple Earn Flexible Subscription", -1, "amount", ("SUCCESS",)),
+            ("flexible/history/redemptionRecord", {}, "Simple Earn Flexible Redemption", 1, "amount", ("PAID",)),
+            *flexible_rewards,
+            ("locked/history/subscriptionRecord", {}, "Simple Earn Locked Subscription", -1, "amount", ("SUCCESS",)),
+            ("locked/history/redemptionRecord", {}, "Simple Earn Locked Redemption", 1, "amount", ("PAID",)),
+            ("locked/history/rewardsRecord", {}, "Simple Earn Locked Rewards", 1, "amount", None),
+        )
+        for path, extra, operation, sign, field, ok_statuses in endpoints:
             for start, end in _windows(since, now, 29):
-                for row in self._pages(client, f"/sapi/v1/simple-earn/{path}", {"startTime": start, "endTime": end}):
+                params = {**extra, "startTime": start, "endTime": end}
+                for row in self._pages(client, f"/sapi/v1/simple-earn/{path}", params):
                     if ok_statuses and row.get("status") not in ok_statuses:
                         continue
                     amount = _dec(row.get(field))
-                    ref = row.get("purchaseId") or row.get("redeemId") or row.get("positionId") or ""
+                    ref = (
+                        row.get("purchaseId") or row.get("redeemId") or row.get("positionId")
+                        or extra.get("type") or ""
+                    )
                     collected.add("earn", row["time"], operation, row["asset"], sign * amount, ref=f"{path.split('/')[0]}:{ref}")
 
     def _distributions(self, client, ctx, collected, since, now) -> None:

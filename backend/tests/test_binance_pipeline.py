@@ -66,7 +66,14 @@ def _fake_binance(request: httpx.Request) -> httpx.Response:
         if path.endswith("flexible/history/subscriptionRecord"):
             rows = [{"asset": "DOT", "amount": "50", "time": T0 + 3 * DAY, "purchaseId": 1, "status": "SUCCESS"}]
         if path.endswith("flexible/history/rewardsRecord"):
-            rows = [{"asset": "DOT", "rewards": "3", "time": T0 + 10 * DAY}]
+            # Like the live API: no `type`, no answer.
+            if q.get("type") not in ("BONUS", "REALTIME", "REWARDS"):
+                return httpx.Response(400, json={
+                    "code": -1102,
+                    "msg": "Mandatory parameter 'type' was not sent, was empty/null, or malformed.",
+                })
+            if q["type"] == "REALTIME":
+                rows = [{"asset": "DOT", "rewards": "3", "time": T0 + 10 * DAY, "type": "REALTIME"}]
         rows = [r for r in rows if within(r["time"])]
         return httpx.Response(200, json={"rows": rows, "total": len(rows)})
     if path == "/sapi/v1/asset/assetDividend":

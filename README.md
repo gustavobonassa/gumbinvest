@@ -92,8 +92,14 @@ And the whole interface is responsive — usable from the phone on your couch
 - **Coleta automática (Automações)** — a weekly pipeline signs into the B3
   Área do Investidor with your CPF, exports the movimentação and imports it,
   no manual download involved. If B3 asks for a verification code, the app
-  asks you for it on screen (Configurações → Automações); everything collected
+  asks you for it on screen (Importar → Automações); everything collected
   goes through the same idempotent importer as a manual upload.
+- **Binance pela API** — paste a *read-only* API key in Importar → Automações
+  and the app collects spot trades, Convert, crypto deposits and withdrawals,
+  card/PIX purchases, Simple Earn and distributions on the same weekly slot,
+  then checks every coin against the balances Binance reports and lists any
+  that disagree. The first run brings the whole history; an export you
+  uploaded before (or after) is reconciled with it, never booked twice.
 
 **Portfolio**
 - Weighted-average cost (*preço médio*), the Brazilian convention.
@@ -144,6 +150,21 @@ And the whole interface is responsive — usable from the phone on your couch
   figure.
 - A worksheet to transcribe, never a filing.
 
+**Impostos (monthly tax on sales)**
+- The month-by-month apuração behind the DARF (code 6015): shares, units,
+  ETFs and BDRs at 15 % with the R$ 20.000 monthly exemption on share sales,
+  FIIs at 20 %, and day trade at 20 % from the result you enter off the
+  broker's report — the B3 export does not mark day trades, so same-day
+  buy-and-sell pairs are flagged instead of guessed.
+- Losses carry forward in their own pools (common operations, FIIs, day
+  trade), the 0,005 % IRRF is estimated and deducted within the year, a DARF
+  under R$ 10 rolls into the next month, and every month shows its due date
+  (last business day of the following month, bank holidays included). Mark a
+  DARF as paid and it stops counting as owed.
+- Assets abroad (yearly under Lei 14.754/2023), crypto and fixed income are
+  listed apart, never folded into the monthly figure. A worksheet to check,
+  like the IRPF page — and the AI analyst reads it too.
+
 **Fixed income & Tesouro Direto**
 - CDB/LCI/LCA/RDB positions are **accrued from the index**, not frozen at cost:
   Banco Central's CDI, Selic and IPCA series (free, no key) drive the valuation.
@@ -155,9 +176,14 @@ And the whole interface is responsive — usable from the phone on your couch
 - Cash accounts (conta remunerada) with deposits/withdrawals accrued the same way.
 
 **AI (optional, bring your own key — or your Claude subscription)**
-- **Analista IA** — chat about your portfolio or a single asset; the model sees
-  your positions and fundamentals and can search the web. Streamed answers,
-  conversations saved to their own page.
+- **Analista IA** — chat about your portfolio or a single asset. The model
+  queries your data through read-only tools — positions, the transaction
+  ledger, income received, allocation, monthly returns and announced
+  dividends — so it can answer "how much JCP did ITSA4 pay me in 2024?" with
+  the same figures the screens show, and it can search the web. Streamed
+  answers with tables and lists, conversations saved to their own page. The
+  tools work with every provider, including the Claude subscription (served to
+  Claude Code over a local, per-answer MCP endpoint).
 - **Carteira IA** — virtual wallets managed end-to-end by an AI model with
   R$ 10.000 virtuais per category: it screens candidates, justifies each pick,
   and reviews the wallet over time. Nothing touches your real portfolio.
@@ -198,9 +224,10 @@ And the whole interface is responsive — usable from the phone on your couch
   design's home; light is its own set of steps (not an inversion), stored with
   the rest of your preferences and applied before the first paint, so there is
   no flash on load. In the desktop app the native window buttons follow it too.
-- **Automações** — browser-driven collectors (B3 today, other brokers and data
-  sources as they are added) that run weekly, keep their whole run history,
-  and can be triggered or cancelled from Configurações → Automações.
+- **Automações** — collectors (B3 through the browser and Binance through its
+  API today, other brokers and data sources as they are added) that run
+  weekly, keep their whole run history, and can be triggered or cancelled from
+  Importar → Automações.
 
 ---
 
@@ -422,8 +449,11 @@ git push origin v1.0.0
 
 ```bash
 cd backend && python -m pytest -q      # SQLite, no infrastructure needed
-cd frontend && npm run typecheck       # tsc is the frontend gate
+cd frontend && npm run check          # typecheck, ESLint, Prettier check, Vitest
 ```
+
+Every push and pull request runs both through GitHub Actions
+(`.github/workflows/ci.yml`) before anything reaches a release tag.
 
 The suite covers the CSV dialect, every movement label, the full calculation
 rule set, de-duplication, statement and crypto reconciliation, the universe
@@ -469,7 +499,7 @@ valuable contributions — and usually the smallest: a classifier row plus a tes
 ```bash
 git config core.hooksPath .githooks   # once per clone: the commit-message checks
 cd backend && python -m pytest -q     # must stay green
-cd frontend && npm run typecheck      # no ESLint configured; tsc is the gate
+cd frontend && npm run check         # typecheck, lint, format check, tests
 ```
 
 ## License

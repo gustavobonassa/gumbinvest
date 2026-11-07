@@ -97,15 +97,7 @@ function useCopy() {
   };
 }
 
-function CopyButton({
-  text,
-  what,
-  label,
-}: {
-  text: string;
-  what: string;
-  label?: string;
-}) {
+function CopyButton({ text, what, label }: { text: string; what: string; label?: string }) {
   const copy = useCopy();
   return (
     <button
@@ -139,8 +131,8 @@ function Conferir({ gaps }: { gaps: IrpfGap[] }) {
   return (
     <div className="space-y-4">
       <p className="max-w-3xl text-sm text-ink-secondary">
-        O que este relatório não consegue responder sozinho. Nenhum destes itens foi preenchido
-        com um valor provável — resolva o que der antes de transcrever os outros blocos.
+        O que este relatório não consegue responder sozinho. Nenhum destes itens foi preenchido com
+        um valor provável — resolva o que der antes de transcrever os outros blocos.
       </p>
       <div className="grid gap-4 xl:grid-cols-2">
         {gaps.map((gap) => (
@@ -442,10 +434,7 @@ function Rendimentos({ report }: { report: IrpfReport }) {
                   <td className="px-2 pt-2 font-medium" colSpan={3}>
                     Total
                   </td>
-                  <td
-                    className="tnum px-2 pt-2 text-right font-medium"
-                    colSpan={showTax ? 3 : 1}
-                  >
+                  <td className="tnum px-2 pt-2 text-right font-medium" colSpan={showTax ? 3 : 1}>
                     {money(total)}
                   </td>
                 </tr>
@@ -471,9 +460,7 @@ function Vendas({ report }: { report: IrpfReport }) {
   if (!buckets.length) {
     return (
       <Card className="p-8">
-        <p className="text-center text-sm text-ink-muted">
-          Nenhuma alienação em {report.year}.
-        </p>
+        <p className="text-center text-sm text-ink-muted">Nenhuma alienação em {report.year}.</p>
       </Card>
     );
   }
@@ -602,7 +589,7 @@ export default function Irpf() {
   return (
     <div className="space-y-6">
       <header className="animate-fade-up">
-        <p className="text-sm text-ink-muted">Análises</p>
+        <p className="text-sm text-ink-muted">Impostos</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">IRPF</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
           O que declarar de cada bloco, montado a partir das suas movimentações. É uma folha de
@@ -615,8 +602,8 @@ export default function Irpf() {
       ) : !data?.year ? (
         <Card className="p-8">
           <p className="text-center text-sm text-ink-muted">
-            Ainda não há um ano fechado para declarar. Importe as movimentações e volte no ano
-            que vem.
+            Ainda não há um ano fechado para declarar. Importe as movimentações e volte no ano que
+            vem.
           </p>
         </Card>
       ) : (

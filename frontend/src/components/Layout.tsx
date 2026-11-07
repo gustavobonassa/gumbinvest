@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   BarChart3,
   Bot,
+  CalendarClock,
   Calculator,
   ChevronDown,
   Coins,
@@ -19,6 +20,7 @@ import {
   Menu,
   MessagesSquare,
   PiggyBank,
+  Receipt,
   Search,
   Settings as SettingsIcon,
   Sparkles,
@@ -31,7 +33,17 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { api } from "@/lib/api";
-import { currencyLabel, dateTime, decimal, kindLabel, money, opLabel, percent, shortDate, toneOf } from "@/lib/format";
+import {
+  currencyLabel,
+  dateTime,
+  decimal,
+  kindLabel,
+  money,
+  opLabel,
+  percent,
+  shortDate,
+  toneOf,
+} from "@/lib/format";
 import AssetChat, { AI_CHAT_SLOT_ID } from "@/components/AssetChat";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Notifications from "@/components/Notifications";
@@ -95,8 +107,17 @@ const NAV: NavEntry[] = [
   { to: "/renda-fixa", label: "Renda fixa", icon: Landmark },
   // Where all of the above comes from
   { to: "/transacoes", label: "Transações", icon: ArrowUpDown },
-  // The yearly artifact the whole ledger exists to produce.
-  { to: "/irpf", label: "IRPF", icon: FileText },
+  // What the ledger owes the Receita: the monthly DARF on sales, and the
+  // yearly declaration it all feeds. One group, so the sidebar does not grow
+  // an item per tax report.
+  {
+    label: "Impostos",
+    icon: Receipt,
+    children: [
+      { to: "/impostos", label: "DARF mensal", icon: CalendarClock },
+      { to: "/irpf", label: "IRPF", icon: FileText },
+    ],
+  },
   // Things you do
   {
     label: "IA",
@@ -133,7 +154,10 @@ const NAV_PAGES: (NavLeaf & { group?: string })[] = NAV.flatMap((entry) =>
 /** Accent- and case-blind: nobody types the cedilla into a search box, so
     "transacoes" has to find "Transações". */
 function fold(value: string) {
-  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
 }
 
 function SidebarLink({ item, nested = false }: { item: NavLeaf; nested?: boolean }) {
@@ -198,7 +222,10 @@ function SidebarGroup({ item }: { item: NavGroupEntry }) {
         {item.label}
         <ChevronDown
           size={15}
-          className={clsx("ml-auto text-ink-muted transition-transform duration-200", open && "rotate-180")}
+          className={clsx(
+            "ml-auto text-ink-muted transition-transform duration-200",
+            open && "rotate-180",
+          )}
           aria-hidden
         />
       </button>
@@ -244,7 +271,9 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
   // "mercado" should list everything filed under Mercado.
   const folded = fold(term.trim());
   const pageHits =
-    folded.length < 2 ? [] : NAV_PAGES.filter((page) => fold(`${page.group ?? ""} ${page.label}`).includes(folded));
+    folded.length < 2
+      ? []
+      : NAV_PAGES.filter((page) => fold(`${page.group ?? ""} ${page.label}`).includes(folded));
 
   useEffect(() => {
     if (!open) setTerm("");
@@ -253,7 +282,12 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm animate-fade-in">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Fechar busca" onClick={onClose} />
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        aria-label="Fechar busca"
+        onClick={onClose}
+      />
       <div
         role="dialog"
         aria-modal="true"
@@ -269,20 +303,33 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
             placeholder="Buscar ticker, empresa, movimento ou data (AAAA-MM-DD)…"
             className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
           />
-          <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-muted sm:block">ESC</kbd>
+          <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-muted sm:block">
+            ESC
+          </kbd>
         </div>
         <div className="max-h-[52vh] overflow-auto p-2">
           {term.trim().length < 2 ? (
-            <p className="px-3 py-6 text-center text-sm text-ink-muted">Digite ao menos 2 caracteres.</p>
-          ) : !pageHits.length && !data?.assets.length && !data?.transactions.length && !marketHits.length ? (
             <p className="px-3 py-6 text-center text-sm text-ink-muted">
-              {isFetching && !data ? "Buscando…" : market.isFetching ? "Buscando no mercado…" : "Nada encontrado."}
+              Digite ao menos 2 caracteres.
+            </p>
+          ) : !pageHits.length &&
+            !data?.assets.length &&
+            !data?.transactions.length &&
+            !marketHits.length ? (
+            <p className="px-3 py-6 text-center text-sm text-ink-muted">
+              {isFetching && !data
+                ? "Buscando…"
+                : market.isFetching
+                  ? "Buscando no mercado…"
+                  : "Nada encontrado."}
             </p>
           ) : (
             <>
               {pageHits.length ? (
                 <div className="mb-2">
-                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Páginas</p>
+                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                    Páginas
+                  </p>
                   {pageHits.map((page) => (
                     <button
                       key={page.to}
@@ -304,7 +351,9 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
               ) : null}
               {data?.assets.length ? (
                 <div className="mb-2">
-                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Ativos</p>
+                  <p className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                    Ativos
+                  </p>
                   {data.assets.map((asset) => (
                     <button
                       key={asset.ticker}
@@ -367,10 +416,15 @@ function SearchDialog({ open, onClose }: { open: boolean; onClose: () => void })
                       className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-surface-hover"
                     >
                       <span className="min-w-0 truncate text-sm text-ink-secondary">
-                        <span className="font-medium text-ink">{transaction.ticker}</span> · {opLabel(transaction.op_type)}
-                        <span className="ml-2 text-xs text-ink-muted">{shortDate(transaction.date)}</span>
+                        <span className="font-medium text-ink">{transaction.ticker}</span> ·{" "}
+                        {opLabel(transaction.op_type)}
+                        <span className="ml-2 text-xs text-ink-muted">
+                          {shortDate(transaction.date)}
+                        </span>
                       </span>
-                      <span className="tnum shrink-0 text-sm text-ink-secondary">{money(transaction.gross_amount)}</span>
+                      <span className="tnum shrink-0 text-sm text-ink-secondary">
+                        {money(transaction.gross_amount)}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -518,7 +572,10 @@ export default function Layout() {
                     {percent(index.change_percent, 2, true)}
                   </span>
                 )}
-                <span className="tnum font-medium text-ink" title={`Fechamento de ${shortDate(index.date)}`}>
+                <span
+                  className="tnum font-medium text-ink"
+                  title={`Fechamento de ${shortDate(index.date)}`}
+                >
                   {decimal(index.value, 0)}
                 </span>
               </span>
@@ -542,7 +599,10 @@ export default function Layout() {
                       {percent(coin.change_percent, 2, true)}
                     </span>
                   )}
-                  <span className="tnum font-medium text-ink" title={`Cotação de ${dateTime(coin.fetched_at)}`}>
+                  <span
+                    className="tnum font-medium text-ink"
+                    title={`Cotação de ${dateTime(coin.fetched_at)}`}
+                  >
                     {money(coin.price_base, { decimals: 2, market: true })}
                   </span>
                 </span>
@@ -553,7 +613,10 @@ export default function Layout() {
             .map((series) => (
               <p key={series.pair} className="mb-2 flex items-baseline justify-between gap-2">
                 <span className="text-ink-secondary">{currencyLabel(series.base)}</span>
-                <span className="tnum font-medium text-ink" title={`PTAX de ${shortDate(series.end)}`}>
+                <span
+                  className="tnum font-medium text-ink"
+                  title={`PTAX de ${shortDate(series.end)}`}
+                >
                   {/* A rate, like the index level above it: public, so it stays. */}
                   {money(series.rate, { decimals: 4, market: true })}
                 </span>
@@ -603,7 +666,9 @@ export default function Layout() {
           >
             <Search size={16} aria-hidden />
             <span className="flex-1 text-left">Buscar…</span>
-            <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] sm:block">Ctrl K</kbd>
+            <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] sm:block">
+              Ctrl K
+            </kbd>
           </button>
 
           <div className="ml-auto flex items-center gap-2">

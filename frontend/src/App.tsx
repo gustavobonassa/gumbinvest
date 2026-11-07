@@ -22,6 +22,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Dividends = lazy(() => import("@/pages/Dividends"));
 const FixedIncome = lazy(() => import("@/pages/FixedIncome"));
 const ImportPage = lazy(() => import("@/pages/ImportPage"));
+const Impostos = lazy(() => import("@/pages/Impostos"));
 const Irpf = lazy(() => import("@/pages/Irpf"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Settings = lazy(() => import("@/pages/Settings"));
@@ -30,7 +31,11 @@ const Transactions = lazy(() => import("@/pages/Transactions"));
 
 export default function App() {
   // Apply the stored locale/currency/theme once, then let pages render.
-  const { data } = useQuery({ queryKey: ["settings"], queryFn: api.settings, staleTime: 5 * 60_000 });
+  const { data } = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings,
+    staleTime: 5 * 60_000,
+  });
   const theme = useTheme();
   // Subscribed, not read: privacy mode masks values inside the formatters, so
   // what makes the app follow the switch is this component re-rendering. It
@@ -39,7 +44,10 @@ export default function App() {
 
   useEffect(() => {
     if (!data) return;
-    configureFormatting(String(data.values.number_format ?? "pt-BR"), String(data.values.currency ?? "BRL"));
+    configureFormatting(
+      String(data.values.number_format ?? "pt-BR"),
+      String(data.values.currency ?? "BRL"),
+    );
     // The pre-paint script already applied the mirrored choice; this is the
     // stored preference having the final word, and a no-op when they agree.
     applyTheme(isTheme(data.values.theme) ? data.values.theme : "dark");
@@ -61,6 +69,7 @@ export default function App() {
         <Route path="transacoes" element={<Transactions />} />
         <Route path="rentabilidade" element={<Reports />} />
         <Route path="irpf" element={<Irpf />} />
+        <Route path="impostos" element={<Impostos />} />
         {/* The page was /relatorios until 2026-08; old bookmarks keep working. */}
         <Route path="relatorios" element={<Navigate to="/rentabilidade" replace />} />
         <Route path="calculadora" element={<Calculadora />} />
@@ -72,7 +81,7 @@ export default function App() {
         <Route path="importar" element={<ImportPage />} />
         <Route path="configuracoes" element={<Settings />} />
         <Route path="universo" element={<Universo />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );

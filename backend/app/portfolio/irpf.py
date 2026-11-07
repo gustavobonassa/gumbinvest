@@ -32,7 +32,6 @@ from app.core.dates import local_today
 from app.core.logging import get_logger
 from app.db.models import Asset, AssetUniverse, Transaction
 from app.domain.enums import AssetKind, OperationType, PositionEffect
-from app.portfolio.engine import build_timeline
 
 logger = get_logger(__name__)
 
@@ -241,7 +240,7 @@ def worksheet(service, year: int) -> dict:
     assets = service.assets()
     registry = _registry_cnpjs(service)
     table = codes_for(year)
-    timeline = build_timeline(service.base_movements(), service.successions())
+    timeline = service.timeline()
 
     closing = date(year, 12, 31)
     opening = date(year - 1, 12, 31)

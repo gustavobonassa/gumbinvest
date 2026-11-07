@@ -22,6 +22,7 @@ from app.portfolio.engine import (
     Movement,
     Position,
     Succession,
+    TimelinePoint,
     build_positions,
     build_timeline,
 )
@@ -41,11 +42,25 @@ logger = get_logger(__name__)
 _REPLAY_CACHE: dict[int, tuple[str, dict[str, object]]] = {}
 _REPLAY_LOCK = threading.Lock()
 
+#: The two other reads every chart paid for on every request, kept across
+#: requests the same way. Each is keyed by aggregates over exactly the rows it
+#: was built from, so a change to any of them — a new close, a close corrected
+#: in place (the upsert keeps count and dates, hence the sums), a rewritten
+#: chain (new row ids) — is a different key and a fresh read. Read-only for
+#: consumers, like the replay products above.
+#:
+#: ``_PRICE_CACHE``: portfolio id -> (key, closes per asset as stored).
+#: ``_CHAIN_CACHE``: portfolio id -> (key, the stored daily chain, decoded).
+_PRICE_CACHE: dict[int, tuple[tuple, dict[int, list[tuple[date, Decimal]]]]] = {}
+_CHAIN_CACHE: dict[int, tuple[tuple, list[dict]]] = {}
+
 
 def clear_replay_cache() -> None:
     """Drop every cached replay (tests; import paths rely on the fingerprint)."""
     with _REPLAY_LOCK:
         _REPLAY_CACHE.clear()
+        _PRICE_CACHE.clear()
+        _CHAIN_CACHE.clear()
 
 
 INCOME_TYPE_VALUES = {t.value for t in INCOME_TYPES}
@@ -526,6 +541,7 @@ class PortfolioService:
         self._share_splits: dict[int, list[tuple[date, Decimal]]] | None = None
         self._rejected_splits: dict[tuple[int, date], str] | None = None
         self._raw_prices: dict[int, list[tuple[date, Decimal]]] | None = None
+        self._timeline: list[TimelinePoint] | None = None
         self._replay_fp: str | None = None
 
     # -- currency ----------------------------------------------------------
@@ -708,6 +724,20 @@ class PortfolioService:
                 lambda: build_positions(self.base_movements(), self.successions()),
             )
         return self._base_positions
+
+    def timeline(self) -> list[TimelinePoint]:
+        """Cumulative base-currency state after each movement day.
+
+        A pure product of the base movements and successions, so it is shared
+        across requests under the same fingerprint as they are — the value
+        chart, the rentabilidade chain, the performers window and the IRPF page
+        each used to replay the whole ledger into it again. Read-only.
+        """
+        if self._timeline is None:
+            self._timeline = self._shared(
+                "timeline", lambda: build_timeline(self.base_movements(), self.successions())
+            )
+        return self._timeline
 
     def assets(self) -> dict[int, Asset]:
         if self._assets is None:
@@ -1010,7 +1040,7 @@ class PortfolioService:
         *that day's* rate, so the curve shows the currency swing as it happened
         rather than restating history at today's rate.
         """
-        timeline = build_timeline(self.base_movements(), self.successions())
+        timeline = self.timeline()
         if not timeline:
             return []
 
@@ -1100,16 +1130,43 @@ class PortfolioService:
         # benchmarks and other portfolios' assets, and callers never look
         # those up here.
         if self._raw_prices is None:
-            held = list(self.positions().keys())
-            rows = self.db.execute(
-                select(PriceHistory.asset_id, PriceHistory.date, PriceHistory.close)
-                .where(PriceHistory.asset_id.in_(held))
-                .order_by(PriceHistory.asset_id, PriceHistory.date)
-            ).all()
-            matrix: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
-            for asset_id, day, close in rows:
-                matrix[asset_id].append((day, d(close)))
-            self._raw_prices = matrix
+            held = sorted(self.positions().keys())
+            # Reading and converting every close was the single largest cost of
+            # each chart request. The key aggregates exactly the rows read: the
+            # sums catch a close corrected in place, which an upsert does
+            # without changing the row count, the ids or the dates.
+            scope = PriceHistory.asset_id.in_(held)
+            key = (
+                tuple(held),
+                *self.db.execute(
+                    select(
+                        func.count(PriceHistory.id),
+                        func.max(PriceHistory.id),
+                        func.max(PriceHistory.date),
+                        func.sum(PriceHistory.close),
+                        func.sum(PriceHistory.close * PriceHistory.id),
+                    ).where(scope)
+                ).one(),
+            )
+            with _REPLAY_LOCK:
+                cached = _PRICE_CACHE.get(self.portfolio_id)
+            if cached is not None and cached[0] == key:
+                matrix = cached[1]
+            else:
+                rows = self.db.execute(
+                    select(PriceHistory.asset_id, PriceHistory.date, PriceHistory.close)
+                    .where(scope)
+                    .order_by(PriceHistory.asset_id, PriceHistory.date)
+                ).all()
+                matrix = defaultdict(list)
+                for asset_id, day, close in rows:
+                    matrix[asset_id].append((day, d(close)))
+                matrix = dict(matrix)
+                with _REPLAY_LOCK:
+                    _PRICE_CACHE[self.portfolio_id] = (key, matrix)
+            # A per-request outer dict over shared, read-only series: callers
+            # look up missing assets with .get() and never write a series.
+            self._raw_prices = defaultdict(list, matrix)
         return self._raw_prices
 
     def _price_matrix(self) -> dict[int, list[tuple[date, Decimal]]]:
@@ -1976,7 +2033,7 @@ class PortfolioService:
         move plus anything it paid. See :meth:`_period_return` for why nothing
         that arrived or left that day may appear in it.
         """
-        timeline = build_timeline(self.base_movements(), self.successions())
+        timeline = self.timeline()
         if not timeline:
             return []
 
@@ -2214,17 +2271,43 @@ class PortfolioService:
         reaches today. Anything else and the caller recomputes.
         """
         fingerprint = self.ledger_fingerprint()
+        scope = (
+            PortfolioSnapshot.portfolio_id == self.portfolio_id,
+            PortfolioSnapshot.fingerprint == fingerprint,
+        )
+        # Decoding a few thousand rows (and a JSON column on each) cost every
+        # rentabilidade request more than the arithmetic on them. A chain can
+        # be re-materialised under the same fingerprint with different figures
+        # (the fingerprint covers the ledger, not today's quote), and SQLite
+        # hands the same ids back once the table was emptied — so the key sums
+        # the figures themselves, and _store_chain also drops this process's
+        # copy outright.
+        aggregates = self.db.execute(
+            select(
+                func.count(PortfolioSnapshot.id),
+                func.max(PortfolioSnapshot.id),
+                func.max(PortfolioSnapshot.date),
+                func.sum(PortfolioSnapshot.market_value),
+                func.sum(PortfolioSnapshot.return_factor),
+                func.sum(PortfolioSnapshot.unrealized),
+                func.sum(PortfolioSnapshot.priced_value),
+                func.sum(PortfolioSnapshot.flow),
+            ).where(*scope)
+        ).one()
+        count, last_date = aggregates[0], aggregates[2]
+        if not count or last_date < local_today():
+            return None
+        cache_key = (fingerprint, *aggregates)
+        with _REPLAY_LOCK:
+            cached = _CHAIN_CACHE.get(self.portfolio_id)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
         rows = self.db.execute(
-            select(PortfolioSnapshot)
-            .where(
-                PortfolioSnapshot.portfolio_id == self.portfolio_id,
-                PortfolioSnapshot.fingerprint == fingerprint,
-            )
-            .order_by(PortfolioSnapshot.date)
+            select(PortfolioSnapshot).where(*scope).order_by(PortfolioSnapshot.date)
         ).scalars().all()
         if not rows or rows[-1].date < local_today():
             return None
-        return [
+        decoded = [
             {
                 "date": row.date,
                 "market_value": d(row.market_value),
@@ -2245,6 +2328,9 @@ class PortfolioService:
             }
             for row in rows
         ]
+        with _REPLAY_LOCK:
+            _CHAIN_CACHE[self.portfolio_id] = (cache_key, decoded)
+        return decoded
 
     def chain(self) -> list[dict]:
         """The daily chain, materialising it first if the stored one is stale."""
@@ -2261,6 +2347,8 @@ class PortfolioService:
         return rows
 
     def _store_chain(self, rows: list[dict]) -> None:
+        with _REPLAY_LOCK:
+            _CHAIN_CACHE.pop(self.portfolio_id, None)
         fingerprint = self.ledger_fingerprint()
         self.db.query(PortfolioSnapshot).filter(
             PortfolioSnapshot.portfolio_id == self.portfolio_id
@@ -2534,7 +2622,7 @@ class PortfolioService:
         elif window in WINDOW_DAYS:
             end = local_today()
             begin = end - timedelta(days=WINDOW_DAYS[window])
-            timeline = build_timeline(self.base_movements(), self.successions())
+            timeline = self.timeline()
             prices, latest, currencies, _ = self._market_context()
             before = self._asset_state_on(timeline, begin, prices, latest, currencies)
 

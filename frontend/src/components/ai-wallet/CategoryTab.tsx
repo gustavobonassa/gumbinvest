@@ -102,7 +102,8 @@ export default function CategoryTab({
   const skipped = (job?.result as { skipped?: SkippedItem[] } | null)?.skipped ?? [];
   const deferred = (job?.result as { pending?: SkippedItem[] } | null)?.pending ?? [];
   const startError =
-    start.isError && (start.error instanceof ApiError ? start.error.message : "Não foi possível iniciar.");
+    start.isError &&
+    (start.error instanceof ApiError ? start.error.message : "Não foi possível iniciar.");
 
   const jobNotice = (
     <>
@@ -110,21 +111,25 @@ export default function CategoryTab({
         <p className="mt-3 flex items-center gap-2 text-sm text-ink-secondary">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
           {job.status}
-          <span className="text-xs text-ink-muted">: pode levar alguns minutos; você pode navegar à vontade.</span>
+          <span className="text-xs text-ink-muted">
+            : pode levar alguns minutos; você pode navegar à vontade.
+          </span>
         </p>
       ) : null}
       {!running && job?.error ? <p className="mt-3 text-sm text-negative">{job.error}</p> : null}
       {startError ? <p className="mt-3 text-sm text-negative">{startError}</p> : null}
       {!running && deferred.length ? (
         <p className="mt-3 text-xs text-accent">
-          Aguardando cotação para comprar: {deferred.map((item) => item.ticker).join(", ")}. O
-          valor ficou reservado e a compra conclui sozinha quando o preço chegar.
+          Aguardando cotação para comprar: {deferred.map((item) => item.ticker).join(", ")}. O valor
+          ficou reservado e a compra conclui sozinha quando o preço chegar.
         </p>
       ) : null}
       {!running && skipped.length ? (
         <p className="mt-3 text-xs text-warning">
           Não reconhecidos pelo mercado:{" "}
-          {skipped.map((item) => `${item.ticker ?? "?"} (${item.reason ?? "rejeitado"})`).join(", ")}
+          {skipped
+            .map((item) => `${item.ticker ?? "?"} (${item.reason ?? "rejeitado"})`)
+            .join(", ")}
         </p>
       ) : null}
     </>
@@ -139,9 +144,9 @@ export default function CategoryTab({
               Gerar carteira de {block.label}
             </h2>
             <p className="mt-1 text-sm text-ink-secondary">
-              {wallet.provider_label} · {wallet.model} recebe R$ 10.000 virtuais e monta a
-              alocação desta categoria: os candidatos do modelo são verificados com preços e
-              fundamentos reais antes da decisão final.
+              {wallet.provider_label} · {wallet.model} recebe R$ 10.000 virtuais e monta a alocação
+              desta categoria: os candidatos do modelo são verificados com preços e fundamentos
+              reais antes da decisão final.
             </p>
             {!wallet.web_search ? (
               <p className="mt-2">
@@ -175,7 +180,11 @@ export default function CategoryTab({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatTile label={`Valor em ${block.label}`} value={<span className="tnum">{money(value)}</span>} hint={`orçamento ${money(invested)}`} />
+        <StatTile
+          label={`Valor em ${block.label}`}
+          value={<span className="tnum">{money(value)}</span>}
+          hint={`orçamento ${money(invested)}`}
+        />
         <StatTile
           label="Resultado da categoria"
           value={<span className="tnum">{money(result)}</span>}
@@ -276,7 +285,9 @@ function PositionRows({
             <span className="font-medium text-ink">{position.ticker}</span>
           ) : (
             <Link to={`/ativos/${encodeURIComponent(position.ticker)}`} className="group">
-              <span className="font-medium text-ink group-hover:text-accent">{position.ticker}</span>
+              <span className="font-medium text-ink group-hover:text-accent">
+                {position.ticker}
+              </span>
             </Link>
           )}
           <span className="mt-0.5 block max-w-[220px] truncate text-xs text-ink-muted">
@@ -284,12 +295,16 @@ function PositionRows({
           </span>
         </td>
         <td className="tnum px-3 py-3 text-right">
-          {position.is_fixed_income || position.quantity <= 0 ? "-" : formatQuantity(position.quantity)}
+          {position.is_fixed_income || position.quantity <= 0
+            ? "-"
+            : formatQuantity(position.quantity)}
         </td>
         <td className="tnum px-3 py-3 text-right">
           {position.is_fixed_income || position.quantity <= 0
             ? "-"
-            : money(position.avg_price, { currency: position.currency !== "BRL" ? position.currency : undefined })}
+            : money(position.avg_price, {
+                currency: position.currency !== "BRL" ? position.currency : undefined,
+              })}
         </td>
         <td className="tnum px-3 py-3 text-right">{money(position.cost_brl)}</td>
         <td className="tnum px-3 py-3 text-right">
@@ -301,10 +316,23 @@ function PositionRows({
           ) : null}
         </td>
         <td className="px-3 py-3 text-right">
-          <span className={clsx("tnum block font-medium", tone === "positive" && "text-positive", tone === "negative" && "text-negative")}>
+          <span
+            className={clsx(
+              "tnum block font-medium",
+              tone === "positive" && "text-positive",
+              tone === "negative" && "text-negative",
+            )}
+          >
             {money(position.pnl_brl)}
           </span>
-          <span className={clsx("tnum text-xs", tone === "positive" && "text-positive", tone === "negative" && "text-negative", tone === "neutral" && "text-ink-muted")}>
+          <span
+            className={clsx(
+              "tnum text-xs",
+              tone === "positive" && "text-positive",
+              tone === "negative" && "text-negative",
+              tone === "neutral" && "text-ink-muted",
+            )}
+          >
             {percent(position.pnl_pct, 2, true)}
           </span>
         </td>

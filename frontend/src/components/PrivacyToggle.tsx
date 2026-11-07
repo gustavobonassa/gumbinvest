@@ -26,7 +26,10 @@ export default function PrivacyToggle() {
     mutationFn: (next: boolean) => api.updateSettings({ hide_values: next }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
     onError: (error) =>
-      toast.error("Os valores foram ocultados só nesta sessão: não deu para salvar a preferência.", error),
+      toast.error(
+        "Os valores foram ocultados só nesta sessão: não deu para salvar a preferência.",
+        error,
+      ),
   });
 
   const toggle = () => {

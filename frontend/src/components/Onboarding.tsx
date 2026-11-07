@@ -85,15 +85,10 @@ const IMPORT_OPTIONS: {
   },
 ];
 
-const FILE_STEP_COPY: Record<
-  Exclude<ImportChoice, "b3-auto">,
-  { hint: string; accept: string }
-> = {
+const FILE_STEP_COPY: Record<Exclude<ImportChoice, "b3-auto">, { hint: string; accept: string }> = {
   "b3-file": {
-    hint:
-      "Na Área do Investidor da B3: Extratos → Movimentação → filtre o período e use \"Extrair dados\". Pode enviar vários arquivos de uma vez.",
-    accept:
-      ".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    hint: 'Na Área do Investidor da B3: Extratos → Movimentação → filtre o período e use "Extrair dados". Pode enviar vários arquivos de uma vez.',
+    accept: ".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   },
   avenue: {
     hint: "No site ou app da Avenue, baixe os extratos mensais em PDF. Pode enviar vários meses de uma vez.",
@@ -228,7 +223,11 @@ function B3PipelineStep() {
               onChange={(event) => setCode(event.target.value)}
               placeholder="000000"
             />
-            <button type="submit" className="btn-primary" disabled={!code.trim() || answer.isPending}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!code.trim() || answer.isPending}
+            >
               {answer.isPending ? "Enviando…" : "Enviar"}
             </button>
           </div>
@@ -280,7 +279,11 @@ function FileImportStep({ choice }: { choice: Exclude<ImportChoice, "b3-auto"> }
     onError: (error, file) =>
       setResults((prev) => [
         ...prev,
-        { name: file.name, ok: false, detail: error instanceof Error ? error.message : "erro desconhecido" },
+        {
+          name: file.name,
+          ok: false,
+          detail: error instanceof Error ? error.message : "erro desconhecido",
+        },
       ]),
   });
 
@@ -316,10 +319,16 @@ function FileImportStep({ choice }: { choice: Exclude<ImportChoice, "b3-auto"> }
         )}
       >
         <span className="grid h-12 w-12 place-items-center rounded-2xl bg-surface-raised text-accent">
-          {upload.isPending ? <Loader2 size={22} className="animate-spin" /> : <CloudUpload size={22} />}
+          {upload.isPending ? (
+            <Loader2 size={22} className="animate-spin" />
+          ) : (
+            <CloudUpload size={22} />
+          )}
         </span>
         <p className="text-sm font-medium">
-          {upload.isPending ? "Processando arquivo…" : "Arraste os arquivos aqui ou clique para selecionar"}
+          {upload.isPending
+            ? "Processando arquivo…"
+            : "Arraste os arquivos aqui ou clique para selecionar"}
         </p>
         <button
           type="button"
@@ -360,8 +369,8 @@ function FileImportStep({ choice }: { choice: Exclude<ImportChoice, "b3-auto"> }
       ) : null}
 
       <p className="text-xs text-ink-muted">
-        {copy.hint} Reenviar um arquivo nunca duplica nada — movimentos já importados são
-        ignorados automaticamente.
+        {copy.hint} Reenviar um arquivo nunca duplica nada — movimentos já importados são ignorados
+        automaticamente.
       </p>
     </div>
   );
@@ -371,11 +380,19 @@ export default function Onboarding() {
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: api.settings, staleTime: 5 * 60_000 });
+  const settingsQ = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings,
+    staleTime: 5 * 60_000,
+  });
   const completed = settingsQ.data ? settingsQ.data.values.onboarding_completed === true : null;
   // Only a maybe-fresh install pays for the overview call; a configured one
   // renders nothing without ever asking.
-  const overviewQ = useQuery({ queryKey: ["overview"], queryFn: api.overview, enabled: completed === false });
+  const overviewQ = useQuery({
+    queryKey: ["overview"],
+    queryFn: api.overview,
+    enabled: completed === false,
+  });
 
   // The decision to show is taken once, when the queries first land: the
   // wizard's own imports make `assets_tracked` move mid-flow, and that must
@@ -545,7 +562,9 @@ export default function Onboarding() {
                         <span
                           className={clsx(
                             "grid h-9 w-9 place-items-center rounded-xl",
-                            selected ? "bg-accent-soft text-accent" : "bg-surface-raised text-ink-secondary",
+                            selected
+                              ? "bg-accent-soft text-accent"
+                              : "bg-surface-raised text-ink-secondary",
                           )}
                         >
                           <option.icon size={18} />
@@ -588,7 +607,8 @@ export default function Onboarding() {
                 <div className="mx-auto mt-8 max-w-lg space-y-6 text-left">
                   <div>
                     <p className="mb-2 text-sm font-medium text-ink-secondary">
-                      O que você busca? <span className="text-xs text-ink-muted">(quantos quiser)</span>
+                      O que você busca?{" "}
+                      <span className="text-xs text-ink-muted">(quantos quiser)</span>
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {GOAL_OPTIONS.map((goal) => (
@@ -597,7 +617,9 @@ export default function Onboarding() {
                           selected={goals.includes(goal)}
                           onClick={() =>
                             setGoals((prev) =>
-                              prev.includes(goal) ? prev.filter((item) => item !== goal) : [...prev, goal],
+                              prev.includes(goal)
+                                ? prev.filter((item) => item !== goal)
+                                : [...prev, goal],
                             )
                           }
                         >
@@ -607,7 +629,9 @@ export default function Onboarding() {
                     </div>
                   </div>
                   <div>
-                    <p className="mb-2 text-sm font-medium text-ink-secondary">Horizonte de investimento</p>
+                    <p className="mb-2 text-sm font-medium text-ink-secondary">
+                      Horizonte de investimento
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       {HORIZON_OPTIONS.map((option) => (
                         <Chip
@@ -667,8 +691,8 @@ export default function Onboarding() {
                   <li className="flex items-start gap-2.5">
                     <Workflow size={16} className="mt-0.5 shrink-0 text-accent" />
                     <span>
-                      <span className="font-medium text-ink">Importar → Automações</span> — a
-                      coleta automática da B3 e suas credenciais; seu nome e objetivos ficam em
+                      <span className="font-medium text-ink">Importar → Automações</span> — a coleta
+                      automática da B3 e suas credenciais; seu nome e objetivos ficam em
                       Configurações → Geral.
                     </span>
                   </li>

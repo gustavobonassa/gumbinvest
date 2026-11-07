@@ -66,7 +66,9 @@ export default function AiChats() {
                 // Asset chats reopen on their asset's page; portfolio chats
                 // reopen on the dashboard — the panel exists on every page.
                 onClick={() =>
-                  navigate(chat.ticker ? `/ativos/${chat.ticker}?chat=${chat.id}` : `/?chat=${chat.id}`)
+                  navigate(
+                    chat.ticker ? `/ativos/${chat.ticker}?chat=${chat.id}` : `/?chat=${chat.id}`,
+                  )
                 }
                 className="flex min-w-0 flex-1 items-center gap-4 text-left"
               >

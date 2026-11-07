@@ -8,7 +8,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { ChartFrame, ReturnLinesChart, type ReturnPoint, type ReturnSeries } from "@/components/charts";
+import {
+  ChartFrame,
+  ReturnLinesChart,
+  type ReturnPoint,
+  type ReturnSeries,
+} from "@/components/charts";
 import { Segmented, StatTile } from "@/components/ui";
 import type { AiWalletDetail, AiWalletRange } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -51,8 +56,16 @@ export default function OverviewTab({ wallet }: { wallet: AiWalletDetail }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Valor da carteira" value={<span className="tnum">{money(totals.value)}</span>} hint={`caixa ${money(totals.cash)}`} />
-        <StatTile label="Investido (virtual)" value={<span className="tnum">{money(totals.invested)}</span>} hint="R$ 10.000 por categoria gerada" />
+        <StatTile
+          label="Valor da carteira"
+          value={<span className="tnum">{money(totals.value)}</span>}
+          hint={`caixa ${money(totals.cash)}`}
+        />
+        <StatTile
+          label="Investido (virtual)"
+          value={<span className="tnum">{money(totals.invested)}</span>}
+          hint="R$ 10.000 por categoria gerada"
+        />
         <StatTile
           label="Resultado"
           value={<span className="tnum">{money(result)}</span>}
@@ -60,9 +73,21 @@ export default function OverviewTab({ wallet }: { wallet: AiWalletDetail }) {
         />
         <StatTile
           label="Retorno"
-          value={<span className="tnum">{totals.return_pct === null ? "-" : percent(totals.return_pct, 2, true)}</span>}
-          tone={(totals.return_pct ?? 0) > 0 ? "positive" : (totals.return_pct ?? 0) < 0 ? "negative" : "neutral"}
-          hint={totals.unpriced.length ? `${totals.unpriced.length} sem cotação (ao custo)` : undefined}
+          value={
+            <span className="tnum">
+              {totals.return_pct === null ? "-" : percent(totals.return_pct, 2, true)}
+            </span>
+          }
+          tone={
+            (totals.return_pct ?? 0) > 0
+              ? "positive"
+              : (totals.return_pct ?? 0) < 0
+                ? "negative"
+                : "neutral"
+          }
+          hint={
+            totals.unpriced.length ? `${totals.unpriced.length} sem cotação (ao custo)` : undefined
+          }
         />
       </div>
 

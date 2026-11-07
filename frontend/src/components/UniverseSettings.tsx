@@ -44,9 +44,13 @@ export default function UniverseSettings() {
   const status = statusQ.data;
   const running = Boolean(status?.active);
 
+  // Keyed by content, not identity: every 2 s poll brings a fresh array, and
+  // resetting the checkboxes on each one would undo the user's clicks.
+  const marketsKey = status?.settings?.markets?.join(",");
   useEffect(() => {
     if (status?.settings?.markets?.length) setMarkets(status.settings.markets);
-  }, [status?.settings?.markets?.join(",")]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marketsKey]);
   useEffect(() => {
     if (status?.settings?.sec_user_agent) setSecAgent(status.settings.sec_user_agent);
   }, [status?.settings?.sec_user_agent]);
@@ -139,13 +143,11 @@ export default function UniverseSettings() {
                 />
               </label>
               <p className="mt-2 text-xs text-ink-muted">
-                A SEC recusa (403) qualquer requisição sem um e-mail de contato na identificação
-                do cliente.
-                Se preferir não informar nenhum, desmarque o mercado EUA — todo o resto do
+                A SEC recusa (403) qualquer requisição sem um e-mail de contato na identificação do
+                cliente. Se preferir não informar nenhum, desmarque o mercado EUA — todo o resto do
                 universo vem da B3 e da CVM, que publicam os arquivos abertamente e não pedem
                 identificação.
               </p>
-
             </div>
           ) : null}
 

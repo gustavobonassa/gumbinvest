@@ -26,7 +26,16 @@ import CorporateActions from "@/components/CorporateActions";
 import UpdateCard from "@/components/UpdateCard";
 import SecretField from "@/components/SecretField";
 import { useToast } from "@/components/Toast";
-import { Badge, Card, ErrorState, SectionTitle, Segmented, Select, Skeleton, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  ErrorState,
+  SectionTitle,
+  Segmented,
+  Select,
+  Skeleton,
+  Tabs,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { configureFormatting, dateTime, money, percent } from "@/lib/format";
 import { applyValuesHidden, useValuesHidden } from "@/lib/privacy";
@@ -61,7 +70,11 @@ type TabValue = (typeof TABS)[number]["value"] | typeof DEV_TAB.value;
 
 /** Links and bookmarks pointing at an old, since-merged-or-removed tab still
     have to land somewhere sensible. */
-const LEGACY_TABS: Record<string, TabValue> = { dados: "eventos", sistema: "geral", watchlist: "geral" };
+const LEGACY_TABS: Record<string, TabValue> = {
+  dados: "eventos",
+  sistema: "geral",
+  watchlist: "geral",
+};
 
 const CURRENCIES = ["BRL", "USD", "EUR"];
 const TIMEZONES = ["America/Sao_Paulo", "America/New_York", "Europe/Lisbon", "UTC"];
@@ -97,16 +110,11 @@ function NotificationSettings({
   // Anything that is not a list means the setting was never written, which is
   // the same as muting nothing.
   const silenced = new Set(Array.isArray(muted) ? muted.map(String) : []);
-  const selected = new Set(
-    catalog.map((item) => item.kind).filter((kind) => !silenced.has(kind)),
-  );
+  const selected = new Set(catalog.map((item) => item.kind).filter((kind) => !silenced.has(kind)));
 
   return (
     <Card className="p-5">
-      <SectionTitle
-        title="Notificações"
-        subtitle="O que aparece no sino, no topo da página"
-      />
+      <SectionTitle title="Notificações" subtitle="O que aparece no sino, no topo da página" />
       <div className="space-y-3">
         {catalog.map((item) => (
           <label key={item.kind} className="flex cursor-pointer items-start gap-3">
@@ -131,8 +139,8 @@ function NotificationSettings({
         ))}
       </div>
       <p className="mt-4 text-xs text-ink-muted">
-        Desmarcar apenas esconde: as notificações continuam sendo registradas, então marcar de
-        volta traz também o que aconteceu enquanto estavam desligadas.
+        Desmarcar apenas esconde: as notificações continuam sendo registradas, então marcar de volta
+        traz também o que aconteceu enquanto estavam desligadas.
       </p>
     </Card>
   );
@@ -199,7 +207,10 @@ export default function Settings() {
   const save = useMutation({
     mutationFn: (next: Record<string, unknown>) => api.updateSettings(next),
     onSuccess: (data) => {
-      configureFormatting(String(data.values.number_format ?? "pt-BR"), String(data.values.currency ?? "BRL"));
+      configureFormatting(
+        String(data.values.number_format ?? "pt-BR"),
+        String(data.values.currency ?? "BRL"),
+      );
       queryClient.invalidateQueries({ queryKey: ["settings"] });
       toast.success("Preferências salvas.");
     },
@@ -232,7 +243,8 @@ export default function Settings() {
   // Automações moved to the Importar screen (all data-in on one page); keep old
   // links and bookmarks working.
   if (requested === "automacoes") return <Navigate to="/importar?aba=automacoes" replace />;
-  if (settings.isError) return <ErrorState error={settings.error} retry={() => settings.refetch()} />;
+  if (settings.isError)
+    return <ErrorState error={settings.error} retry={() => settings.refetch()} />;
   if (settings.isLoading || !settings.data) return <Skeleton className="h-80 w-full" />;
 
   // Preferences save on change, not through a separate button: a dropdown is
@@ -257,133 +269,146 @@ export default function Settings() {
         value={tab}
         onChange={setTab}
         options={tabs.map((option) =>
-          option.value === "qualidade" ? { ...option, count: warnings.data?.length } : { ...option },
+          option.value === "qualidade"
+            ? { ...option, count: warnings.data?.length }
+            : { ...option },
         )}
       />
 
       {tab === "geral" ? (
         <>
-        <Card className="p-5">
-          <SectionTitle title="Preferências" subtitle="Tema, moeda, fuso horário e formatação numérica" />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Tema</span>
-              {/* Applied before it is saved: the whole point of a theme is that
+          <Card className="p-5">
+            <SectionTitle
+              title="Preferências"
+              subtitle="Tema, moeda, fuso horário e formatação numérica"
+            />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">Tema</span>
+                {/* Applied before it is saved: the whole point of a theme is that
                   you see it, and waiting for the round trip to repaint reads as
                   a stuck control. The save then persists it for the next load —
                   and if it fails, the toast says so while the app stays in the
                   theme you picked. */}
-              <Segmented<Theme>
-                value={theme}
-                onChange={(next) => {
-                  applyTheme(next);
-                  updatePreference("theme", next);
-                }}
-                options={[
-                  { value: "dark", label: THEME_LABELS.dark },
-                  { value: "light", label: THEME_LABELS.light },
-                ]}
-              />
-            </div>
-            <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Moeda</span>
-              <Select
-                ariaLabel="Moeda"
-                value={String(values.currency ?? "BRL")}
-                onChange={(next) => updatePreference("currency", next)}
-                options={CURRENCIES.map((item) => ({ value: item, label: item }))}
-              />
-            </div>
-            <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Fuso horário</span>
-              <Select
-                ariaLabel="Fuso horário"
-                value={String(values.timezone ?? "America/Sao_Paulo")}
-                onChange={(next) => updatePreference("timezone", next)}
-                options={TIMEZONES.map((item) => ({ value: item, label: item }))}
-              />
-            </div>
-            <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Formato numérico</span>
-              <Select
-                ariaLabel="Formato numérico"
-                value={String(values.number_format ?? "pt-BR")}
-                onChange={(next) => updatePreference("number_format", next)}
-                options={LOCALES.map((item) => ({ value: item, label: item }))}
-              />
-            </div>
-            <div>
-              <span className="mb-1.5 block text-xs font-medium text-ink-muted">Valores</span>
-              {/* The same switch as the eye in the top bar, which is where it
+                <Segmented<Theme>
+                  value={theme}
+                  onChange={(next) => {
+                    applyTheme(next);
+                    updatePreference("theme", next);
+                  }}
+                  options={[
+                    { value: "dark", label: THEME_LABELS.dark },
+                    { value: "light", label: THEME_LABELS.light },
+                  ]}
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">Moeda</span>
+                <Select
+                  ariaLabel="Moeda"
+                  value={String(values.currency ?? "BRL")}
+                  onChange={(next) => updatePreference("currency", next)}
+                  options={CURRENCIES.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+                  Fuso horário
+                </span>
+                <Select
+                  ariaLabel="Fuso horário"
+                  value={String(values.timezone ?? "America/Sao_Paulo")}
+                  onChange={(next) => updatePreference("timezone", next)}
+                  options={TIMEZONES.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+                  Formato numérico
+                </span>
+                <Select
+                  ariaLabel="Formato numérico"
+                  value={String(values.number_format ?? "pt-BR")}
+                  onChange={(next) => updatePreference("number_format", next)}
+                  options={LOCALES.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-ink-muted">Valores</span>
+                {/* The same switch as the eye in the top bar, which is where it
                   is actually used — this one exists so the preference is
                   findable, and so its effect has a name. */}
-              <Segmented<"on" | "off">
-                value={hidden ? "off" : "on"}
-                onChange={(next) => {
-                  applyValuesHidden(next === "off");
-                  updatePreference("hide_values", next === "off");
-                }}
-                options={[
-                  { value: "on", label: "Visíveis" },
-                  { value: "off", label: "Ocultos" },
-                ]}
+                <Segmented<"on" | "off">
+                  value={hidden ? "off" : "on"}
+                  onChange={(next) => {
+                    applyValuesHidden(next === "off");
+                    updatePreference("hide_values", next === "off");
+                  }}
+                  options={[
+                    { value: "on", label: "Visíveis" },
+                    { value: "off", label: "Ocultos" },
+                  ]}
+                />
+              </div>
+            </div>
+            <p className="mt-3 text-xs text-ink-muted">
+              Ocultar troca todo valor e quantidade por <span className="tnum">••••</span> — em
+              tabelas, cartões e nos eixos dos gráficos. Percentuais, datas e indicadores continuam
+              à vista, para a tela seguir servindo para alguma coisa enquanto alguém olha por cima
+              do seu ombro.
+            </p>
+          </Card>
+
+          <InvestorProfileCard values={settings.data.values} />
+
+          <NotificationSettings
+            catalog={settings.data.notification_catalog}
+            muted={values.notification_muted_kinds}
+            onChange={(next) => updatePreference("notification_muted_kinds", next)}
+          />
+
+          <Card className="p-5">
+            <SectionTitle
+              title="Chaves de API"
+              subtitle="Suas próprias chaves, guardadas apenas neste computador"
+            />
+            <div className="space-y-4">
+              <SecretField
+                label="brapi (cotações)"
+                hint="Opcional, só se usar o provedor brapi. Crie em brapi.dev."
+                placeholder="token brapi"
+                configured={Boolean(settings.data.secrets?.brapi_token)}
+                settingKey="brapi_token"
               />
             </div>
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
-            Ocultar troca todo valor e quantidade por <span className="tnum">••••</span> — em tabelas, cartões e
-            nos eixos dos gráficos. Percentuais, datas e indicadores continuam à vista, para a tela seguir
-            servindo para alguma coisa enquanto alguém olha por cima do seu ombro.
-          </p>
-        </Card>
+            <p className="mt-4 text-xs text-ink-muted">
+              As chaves ficam no banco de dados local, nunca aparecem de volta nesta tela e não saem
+              no export .gumbinvest. A chave é salva sozinha ao terminar de digitar; o ícone de
+              lixeira remove.
+            </p>
+          </Card>
 
-        <InvestorProfileCard values={settings.data.values} />
+          <UpdateCard />
 
-        <NotificationSettings
-          catalog={settings.data.notification_catalog}
-          muted={values.notification_muted_kinds}
-          onChange={(next) => updatePreference("notification_muted_kinds", next)}
-        />
-
-        <Card className="p-5">
-          <SectionTitle
-            title="Chaves de API"
-            subtitle="Suas próprias chaves, guardadas apenas neste computador"
-          />
-          <div className="space-y-4">
-            <SecretField
-              label="brapi (cotações)"
-              hint="Opcional, só se usar o provedor brapi. Crie em brapi.dev."
-              placeholder="token brapi"
-              configured={Boolean(settings.data.secrets?.brapi_token)}
-              settingKey="brapi_token"
+          <Card className="p-5">
+            <SectionTitle
+              title="Ambiente"
+              subtitle="Valores lidos das variáveis de ambiente do backend"
             />
-          </div>
-          <p className="mt-4 text-xs text-ink-muted">
-            As chaves ficam no banco de dados local, nunca aparecem de volta nesta tela e não
-            saem no export .gumbinvest. A chave é salva sozinha ao terminar de digitar; o ícone
-            de lixeira remove.
-          </p>
-        </Card>
-
-        <UpdateCard />
-
-        <Card className="p-5">
-          <SectionTitle title="Ambiente" subtitle="Valores lidos das variáveis de ambiente do backend" />
-          <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            {Object.entries(settings.data.env).map(([key, value]) => (
-              <div key={key} className="rounded-xl border border-line bg-surface-raised/50 p-3">
-                <dt className="flex items-center gap-1.5 text-xs text-ink-muted">
-                  <Database size={12} /> {key}
-                </dt>
-                <dd className="tnum mt-1 truncate font-medium">{String(value)}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-3 text-xs text-ink-muted">
-            {settings.data.known_movements.length} tipos de movimentação mapeados no importador.
-          </p>
-        </Card>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              {Object.entries(settings.data.env).map(([key, value]) => (
+                <div key={key} className="rounded-xl border border-line bg-surface-raised/50 p-3">
+                  <dt className="flex items-center gap-1.5 text-xs text-ink-muted">
+                    <Database size={12} /> {key}
+                  </dt>
+                  <dd className="tnum mt-1 truncate font-medium">{String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-xs text-ink-muted">
+              {settings.data.known_movements.length} tipos de movimentação mapeados no importador.
+            </p>
+          </Card>
         </>
       ) : null}
 
@@ -399,18 +424,40 @@ export default function Settings() {
             <Badge tone={settings.data.env.brapi_token_configured ? "positive" : "warning"}>
               token brapi {settings.data.env.brapi_token_configured ? "configurado" : "ausente"}
             </Badge>
-            <Badge>atualização automática: {String(settings.data.env.price_refresh_minutes)} min</Badge>
-            <span className="text-sm text-ink-muted">última atualização {dateTime(status.data?.last_update ?? null)}</span>
+            <Badge>
+              atualização automática: {String(settings.data.env.price_refresh_minutes)} min
+            </Badge>
+            <span className="text-sm text-ink-muted">
+              última atualização {dateTime(status.data?.last_update ?? null)}
+            </span>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" className="btn-ghost" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-              <RefreshCw size={15} className={refresh.isPending ? "animate-spin" : undefined} /> Atualizar cotações
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => refresh.mutate()}
+              disabled={refresh.isPending}
+            >
+              <RefreshCw size={15} className={refresh.isPending ? "animate-spin" : undefined} />{" "}
+              Atualizar cotações
             </button>
-            <button type="button" className="btn-ghost" onClick={() => backfill.mutate()} disabled={backfill.isPending}>
-              <Download size={15} className={backfill.isPending ? "animate-pulse" : undefined} /> Baixar histórico de preços
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => backfill.mutate()}
+              disabled={backfill.isPending}
+            >
+              <Download size={15} className={backfill.isPending ? "animate-pulse" : undefined} />{" "}
+              Baixar histórico de preços
             </button>
-            <button type="button" className="btn-ghost" onClick={() => syncFx.mutate()} disabled={syncFx.isPending}>
-              <RefreshCw size={15} className={syncFx.isPending ? "animate-spin" : undefined} /> Atualizar câmbio (PTAX)
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => syncFx.mutate()}
+              disabled={syncFx.isPending}
+            >
+              <RefreshCw size={15} className={syncFx.isPending ? "animate-spin" : undefined} />{" "}
+              Atualizar câmbio (PTAX)
             </button>
           </div>
           {status.data?.fx?.length ? (
@@ -465,7 +512,9 @@ export default function Settings() {
                         {percent(quote.change_percent ?? 0, 2, true)}
                       </td>
                       <td className="px-2 py-1.5 text-xs text-ink-muted">{quote.source}</td>
-                      <td className="px-2 py-1.5 text-xs text-ink-muted">{dateTime(quote.fetched_at)}</td>
+                      <td className="px-2 py-1.5 text-xs text-ink-muted">
+                        {dateTime(quote.fetched_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -491,23 +540,23 @@ export default function Settings() {
 
       {tab === "backup" ? (
         <>
-        <Card className="p-5">
-          <SectionTitle
-            title="Backup e migração"
-            subtitle="Todo o banco de dados em um arquivo .gumbinvest"
-          />
-          <div className="flex flex-wrap gap-2">
-            <a className="btn-ghost" href={api.fullExportUrl()}>
-              <Download size={15} /> Exportar banco de dados
-            </a>
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
-            O arquivo carrega tudo (carteiras, movimentações, cotações, histórico) e serve para
-            levar seus dados a outra instalação (por exemplo, do Docker para o aplicativo desktop):
-            basta arrastá-lo na página Importar de uma instalação vazia.
-          </p>
-        </Card>
-        <CloudBackupCard settings={settings.data} />
+          <Card className="p-5">
+            <SectionTitle
+              title="Backup e migração"
+              subtitle="Todo o banco de dados em um arquivo .gumbinvest"
+            />
+            <div className="flex flex-wrap gap-2">
+              <a className="btn-ghost" href={api.fullExportUrl()}>
+                <Download size={15} /> Exportar banco de dados
+              </a>
+            </div>
+            <p className="mt-3 text-xs text-ink-muted">
+              O arquivo carrega tudo (carteiras, movimentações, cotações, histórico) e serve para
+              levar seus dados a outra instalação (por exemplo, do Docker para o aplicativo
+              desktop): basta arrastá-lo na página Importar de uma instalação vazia.
+            </p>
+          </Card>
+          <CloudBackupCard settings={settings.data} />
         </>
       ) : null}
 
@@ -544,4 +593,3 @@ export default function Settings() {
     </div>
   );
 }
-

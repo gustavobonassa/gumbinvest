@@ -72,7 +72,15 @@ const WINDOW_HINTS: Record<PerformanceWindow, string> = {
 };
 
 /** One line of a ranking: position, ticker, class, result and return. */
-function PerformerRow({ asset, index, highlight }: { asset: PerformanceRow; index: number; highlight: boolean }) {
+function PerformerRow({
+  asset,
+  index,
+  highlight,
+}: {
+  asset: PerformanceRow;
+  index: number;
+  highlight: boolean;
+}) {
   const positive = asset.window_change >= 0;
   return (
     <li className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 hover:bg-surface-hover">
@@ -101,7 +109,9 @@ function PerformerRow({ asset, index, highlight }: { asset: PerformanceRow; inde
         </span>
       </span>
       <span className="shrink-0 text-right">
-        <span className={clsx("tnum block font-medium", positive ? "text-positive" : "text-negative")}>
+        <span
+          className={clsx("tnum block font-medium", positive ? "text-positive" : "text-negative")}
+        >
           {money(asset.window_change)}
         </span>
         <span className="tnum block text-xs text-ink-muted">
@@ -251,7 +261,10 @@ export default function Reports() {
    * large result, and dividing one by the other reports a return nobody made.
    */
   const byKind = useMemo(() => {
-    const buckets = new Map<string, { kind: string; result: number; cost: number; assets: number }>();
+    const buckets = new Map<
+      string,
+      { kind: string; result: number; cost: number; assets: number }
+    >();
     for (const row of positions.data ?? []) {
       const bucket = buckets.get(row.kind) ?? { kind: row.kind, result: 0, cost: 0, assets: 0 };
       bucket.result += Number(row.total_return_base);
@@ -283,10 +296,11 @@ export default function Reports() {
    * for, so it is quoted underneath rather than dropped.
    */
   const outcome = useMemo(() => {
-    if (points.length < 2) return null;
-    const last = points[points.length - 1];
-    return { result: Number(last.profit) - Number(points[0].profit), twr: Number(last.twr_pct) };
-  }, [points]);
+    const series = profit.data ?? [];
+    if (series.length < 2) return null;
+    const last = series[series.length - 1];
+    return { result: Number(last.profit) - Number(series[0].profit), twr: Number(last.twr_pct) };
+  }, [profit.data]);
 
   if (profit.isError) return <ErrorState error={profit.error} retry={() => profit.refetch()} />;
 
@@ -298,8 +312,8 @@ export default function Reports() {
         <p className="text-sm text-ink-muted">Análises</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Rentabilidade</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          O resultado da carteira: quanto ela já rendeu, em que meses rendeu e quais classes e ativos
-          entregaram esse resultado.
+          O resultado da carteira: quanto ela já rendeu, em que meses rendeu e quais classes e
+          ativos entregaram esse resultado.
         </p>
       </header>
 
@@ -335,7 +349,12 @@ export default function Reports() {
               </span>
               <span className="sm:ml-auto">
                 No período:{" "}
-                <span className={clsx("tnum font-medium", outcome.result >= 0 ? "text-positive" : "text-negative")}>
+                <span
+                  className={clsx(
+                    "tnum font-medium",
+                    outcome.result >= 0 ? "text-positive" : "text-negative",
+                  )}
+                >
                   {money(outcome.result)}
                 </span>{" "}
                 de resultado · ignorando o tamanho da carteira,{" "}
@@ -362,7 +381,9 @@ export default function Reports() {
                   <td className="px-2 py-1.5">{point.date}</td>
                   {series.map((item) => (
                     <td key={item.key} className="tnum px-2 py-1.5 text-right text-ink-secondary">
-                      {point[item.key] === undefined ? "-" : percent(Number(point[item.key]), 2, true)}
+                      {point[item.key] === undefined
+                        ? "-"
+                        : percent(Number(point[item.key]), 2, true)}
                     </td>
                   ))}
                 </tr>
@@ -411,8 +432,12 @@ export default function Reports() {
               {[...monthly].reverse().map((row) => (
                 <tr key={row.period} className="table-row">
                   <td className="px-2 py-1.5">{periodLabel(row.period)}</td>
-                  <td className="tnum px-2 py-1.5 text-right text-ink-secondary">{money(row.flow)}</td>
-                  <td className="tnum px-2 py-1.5 text-right text-ink-secondary">{money(row.income)}</td>
+                  <td className="tnum px-2 py-1.5 text-right text-ink-secondary">
+                    {money(row.flow)}
+                  </td>
+                  <td className="tnum px-2 py-1.5 text-right text-ink-secondary">
+                    {money(row.income)}
+                  </td>
                   <td
                     className={clsx(
                       "tnum px-2 py-1.5 text-right font-medium",
@@ -421,14 +446,20 @@ export default function Reports() {
                   >
                     {money(row.profit)}
                   </td>
-                  <td className="tnum px-2 py-1.5 text-right">{percent(row.return_pct, 2, true)}</td>
+                  <td className="tnum px-2 py-1.5 text-right">
+                    {percent(row.return_pct, 2, true)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         }
       >
-        {returns.isLoading ? <Skeleton className="h-full w-full" /> : <ReturnsBars data={monthly} height={280} />}
+        {returns.isLoading ? (
+          <Skeleton className="h-full w-full" />
+        ) : (
+          <ReturnsBars data={monthly} height={280} />
+        )}
       </ChartFrame>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -528,11 +559,15 @@ export default function Reports() {
                   <dd className="tnum mt-0.5 font-medium text-negative">
                     {percent(consistency.worst.return_pct, 2, true)}
                   </dd>
-                  <dd className="text-xs text-ink-muted">{periodLabel(consistency.worst.period)}</dd>
+                  <dd className="text-xs text-ink-muted">
+                    {periodLabel(consistency.worst.period)}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-ink-muted">Retorno médio</dt>
-                  <dd className="tnum mt-0.5 font-medium">{percent(consistency.averagePct, 2, true)}</dd>
+                  <dd className="tnum mt-0.5 font-medium">
+                    {percent(consistency.averagePct, 2, true)}
+                  </dd>
                   <dd className="text-xs text-ink-muted">por mês</dd>
                 </div>
                 <div>
@@ -556,7 +591,9 @@ export default function Reports() {
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold tracking-tight text-ink">Desempenho por ativo</h2>
+            <h2 className="text-base font-semibold tracking-tight text-ink">
+              Desempenho por ativo
+            </h2>
             <p className="mt-0.5 text-sm text-ink-muted">{WINDOW_HINTS[perfWindow]}</p>
           </div>
           <Segmented
@@ -569,14 +606,22 @@ export default function Reports() {
         <div className="grid gap-4 xl:grid-cols-2">
           <PerformerList
             title="Melhores desempenhos"
-            subtitle={perfWindow === "day" ? "Quem mais subiu no último pregão" : "Onde a carteira mais ganhou"}
+            subtitle={
+              perfWindow === "day"
+                ? "Quem mais subiu no último pregão"
+                : "Onde a carteira mais ganhou"
+            }
             rows={performers.data?.best}
             loading={performers.isLoading}
             crown
           />
           <PerformerList
             title="Piores desempenhos"
-            subtitle={perfWindow === "day" ? "Quem mais caiu no último pregão" : "Onde a carteira mais perdeu"}
+            subtitle={
+              perfWindow === "day"
+                ? "Quem mais caiu no último pregão"
+                : "Onde a carteira mais perdeu"
+            }
             rows={performers.data?.worst}
             loading={performers.isLoading}
             crown={false}
@@ -585,7 +630,10 @@ export default function Reports() {
       </section>
 
       <Card className="p-5">
-        <SectionTitle title="Desempenho anual" subtitle="Capital aplicado, vendas e proventos por ano" />
+        <SectionTitle
+          title="Desempenho anual"
+          subtitle="Capital aplicado, vendas e proventos por ano"
+        />
         {reports.isLoading ? (
           <Skeleton className="h-40 w-full" />
         ) : (

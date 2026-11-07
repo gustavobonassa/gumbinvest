@@ -159,9 +159,19 @@ export const TOKENS: { [K in Exclude<keyof ChartTokens, "benchmark">]: string } 
   Object.defineProperties(
     {},
     Object.fromEntries(
-      (["positive", "negative", "accent", "grid", "axis", "ink", "inkSecondary", "surface", "cursor"] as const).map(
-        (key) => [key, { get: () => active[key], enumerable: true }],
-      ),
+      (
+        [
+          "positive",
+          "negative",
+          "accent",
+          "grid",
+          "axis",
+          "ink",
+          "inkSecondary",
+          "surface",
+          "cursor",
+        ] as const
+      ).map((key) => [key, { get: () => active[key], enumerable: true }]),
     ),
   ),
 ) as { [K in Exclude<keyof ChartTokens, "benchmark">]: string };
@@ -185,7 +195,9 @@ export function benchmarkStyle(key: string): { color: string; dash: string } {
 export function sequentialFill(ratio: number): string {
   if (!Number.isFinite(ratio) || ratio <= 0) return "transparent";
   const alpha = 0.08 + Math.min(Math.max(ratio, 0), 1) * 0.47;
-  const [r, g, b] = [1, 3, 5].map((offset) => parseInt(active.accent.slice(offset, offset + 2), 16));
+  const [r, g, b] = [1, 3, 5].map((offset) =>
+    parseInt(active.accent.slice(offset, offset + 2), 16),
+  );
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`;
 }
 

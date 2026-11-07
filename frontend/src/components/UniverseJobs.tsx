@@ -44,7 +44,10 @@ function when(value: string | null): string {
   return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-const STATUS: Record<UniverseJob["status"], { label: string; icon: typeof Check; className: string }> = {
+const STATUS: Record<
+  UniverseJob["status"],
+  { label: string; icon: typeof Check; className: string }
+> = {
   pending: { label: "Na fila", icon: Clock, className: "text-ink-muted" },
   running: { label: "Em andamento", icon: Loader2, className: "text-accent" },
   done: { label: "Concluída", icon: Check, className: "text-positive" },
@@ -52,7 +55,10 @@ const STATUS: Record<UniverseJob["status"], { label: string; icon: typeof Check;
   failed: { label: "Falhou", icon: AlertTriangle, className: "text-negative" },
 };
 
-const RUN_STATE: Record<string, { label: string; tone: "positive" | "negative" | "warning" | "neutral" }> = {
+const RUN_STATE: Record<
+  string,
+  { label: string; tone: "positive" | "negative" | "warning" | "neutral" }
+> = {
   done: { label: "Concluída", tone: "positive" },
   error: { label: "Falhou", tone: "negative" },
   cancelled: { label: "Cancelada", tone: "warning" },
@@ -153,6 +159,9 @@ export default function UniverseJobs() {
       toast.error("A atualização do universo não terminou.", undefined, {
         description: status.message ?? undefined,
       });
+    // Keyed to the run's identity and outcome on purpose: a toast per finished
+    // run, not per poll. queryClient and toast are stable references.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.run_id, status?.active, status?.state]);
 
   const start = useMutation({
@@ -198,7 +207,11 @@ export default function UniverseJobs() {
         <SectionTitle
           title="Sincronização"
           subtitle="Baixa os arquivos públicos da B3 e da CVM e monta a tabela local"
-          action={<Badge tone={running ? "accent" : runState.tone}>{running ? "Em andamento" : runState.label}</Badge>}
+          action={
+            <Badge tone={running ? "accent" : runState.tone}>
+              {running ? "Em andamento" : runState.label}
+            </Badge>
+          }
         />
 
         {!enabled ? (
@@ -215,7 +228,11 @@ export default function UniverseJobs() {
                 disabled={running || start.isPending}
               >
                 {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-                {running ? "Sincronizando…" : total ? "Sincronizar novamente" : "Iniciar sincronização"}
+                {running
+                  ? "Sincronizando…"
+                  : total
+                    ? "Sincronizar novamente"
+                    : "Iniciar sincronização"}
               </button>
               {running ? (
                 <button
@@ -250,7 +267,9 @@ export default function UniverseJobs() {
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-ink-muted">{running ? "Decorrido" : "Última duração"}</dt>
+                <dt className="text-xs text-ink-muted">
+                  {running ? "Decorrido" : "Última duração"}
+                </dt>
                 <dd className="tnum">{duration(status.elapsed_seconds)}</dd>
               </div>
               <div>
@@ -291,7 +310,9 @@ export default function UniverseJobs() {
             />
           </div>
           <ul className="divide-y divide-line">
-            {status.jobs?.map((job) => <JobRow key={job.name} job={job} />)}
+            {status.jobs?.map((job) => (
+              <JobRow key={job.name} job={job} />
+            ))}
           </ul>
         </Card>
       ) : null}

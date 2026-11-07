@@ -34,8 +34,14 @@ function eventSummary(event: AiWalletEvent): string {
       return String(detail.name ?? "");
     case "category.generated": {
       const positions = Array.isArray(detail.positions) ? detail.positions.length : 0;
-      const deferred = Array.isArray(detail.deferred) && detail.deferred.length > 0 ? ` · ${detail.deferred.length} aguardando cotação` : "";
-      const skipped = Array.isArray(detail.skipped) && detail.skipped.length > 0 ? ` · ${detail.skipped.length} ignorados` : "";
+      const deferred =
+        Array.isArray(detail.deferred) && detail.deferred.length > 0
+          ? ` · ${detail.deferred.length} aguardando cotação`
+          : "";
+      const skipped =
+        Array.isArray(detail.skipped) && detail.skipped.length > 0
+          ? ` · ${detail.skipped.length} ignorados`
+          : "";
       const search = detail.used_search === false ? " · sem busca na web" : "";
       return `${positions} posições${deferred}${skipped}${search}`;
     }
@@ -91,12 +97,19 @@ export default function HistoryTab({ wallet }: { wallet: AiWalletDetail }) {
           <tbody>
             {(events?.items ?? []).map((event) => (
               <tr key={event.id} className="table-row border-b border-line/60">
-                <td className="tnum whitespace-nowrap py-3 pr-3 text-ink-secondary">{dateTime(event.at)}</td>
+                <td className="tnum whitespace-nowrap py-3 pr-3 text-ink-secondary">
+                  {dateTime(event.at)}
+                </td>
                 <td className="px-3 py-3 font-medium text-ink">
                   {EVENT_LABELS[event.action] ?? event.action}
                 </td>
-                <td className="px-3 py-3 text-ink-secondary">{categoryLabel(event.category) ?? "-"}</td>
-                <td className="max-w-[320px] truncate px-3 py-3 text-ink-secondary" title={eventSummary(event)}>
+                <td className="px-3 py-3 text-ink-secondary">
+                  {categoryLabel(event.category) ?? "-"}
+                </td>
+                <td
+                  className="max-w-[320px] truncate px-3 py-3 text-ink-secondary"
+                  title={eventSummary(event)}
+                >
                   {eventSummary(event) || "-"}
                 </td>
                 <td className="px-3 py-3">
@@ -115,7 +128,14 @@ export default function HistoryTab({ wallet }: { wallet: AiWalletDetail }) {
         </table>
       </div>
       {events ? (
-        <Pager page={page} pages={pages} total={events.total} pageSize={PAGE_SIZE} onChange={setPage} noun="eventos" />
+        <Pager
+          page={page}
+          pages={pages}
+          total={events.total}
+          pageSize={PAGE_SIZE}
+          onChange={setPage}
+          noun="eventos"
+        />
       ) : null}
     </Card>
   );

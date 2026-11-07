@@ -14,7 +14,16 @@ import CategoryTab from "@/components/ai-wallet/CategoryTab";
 import HistoryTab from "@/components/ai-wallet/HistoryTab";
 import OverviewTab from "@/components/ai-wallet/OverviewTab";
 import { useToast } from "@/components/Toast";
-import { Badge, Card, EmptyState, ErrorState, Modal, Select, Skeleton, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  Modal,
+  Select,
+  Skeleton,
+  Tabs,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 
 export default function CarteiraIA() {
@@ -26,14 +35,18 @@ export default function CarteiraIA() {
   const [chosenProvider, setChosenProvider] = useState<string | null>(null);
   const [chosenModel, setChosenModel] = useState<string | null>(null);
 
-  const settingsQ = useQuery({ queryKey: ["settings"], queryFn: api.settings, staleTime: 5 * 60_000 });
+  const settingsQ = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings,
+    staleTime: 5 * 60_000,
+  });
   const walletsQ = useQuery({ queryKey: ["ai-wallets"], queryFn: api.aiWallets });
 
   const wallets = walletsQ.data ?? [];
   const paramWallet = Number(params.get("carteira"));
   const walletId = wallets.some((item) => item.id === paramWallet)
     ? paramWallet
-    : wallets[0]?.id ?? null;
+    : (wallets[0]?.id ?? null);
 
   const detailQ = useQuery({
     queryKey: ["ai-wallet", walletId],
@@ -62,11 +75,11 @@ export default function CarteiraIA() {
     enabled: createOpen && provider !== null,
     staleTime: 5 * 60_000,
   });
-  const models = modelsQ.data?.models?.length ? modelsQ.data.models : providerInfo?.models ?? [];
+  const models = modelsQ.data?.models?.length ? modelsQ.data.models : (providerInfo?.models ?? []);
   const defaultModel =
     provider === activeAi?.active_provider && activeAi?.active_model
       ? activeAi.active_model
-      : providerInfo?.default_model ?? models[0] ?? "";
+      : (providerInfo?.default_model ?? models[0] ?? "");
   const model = chosenModel && models.includes(chosenModel) ? chosenModel : defaultModel;
   const modelOptions = models.includes(model) || !model ? models : [model, ...models];
 
@@ -199,7 +212,9 @@ export default function CarteiraIA() {
         </div>
         <p className="text-xs text-ink-muted">
           Só aparecem provedores com chave configurada em Configurações → Inteligência Artificial.
-          {modelsQ.data?.live === false ? " Lista de modelos sugerida (catálogo ao vivo indisponível)." : ""}
+          {modelsQ.data?.live === false
+            ? " Lista de modelos sugerida (catálogo ao vivo indisponível)."
+            : ""}
         </p>
         {create.isError ? (
           <p className="text-xs text-negative">{(create.error as Error).message}</p>
@@ -226,9 +241,9 @@ export default function CarteiraIA() {
         <p className="text-sm text-ink-muted">IA</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Carteira IA</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Carteiras virtuais montadas e geridas inteiramente por IA. Cada categoria recebe
-          R$ 10.000 fictícios e o desempenho é acompanhado no tempo. Crie uma carteira por
-          modelo e compare quem investe melhor. Nada aqui usa a sua carteira real.
+          Carteiras virtuais montadas e geridas inteiramente por IA. Cada categoria recebe R$ 10.000
+          fictícios e o desempenho é acompanhado no tempo. Crie uma carteira por modelo e compare
+          quem investe melhor. Nada aqui usa a sua carteira real.
         </p>
       </header>
 
@@ -333,7 +348,11 @@ export default function CarteiraIA() {
             <Skeleton className="h-96 w-full" />
           ) : (
             <>
-              <Tabs value={aba} options={tabOptions} onChange={(next) => setQueryParam("aba", next)} />
+              <Tabs
+                value={aba}
+                options={tabOptions}
+                onChange={(next) => setQueryParam("aba", next)}
+              />
               {aba === "visao" ? (
                 <OverviewTab wallet={detail} />
               ) : aba === "historico" ? (

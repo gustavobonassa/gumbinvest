@@ -91,7 +91,9 @@ function AccountCard({ account }: { account: CoverageAccount }) {
           <FileWarning size={15} className="mt-0.5 shrink-0" aria-hidden />
           <span>
             Faltam {account.missing_months.length} extrato(s):{" "}
-            <span className="font-medium">{account.missing_months.map(periodLabel).join(", ")}</span>
+            <span className="font-medium">
+              {account.missing_months.map(periodLabel).join(", ")}
+            </span>
           </span>
         </p>
       ) : null}
@@ -103,8 +105,8 @@ function AccountCard({ account }: { account: CoverageAccount }) {
               <Scale size={15} className="mt-0.5 shrink-0" aria-hidden />
               <span>
                 {periodLabel(issue.previous_month)} fechou em {issue.previous_closing} e{" "}
-                {periodLabel(issue.month)} abriu em {issue.opening}, diferença de {issue.difference}.
-                Provavelmente há um extrato faltando entre os dois.
+                {periodLabel(issue.month)} abriu em {issue.opening}, diferença de {issue.difference}
+                . Provavelmente há um extrato faltando entre os dois.
               </span>
             </p>
           ))}
@@ -123,8 +125,8 @@ function AccountCard({ account }: { account: CoverageAccount }) {
           <ul className="mt-1.5 space-y-0.5 pl-6 text-ink-secondary">
             {account.position_drift.slice(0, 8).map((drift) => (
               <li key={drift.ticker} className="tnum">
-                <span className="font-medium text-ink">{drift.ticker}</span>: extrato {drift.reported} ·
-                calculado {drift.computed} ({drift.difference})
+                <span className="font-medium text-ink">{drift.ticker}</span>: extrato{" "}
+                {drift.reported} · calculado {drift.computed} ({drift.difference})
               </li>
             ))}
           </ul>

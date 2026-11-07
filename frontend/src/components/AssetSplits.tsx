@@ -88,7 +88,9 @@ function AiLookup({ onPick }: { onPick: (candidate: SplitCandidate) => void }) {
           <Bot size={15} className={running ? "animate-pulse" : undefined} aria-hidden />
           {running ? "Pesquisando…" : "Procurar desdobramentos"}
         </button>
-        {job?.status && running ? <span className="text-xs text-ink-muted">{job.status}</span> : null}
+        {job?.status && running ? (
+          <span className="text-xs text-ink-muted">{job.status}</span>
+        ) : null}
         {job?.error && !running ? <span className="text-xs text-negative">{job.error}</span> : null}
       </div>
 
@@ -113,13 +115,13 @@ function AiLookup({ onPick }: { onPick: (candidate: SplitCandidate) => void }) {
         </ul>
       ) : found ? (
         <p className="mt-3 text-xs text-ink-muted">
-          Nada encontrado além do que já está registrado. Uma lista vazia é uma resposta melhor
-          que um palpite — se você souber do evento, preencha à mão abaixo.
+          Nada encontrado além do que já está registrado. Uma lista vazia é uma resposta melhor que
+          um palpite — se você souber do evento, preencha à mão abaixo.
         </p>
       ) : null}
       <p className="mt-3 text-xs text-ink-muted">
-        A IA só preenche o formulário: nada é gravado sem você confirmar. Confira a razão antes
-        de salvar — ela reescreve todo o valor histórico anterior àquela data.
+        A IA só preenche o formulário: nada é gravado sem você confirmar. Confira a razão antes de
+        salvar — ela reescreve todo o valor histórico anterior àquela data.
       </p>
     </div>
   );
@@ -196,7 +198,11 @@ export default function AssetSplits() {
                       <td className="py-2.5 pr-3 font-medium">{split.ticker}</td>
                       <td className="py-2.5 pr-3 tnum">{shortDate(split.date)}</td>
                       <td className="py-2.5 pr-3">
-                        <span className={split.ignored_reason ? "text-ink-muted line-through" : undefined}>
+                        <span
+                          className={
+                            split.ignored_reason ? "text-ink-muted line-through" : undefined
+                          }
+                        >
                           {ratioLabel(Number(split.ratio))}
                         </span>
                         {/* Not applied, and saying why: dropping it in silence
@@ -225,7 +231,11 @@ export default function AssetSplits() {
                         ) : null}
                       </td>
                       <td className="py-2.5 pr-3">
-                        <Badge tone={split.ignored_reason ? "warning" : split.editable ? "accent" : "neutral"}>
+                        <Badge
+                          tone={
+                            split.ignored_reason ? "warning" : split.editable ? "accent" : "neutral"
+                          }
+                        >
                           {split.editable ? "declarado" : split.source}
                         </Badge>
                       </td>
@@ -273,7 +283,12 @@ export default function AssetSplits() {
             </label>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-ink-muted">Data ex</span>
-              <DateField ariaLabel="Data do desdobramento" className="w-full" value={when} onChange={setWhen} />
+              <DateField
+                ariaLabel="Data do desdobramento"
+                className="w-full"
+                value={when}
+                onChange={setWhen}
+              />
             </div>
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-ink-muted">
@@ -303,10 +318,10 @@ export default function AssetSplits() {
             </button>
           </div>
           <p className="text-xs text-ink-muted">
-            A proporção é quantas cotas você passou a ter para cada uma que tinha: desdobramento
-            1:6 é <strong>6</strong>, grupamento 10:1 é <strong>0,1</strong>, bonificação de 5% é{" "}
-            <strong>1,05</strong>. Use a data ex — o dia em que o preço na bolsa passou a refletir
-            o evento.
+            A proporção é quantas cotas você passou a ter para cada uma que tinha: desdobramento 1:6
+            é <strong>6</strong>, grupamento 10:1 é <strong>0,1</strong>, bonificação de 5% é{" "}
+            <strong>1,05</strong>. Use a data ex — o dia em que o preço na bolsa passou a refletir o
+            evento.
           </p>
         </div>
       )}

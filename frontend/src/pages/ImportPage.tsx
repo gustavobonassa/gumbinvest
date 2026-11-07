@@ -19,7 +19,16 @@ import { useSearchParams } from "react-router-dom";
 import Pipelines from "@/components/Pipelines";
 import StatementCoverage from "@/components/StatementCoverage";
 import { useToast } from "@/components/Toast";
-import { Badge, Card, EmptyState, ErrorState, Pager, SectionTitle, Skeleton, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  Pager,
+  SectionTitle,
+  Skeleton,
+  Tabs,
+} from "@/components/ui";
 import { api, type ImportBatch } from "@/lib/api";
 import { dateTime, opLabel, shortDate } from "@/lib/format";
 
@@ -86,7 +95,11 @@ function ImportSummary({ batch }: { batch: Pick<ImportBatch, "summary"> }) {
  * bad CSV can carry thousands of entries and the history list shows five
  * imports at a time.
  */
-function ImportIssues({ batch }: { batch: Pick<ImportBatch, "id" | "rows_failed" | "rows_warned"> }) {
+function ImportIssues({
+  batch,
+}: {
+  batch: Pick<ImportBatch, "id" | "rows_failed" | "rows_warned">;
+}) {
   const [open, setOpen] = useState(false);
   const detail = useQuery({
     queryKey: ["import-detail", batch.id],
@@ -122,7 +135,9 @@ function ImportIssues({ batch }: { batch: Pick<ImportBatch, "id" | "rows_failed"
         <div
           className={clsx(
             "mt-2 rounded-lg border p-3 text-xs",
-            tone === "negative" ? "border-negative/25 bg-negative/5" : "border-warning/25 bg-warning/5",
+            tone === "negative"
+              ? "border-negative/25 bg-negative/5"
+              : "border-warning/25 bg-warning/5",
           )}
         >
           {detail.isLoading ? (
@@ -187,7 +202,9 @@ function SkippedSummary({ batch }: { batch: Pick<ImportBatch, "summary"> }) {
   const skipped = batch.summary?.skipped;
   if (!skipped) return null;
   const items = [
-    skipped.cash_movements ? `${skipped.cash_movements} movimentos de caixa (depósitos, saques, sweeps)` : null,
+    skipped.cash_movements
+      ? `${skipped.cash_movements} movimentos de caixa (depósitos, saques, sweeps)`
+      : null,
     skipped.cancelled_orders ? `${skipped.cancelled_orders} ordens não executadas` : null,
     skipped.cross_source_duplicates
       ? `${skipped.cross_source_duplicates} já presentes em outro relatório do mesmo período`
@@ -196,7 +213,9 @@ function SkippedSummary({ batch }: { batch: Pick<ImportBatch, "summary"> }) {
       ? `${skipped.unattributed} linhas sem ativo identificado no extrato (${skipped.unattributed_amount})`
       : null,
     skipped.provisional_tickers ? `${skipped.provisional_tickers} com código provisório` : null,
-    skipped.unconverted_fees ? `${skipped.unconverted_fees} taxas em moeda diferente da operação` : null,
+    skipped.unconverted_fees
+      ? `${skipped.unconverted_fees} taxas em moeda diferente da operação`
+      : null,
   ].filter(Boolean);
   if (!items.length) return null;
   return <p className="mt-3 text-sm text-ink-muted">Ignorado: {items.join(" · ")}.</p>;
@@ -267,7 +286,10 @@ export default function ImportPage() {
     setParams(next === "enviar" ? {} : { aba: next }, { replace: true });
 
   const [page, setPage] = useState(1);
-  const history = useQuery({ queryKey: ["imports", page], queryFn: () => api.imports(page, PAGE_SIZE) });
+  const history = useQuery({
+    queryKey: ["imports", page],
+    queryFn: () => api.imports(page, PAGE_SIZE),
+  });
   // Same query key as StatementCoverage's, so this only feeds the tab counter.
   const coverage = useQuery({ queryKey: ["import-coverage"], queryFn: api.coverage });
   const upload = useMutation({
@@ -306,8 +328,9 @@ export default function ImportPage() {
         <p className="text-sm text-ink-muted">Dados</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Importar movimentações</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Movimentos já importados são ignorados automaticamente, pode reenviar o mesmo arquivo, subir vários de
-          uma vez, ou enviar dois relatórios diferentes do mesmo mês sem duplicar nada.
+          Movimentos já importados são ignorados automaticamente, pode reenviar o mesmo arquivo,
+          subir vários de uma vez, ou enviar dois relatórios diferentes do mesmo mês sem duplicar
+          nada.
         </p>
       </header>
 
@@ -348,15 +371,21 @@ export default function ImportPage() {
               className="flex flex-col items-center gap-3"
             >
               <span className="grid h-14 w-14 place-items-center rounded-2xl bg-surface-raised text-accent">
-                {upload.isPending ? <Loader2 size={24} className="animate-spin" /> : <CloudUpload size={24} />}
+                {upload.isPending ? (
+                  <Loader2 size={24} className="animate-spin" />
+                ) : (
+                  <CloudUpload size={24} />
+                )}
               </span>
               <div>
                 <p className="font-medium">
-                  {upload.isPending ? "Processando arquivo…" : "Arraste os arquivos aqui ou clique para selecionar"}
+                  {upload.isPending
+                    ? "Processando arquivo…"
+                    : "Arraste os arquivos aqui ou clique para selecionar"}
                 </p>
                 <p className="mt-1 text-sm text-ink-muted">
-                  CSV ou XLSX da B3, extratos PDF da Avenue e da Nomad, exportações da Binance ou um backup
-                  .gumbinvest
+                  CSV ou XLSX da B3, extratos PDF da Avenue e da Nomad, exportações da Binance ou um
+                  backup .gumbinvest
                 </p>
               </div>
               <button
@@ -379,7 +408,10 @@ export default function ImportPage() {
           </Card>
 
           {upload.isError ? (
-            <Card className="flex items-start gap-3 border-negative/30 bg-negative/5 p-4" hover={false}>
+            <Card
+              className="flex items-start gap-3 border-negative/30 bg-negative/5 p-4"
+              hover={false}
+            >
               <XCircle size={18} className="mt-0.5 shrink-0 text-negative" />
               <div>
                 <p className="font-medium text-negative">Falha na importação</p>
@@ -403,11 +435,15 @@ export default function ImportPage() {
                     </div>
                     <div>
                       <p className="text-ink-muted">Novas</p>
-                      <p className="tnum text-lg font-semibold text-positive">{upload.data.rows_imported}</p>
+                      <p className="tnum text-lg font-semibold text-positive">
+                        {upload.data.rows_imported}
+                      </p>
                     </div>
                     <div>
                       <p className="text-ink-muted">Duplicadas</p>
-                      <p className="tnum text-lg font-semibold text-ink-secondary">{upload.data.rows_duplicate}</p>
+                      <p className="tnum text-lg font-semibold text-ink-secondary">
+                        {upload.data.rows_duplicate}
+                      </p>
                     </div>
                     <div>
                       <p className="text-ink-muted">Com erro</p>
@@ -488,7 +524,9 @@ export default function ImportPage() {
             subtitle="Registro completo, com contagens e erros por arquivo"
             action={
               history.data?.total ? (
-                <span className="tnum text-sm text-ink-muted">{history.data.total} importações</span>
+                <span className="tnum text-sm text-ink-muted">
+                  {history.data.total} importações
+                </span>
               ) : null
             }
           />
@@ -508,7 +546,10 @@ export default function ImportPage() {
             <>
               <ul className="space-y-3">
                 {history.data.items.map((batch) => (
-                  <li key={batch.id} className="rounded-xl border border-line bg-surface-raised/50 p-4">
+                  <li
+                    key={batch.id}
+                    className="rounded-xl border border-line bg-surface-raised/50 p-4"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                       {/* Statement PDFs carry the broker's own long filenames;
                           the name truncates so it can never push the status
@@ -537,7 +578,9 @@ export default function ImportPage() {
                                 : batch.status.toLowerCase()}
                         </Badge>
                       </span>
-                      <span className="shrink-0 text-xs text-ink-muted">{dateTime(batch.created_at)}</span>
+                      <span className="shrink-0 text-xs text-ink-muted">
+                        {dateTime(batch.created_at)}
+                      </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink-secondary">
                       <span className="tnum">{batch.rows_total} linhas</span>

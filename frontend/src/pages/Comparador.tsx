@@ -12,8 +12,21 @@ import { GitCompareArrows, Plus, Search, Trophy, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { ChartFrame, ReturnLinesChart, type ReturnPoint, type ReturnSeries } from "@/components/charts";
-import { Badge, Card, EmptyState, KindTag, SectionTitle, Segmented, Skeleton } from "@/components/ui";
+import {
+  ChartFrame,
+  ReturnLinesChart,
+  type ReturnPoint,
+  type ReturnSeries,
+} from "@/components/charts";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  KindTag,
+  SectionTitle,
+  Segmented,
+  Skeleton,
+} from "@/components/ui";
 import { api, type AssetDetail as AssetDetailData, type Fundamentals } from "@/lib/api";
 import { SERIES } from "@/lib/colors";
 import { decimal, money, percent, shortDate } from "@/lib/format";
@@ -24,7 +37,13 @@ type Range = "6m" | "1y" | "5y" | "max";
 const RANGE_MONTHS: Record<Range, number | null> = { "6m": 6, "1y": 12, "5y": 60, max: null };
 
 /** Ticker picker with suggestions from the wallet and from the market. */
-function TickerPicker({ selected, onAdd }: { selected: string[]; onAdd: (ticker: string) => void }) {
+function TickerPicker({
+  selected,
+  onAdd,
+}: {
+  selected: string[];
+  onAdd: (ticker: string) => void;
+}) {
   const [term, setTerm] = useState("");
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,8 +70,16 @@ function TickerPicker({ selected, onAdd }: { selected: string[]; onAdd: (ticker:
 
   const taken = new Set(selected);
   const suggestions = [
-    ...(local.data?.assets ?? []).map((a) => ({ ticker: a.ticker, name: a.name, origin: "carteira" as const })),
-    ...(market.data?.items ?? []).map((h) => ({ ticker: h.ticker, name: h.name, origin: "mercado" as const })),
+    ...(local.data?.assets ?? []).map((a) => ({
+      ticker: a.ticker,
+      name: a.name,
+      origin: "carteira" as const,
+    })),
+    ...(market.data?.items ?? []).map((h) => ({
+      ticker: h.ticker,
+      name: h.name,
+      origin: "mercado" as const,
+    })),
   ]
     .filter((item, index, all) => all.findIndex((other) => other.ticker === item.ticker) === index)
     .filter((item) => !taken.has(item.ticker))
@@ -66,7 +93,10 @@ function TickerPicker({ selected, onAdd }: { selected: string[]; onAdd: (ticker:
 
   return (
     <div className="relative min-w-[240px] max-w-sm flex-1">
-      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+      <Search
+        size={15}
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+      />
       <input
         ref={inputRef}
         value={term}
@@ -80,7 +110,9 @@ function TickerPicker({ selected, onAdd }: { selected: string[]; onAdd: (ticker:
             pick(suggestions[0]?.ticker ?? term.trim());
           }
         }}
-        placeholder={selected.length ? "Adicionar outro ativo…" : "Buscar ativo (PETR4, HGLG11, AAPL…)"}
+        placeholder={
+          selected.length ? "Adicionar outro ativo…" : "Buscar ativo (PETR4, HGLG11, AAPL…)"
+        }
         className="input pl-9"
         disabled={selected.length >= MAX_TICKERS}
       />
@@ -138,10 +170,25 @@ const METRICS: Metric[] = [
   {
     label: "Valor de mercado",
     value: (c) => c.fundamentals?.market_cap,
-    format: (v, c) => money(v, { currency: c.fundamentals?.currency ?? c.detail?.currency, compact: true, decimals: 0 }),
+    format: (v, c) =>
+      money(v, {
+        currency: c.fundamentals?.currency ?? c.detail?.currency,
+        compact: true,
+        decimals: 0,
+      }),
   },
-  { label: "P/L", value: (c) => c.fundamentals?.pe_trailing, format: (v) => decimal(v, 2), best: "low" },
-  { label: "P/VP", value: (c) => c.fundamentals?.price_to_book, format: (v) => decimal(v, 2), best: "low" },
+  {
+    label: "P/L",
+    value: (c) => c.fundamentals?.pe_trailing,
+    format: (v) => decimal(v, 2),
+    best: "low",
+  },
+  {
+    label: "P/VP",
+    value: (c) => c.fundamentals?.price_to_book,
+    format: (v) => decimal(v, 2),
+    best: "low",
+  },
   {
     label: "Dividend yield",
     value: (c) => c.fundamentals?.dividend_yield,
@@ -149,7 +196,12 @@ const METRICS: Metric[] = [
     best: "high",
   },
   { label: "Payout", value: (c) => c.fundamentals?.payout_ratio, format: (v) => percent(v, 0) },
-  { label: "ROE", value: (c) => c.fundamentals?.return_on_equity, format: (v) => percent(v, 1), best: "high" },
+  {
+    label: "ROE",
+    value: (c) => c.fundamentals?.return_on_equity,
+    format: (v) => percent(v, 1),
+    best: "high",
+  },
   {
     label: "Margem líquida",
     value: (c) => c.fundamentals?.profit_margin,
@@ -187,7 +239,10 @@ export default function Comparador() {
   const [params, setParams] = useSearchParams();
   const tickers = useMemo(
     () =>
-      [...new Set((params.get("ativos") ?? "").toUpperCase().split(",").filter(Boolean))].slice(0, MAX_TICKERS),
+      [...new Set((params.get("ativos") ?? "").toUpperCase().split(",").filter(Boolean))].slice(
+        0,
+        MAX_TICKERS,
+      ),
     [params],
   );
   const setTickers = (next: string[]) =>
@@ -257,7 +312,11 @@ export default function Comparador() {
       }
       byDate.set(date, row);
     }
-    return { chartData: [...byDate.values()], chartSeries: series, rangeChange: rangeChangeByTicker };
+    return {
+      chartData: [...byDate.values()],
+      chartSeries: series,
+      rangeChange: rangeChangeByTicker,
+    };
   }, [tickers, prices, cutIso]);
 
   const columns: Column[] = tickers.map((ticker, index) => ({
@@ -272,7 +331,9 @@ export default function Comparador() {
   // A metric row is worth ranking only when two assets actually answer it.
   const bestValue = (metric: Metric): number | undefined => {
     if (!metric.best) return undefined;
-    const values = columns.map((column) => metric.value(column)).filter((v): v is number => v !== undefined);
+    const values = columns
+      .map((column) => metric.value(column))
+      .filter((v): v is number => v !== undefined);
     if (values.length < 2) return undefined;
     return metric.best === "high" ? Math.max(...values) : Math.min(...values);
   };
@@ -299,7 +360,11 @@ export default function Comparador() {
               key={column.ticker}
               className="inline-flex items-center gap-2 rounded-full border border-line bg-surface-raised py-1.5 pl-3 pr-1.5 text-sm font-medium"
             >
-              <span className="h-2 w-2 rounded-full" style={{ background: SERIES[index % SERIES.length] }} aria-hidden />
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: SERIES[index % SERIES.length] }}
+                aria-hidden
+              />
               {column.ticker}
               {details[index].isError ? <Badge tone="warning">não encontrado</Badge> : null}
               <button
@@ -348,7 +413,8 @@ export default function Comparador() {
             footer={
               chartData.length ? (
                 <span>
-                  {shortDate(String(chartData[0]?.date))} → {shortDate(String(chartData[chartData.length - 1]?.date))}
+                  {shortDate(String(chartData[0]?.date))} →{" "}
+                  {shortDate(String(chartData[chartData.length - 1]?.date))}
                   {" · "}moedas diferentes comparam variação, não preço
                 </span>
               ) : undefined
@@ -375,7 +441,10 @@ export default function Comparador() {
                     <th className="w-[210px] px-3 py-2">Indicador</th>
                     {columns.map((column, index) => (
                       <th key={column.ticker} className="w-[190px] px-3 py-2">
-                        <Link to={`/ativos/${column.ticker}`} className="group inline-block normal-case">
+                        <Link
+                          to={`/ativos/${column.ticker}`}
+                          className="group inline-block normal-case"
+                        >
                           <span className="flex items-center gap-1.5 text-sm font-semibold text-ink group-hover:text-accent">
                             <span
                               className="h-2 w-2 rounded-full"
@@ -387,9 +456,13 @@ export default function Comparador() {
                           <span className="mt-0.5 flex items-center gap-1.5">
                             {column.detail ? <KindTag kind={column.detail.kind} /> : null}
                             {column.detail?.held === false ? (
-                              <span className="text-[10px] font-normal text-ink-muted">fora da carteira</span>
+                              <span className="text-[10px] font-normal text-ink-muted">
+                                fora da carteira
+                              </span>
                             ) : column.detail ? (
-                              <span className="text-[10px] font-normal text-accent">na carteira</span>
+                              <span className="text-[10px] font-normal text-accent">
+                                na carteira
+                              </span>
                             ) : null}
                           </span>
                         </Link>
@@ -415,7 +488,9 @@ export default function Comparador() {
                         <td className="px-3 py-2 text-[13px] text-ink-muted">
                           {metric.label}
                           {metric.hint ? (
-                            <span className="mt-0.5 block text-[10px] leading-snug">{metric.hint}</span>
+                            <span className="mt-0.5 block text-[10px] leading-snug">
+                              {metric.hint}
+                            </span>
                           ) : null}
                         </td>
                         {columns.map((column) => {

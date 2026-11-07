@@ -19,7 +19,11 @@ export default class ErrorBoundary extends Component<Props, State> {
         <div className="mx-auto max-w-lg py-16 text-center">
           <p className="text-lg font-semibold text-ink">Algo deu errado ao exibir esta página.</p>
           <p className="mt-2 break-words text-sm text-ink-muted">{String(this.state.error)}</p>
-          <button type="button" className="btn-ghost mt-6" onClick={() => this.setState({ error: null })}>
+          <button
+            type="button"
+            className="btn-ghost mt-6"
+            onClick={() => this.setState({ error: null })}
+          >
             Tentar novamente
           </button>
         </div>

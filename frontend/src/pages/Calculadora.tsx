@@ -9,7 +9,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Coins, PiggyBank, Sparkles, TrendingUp, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { ChartFrame, ProjectionBreakdownBars, ProjectionChart, type ProjectionPoint } from "@/components/charts";
+import {
+  ChartFrame,
+  ProjectionBreakdownBars,
+  ProjectionChart,
+  type ProjectionPoint,
+} from "@/components/charts";
 import { Card, Select, StatTile } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, percent } from "@/lib/format";
@@ -77,7 +82,10 @@ function Field({
 
 export default function Calculadora() {
   const overview = useQuery({ queryKey: ["overview"], queryFn: api.overview });
-  const contributions = useQuery({ queryKey: ["contributions"], queryFn: () => api.contributions("month") });
+  const contributions = useQuery({
+    queryKey: ["contributions"],
+    queryFn: () => api.contributions("month"),
+  });
 
   const [initial, setInitial] = useState<string | null>(null);
   const [monthly, setMonthly] = useState<string | null>(null);
@@ -93,7 +101,9 @@ export default function Calculadora() {
   useEffect(() => {
     if (monthly !== null || !contributions.data) return;
     const recent = contributions.data.slice(-12).map((point) => point.net);
-    const average = recent.length ? recent.reduce((sum, value) => sum + value, 0) / recent.length : 0;
+    const average = recent.length
+      ? recent.reduce((sum, value) => sum + value, 0) / recent.length
+      : 0;
     setMonthly(fieldValue(Math.max(Math.round(average), 0)));
   }, [contributions.data, monthly]);
 
@@ -101,7 +111,8 @@ export default function Calculadora() {
     const start = parseNumber(initial ?? "");
     const contribution = parseNumber(monthly ?? "");
     const rateValue = parseNumber(rate);
-    const monthlyRate = rateUnit === "aa" ? Math.pow(1 + rateValue / 100, 1 / 12) - 1 : rateValue / 100;
+    const monthlyRate =
+      rateUnit === "aa" ? Math.pow(1 + rateValue / 100, 1 / 12) - 1 : rateValue / 100;
     const requested = Math.floor(parseNumber(period)) * (periodUnit === "anos" ? 12 : 1);
     // 100-year cap: enough for any plan, and keeps absurd input from freezing the page.
     const months = Math.min(requested, 1200);
@@ -138,7 +149,9 @@ export default function Calculadora() {
     <div className="space-y-6">
       <header className="animate-fade-up">
         <p className="text-sm text-ink-muted">Simulação</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Calculadora de juros compostos</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+          Calculadora de juros compostos
+        </h1>
       </header>
 
       <Card className="p-5" hover={false}>
@@ -199,15 +212,26 @@ export default function Calculadora() {
           />
         </div>
         <p className="mt-3 text-xs text-ink-muted">
-          Valor inicial e aporte começam com os números da sua carteira (patrimônio atual e média de aportes dos
-          últimos 12 meses). Edite à vontade. Taxa anual convertida por equivalência: {percent(monthlyRate * 100, 3)}{" "}
-          ao mês.
+          Valor inicial e aporte começam com os números da sua carteira (patrimônio atual e média de
+          aportes dos últimos 12 meses). Edite à vontade. Taxa anual convertida por equivalência:{" "}
+          {percent(monthlyRate * 100, 3)} ao mês.
         </p>
       </Card>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Patrimônio final" value={money(last.total)} icon={Sparkles} tone="accent" hint={`em ${months} meses`} />
-        <StatTile label="Total investido" value={money(last.invested)} icon={Wallet} hint="valor inicial + aportes" />
+        <StatTile
+          label="Patrimônio final"
+          value={money(last.total)}
+          icon={Sparkles}
+          tone="accent"
+          hint={`em ${months} meses`}
+        />
+        <StatTile
+          label="Total investido"
+          value={money(last.invested)}
+          icon={Wallet}
+          hint="valor inicial + aportes"
+        />
         <StatTile
           label="Total em juros"
           value={money(last.interest)}
@@ -261,7 +285,8 @@ export default function Calculadora() {
         footer={
           <span>
             <PiggyBank size={13} className="mr-1 inline-block" aria-hidden />
-            Juros compostos sobre {money(parseNumber(initial ?? ""))} iniciais e aportes de {money(parseNumber(monthly ?? ""))}
+            Juros compostos sobre {money(parseNumber(initial ?? ""))} iniciais e aportes de{" "}
+            {money(parseNumber(monthly ?? ""))}
             /mês, sem considerar inflação nem imposto de renda.
           </span>
         }

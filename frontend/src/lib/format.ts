@@ -87,7 +87,10 @@ export function quantity(value: unknown): string {
   if (valuesHidden) return MASK;
   const amount = num(value);
   const decimals = Number.isInteger(amount) ? 0 : Math.abs(amount) < 1 ? 6 : 2;
-  return new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: decimals }).format(amount);
+  return new Intl.NumberFormat(locale, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  }).format(amount);
 }
 
 export function percent(value: unknown, decimals = 2, withSign = false): string {
@@ -99,7 +102,10 @@ export function percent(value: unknown, decimals = 2, withSign = false): string 
   return `${withSign && amount > 0 ? "+" : ""}${text}%`;
 }
 
-export function signedMoney(value: unknown, options?: { compact?: boolean; currency?: string }): string {
+export function signedMoney(
+  value: unknown,
+  options?: { compact?: boolean; currency?: string },
+): string {
   const amount = num(value);
   // The sign survives the mask on purpose: up or down is already written in the
   // colour and in the percentage beside it, and "+R$ ••••" reads as a result.
@@ -131,9 +137,16 @@ export function fxRate(value: unknown, from: string, to = currency): string {
 
 export function shortDate(value: string | Date | null | undefined): string {
   if (!value) return "-";
-  const date = typeof value === "string" ? new Date(`${value.length <= 10 ? `${value}T00:00:00` : value}`) : value;
+  const date =
+    typeof value === "string"
+      ? new Date(`${value.length <= 10 ? `${value}T00:00:00` : value}`)
+      : value;
   if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 export function dateTime(value: string | null | undefined): string {
@@ -143,14 +156,16 @@ export function dateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
-/** "2024-03" -> "mar/2024"; "2024" stays as is. */
+/** "2024-03" -> "mar de 24" (Intl pt-BR, short month); "2024-Q3" -> "Q3 24"; "2024" stays. */
 export function periodLabel(period: string): string {
   if (/^\d{4}$/.test(period)) return period;
   const [year, month] = period.split("-");
   if (!month) return period;
   if (month.startsWith("Q")) return `${month} ${year.slice(2)}`;
   const date = new Date(Number(year), Number(month) - 1, 1);
-  return new Intl.DateTimeFormat(locale, { month: "short", year: "2-digit" }).format(date).replace(".", "");
+  return new Intl.DateTimeFormat(locale, { month: "short", year: "2-digit" })
+    .format(date)
+    .replace(".", "");
 }
 
 export function toneOf(value: unknown): "positive" | "negative" | "neutral" {
@@ -219,4 +234,3 @@ export const KIND_LABELS: Record<string, string> = {
 
 export const opLabel = (value: string) => OP_LABELS[value] ?? value;
 export const kindLabel = (value: string) => KIND_LABELS[value] ?? value;
-

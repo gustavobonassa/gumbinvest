@@ -103,10 +103,9 @@ export default function CloudBackupCard({ settings }: { settings: AppSettings })
             </button>
             {status.data?.backup_time ? (
               <span className="text-xs text-ink-muted">
-                Envio automático toda semana (domingo às {status.data.backup_time}) — ou na
-                próxima vez que o app abrir, se o computador estava desligado. Os{" "}
-                {status.data.backup_keep} backups mais recentes ficam guardados; os antigos são
-                apagados sozinhos.
+                Envio automático toda semana (domingo às {status.data.backup_time}) — ou na próxima
+                vez que o app abrir, se o computador estava desligado. Os {status.data.backup_keep}{" "}
+                backups mais recentes ficam guardados; os antigos são apagados sozinhos.
               </span>
             ) : null}
           </div>
@@ -209,25 +208,28 @@ function GoogleDriveSection({
   useEffect(() => {
     if (!flow) return undefined;
     let cancelled = false;
-    const timer = setInterval(async () => {
-      try {
-        const result = await api.gdriveDevicePoll();
-        if (cancelled) return;
-        if (result.status === "connected") {
+    const timer = setInterval(
+      async () => {
+        try {
+          const result = await api.gdriveDevicePoll();
+          if (cancelled) return;
+          if (result.status === "connected") {
+            setFlow(null);
+            toast.success("Google Drive conectado.");
+            queryClient.invalidateQueries({ queryKey: ["cloud-backup"] });
+            queryClient.invalidateQueries({ queryKey: ["settings"] });
+          } else if (result.interval && result.interval !== flow.interval) {
+            // slow_down do Google: alarga o próprio polling
+            setFlow((current) => (current ? { ...current, interval: result.interval! } : current));
+          }
+        } catch (error) {
+          if (cancelled) return;
           setFlow(null);
-          toast.success("Google Drive conectado.");
-          queryClient.invalidateQueries({ queryKey: ["cloud-backup"] });
-          queryClient.invalidateQueries({ queryKey: ["settings"] });
-        } else if (result.interval && result.interval !== flow.interval) {
-          // slow_down do Google: alarga o próprio polling
-          setFlow((current) => (current ? { ...current, interval: result.interval! } : current));
+          toast.error("A conexão com o Google Drive falhou.", error);
         }
-      } catch (error) {
-        if (cancelled) return;
-        setFlow(null);
-        toast.error("A conexão com o Google Drive falhou.", error);
-      }
-    }, Math.max(flow.interval, 3) * 1000);
+      },
+      Math.max(flow.interval, 3) * 1000,
+    );
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -518,7 +520,10 @@ function RestoreSection() {
                 ) : (
                   <ul className="divide-y divide-line">
                     {entry.items.map((item) => (
-                      <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                      <li
+                        key={item.id}
+                        className="flex flex-wrap items-center justify-between gap-2 py-1.5"
+                      >
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">{item.name}</span>
                           <span className="text-xs text-ink-muted">
@@ -578,9 +583,7 @@ function RestoreSection() {
           ) : null}
           {replaceStep ? (
             <div className="space-y-2 rounded-xl border border-negative/30 bg-negative/5 p-3">
-              <p className="font-medium text-negative">
-                Esta instalação já tem movimentações.
-              </p>
+              <p className="font-medium text-negative">Esta instalação já tem movimentações.</p>
               <p>
                 Continuar vai apagar todos os dados atuais e substituí-los pelo backup. Um backup
                 local de segurança é criado antes de apagar, mas a troca em si não tem desfazer.

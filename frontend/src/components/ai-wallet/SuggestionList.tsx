@@ -93,8 +93,8 @@ export default function SuggestionList({
         Sugestões de {wallet.provider_label}
       </h2>
       <p className="mt-0.5 text-sm text-ink-muted">
-        Aceite ou recuse cada sugestão individualmente. Os valores são aplicados a preço de
-        mercado no momento do aceite.
+        Aceite ou recuse cada sugestão individualmente. Os valores são aplicados a preço de mercado
+        no momento do aceite.
       </p>
       <ul className="mt-4 space-y-3">
         {items.map((item) => (
@@ -139,7 +139,9 @@ function SuggestionCard({
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={failed ? "neutral" : ACTION_TONES[item.action]}>{ACTION_LABELS[item.action]}</Badge>
+        <Badge tone={failed ? "neutral" : ACTION_TONES[item.action]}>
+          {ACTION_LABELS[item.action]}
+        </Badge>
         <span className="font-medium text-ink">{subject}</span>
         {item.amount_brl !== null ? (
           <span className="tnum text-sm text-ink-secondary">{money(item.amount_brl)}</span>
@@ -155,15 +157,27 @@ function SuggestionCard({
         ) : null}
         {failed ? <Badge tone="warning">recusada pelo sistema</Badge> : null}
       </div>
-      {item.rationale ? <p className="mt-2 max-w-3xl text-sm text-ink-secondary">{item.rationale}</p> : null}
+      {item.rationale ? (
+        <p className="mt-2 max-w-3xl text-sm text-ink-secondary">{item.rationale}</p>
+      ) : null}
       {failed && item.detail ? <p className="mt-2 text-xs text-warning">{item.detail}</p> : null}
       {error ? <p className="mt-2 text-xs text-negative">{error}</p> : null}
       {!failed ? (
         <div className="mt-3 flex gap-2">
-          <button type="button" className="btn-primary px-3 py-1.5 text-sm" disabled={busy} onClick={onAccept}>
+          <button
+            type="button"
+            className="btn-primary px-3 py-1.5 text-sm"
+            disabled={busy}
+            onClick={onAccept}
+          >
             <Check size={14} /> Aceitar
           </button>
-          <button type="button" className="btn-ghost px-3 py-1.5 text-sm" disabled={busy} onClick={onDecline}>
+          <button
+            type="button"
+            className="btn-ghost px-3 py-1.5 text-sm"
+            disabled={busy}
+            onClick={onDecline}
+          >
             <X size={14} /> Recusar
           </button>
         </div>

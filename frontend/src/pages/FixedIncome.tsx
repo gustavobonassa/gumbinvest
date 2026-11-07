@@ -74,7 +74,13 @@ const INDEX_LABELS: Record<string, string> = {
   PRE: "Prefixado",
 };
 
-function ImpliedHint({ item, onApply }: { item: FixedIncomeItem; onApply: (percent: number) => void }) {
+function ImpliedHint({
+  item,
+  onApply,
+}: {
+  item: FixedIncomeItem;
+  onApply: (percent: number) => void;
+}) {
   if (!item.implied) return null;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-accent/25 bg-accent-soft px-3 py-2 text-sm">
@@ -83,8 +89,10 @@ function ImpliedHint({ item, onApply }: { item: FixedIncomeItem; onApply: (perce
         Este papel pagou {money(item.implied.proceeds)} sobre {money(item.implied.invested)} entre{" "}
         {shortDate(item.implied.start)} e {shortDate(item.implied.end)}: equivale a{" "}
         <strong className="text-ink">
-          {Number(item.implied.percent_of_index).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% do{" "}
-          {item.implied.index_code}
+          {Number(item.implied.percent_of_index).toLocaleString("pt-BR", {
+            maximumFractionDigits: 1,
+          })}
+          % do {item.implied.index_code}
         </strong>
         .
       </span>
@@ -128,76 +136,80 @@ function TermsEditor({ item, onSaved }: { item: FixedIncomeItem; onSaved: () => 
 
   return (
     <>
-    <ImpliedHint
-      item={item}
-      onApply={(value) => {
-        update("percent_of_index", value as FixedIncomeTerms["percent_of_index"]);
-      }}
-    />
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
-      <div>
-        <span className="mb-1.5 block text-xs font-medium text-ink-muted">Indexador</span>
-        <Select
-          ariaLabel="Indexador"
-          value={terms.index_code}
-          onChange={(next) => update("index_code", next as FixedIncomeTerms["index_code"])}
-          options={Object.entries(INDEX_LABELS).map(([value, label]) => ({ value, label }))}
-        />
+      <ImpliedHint
+        item={item}
+        onApply={(value) => {
+          update("percent_of_index", value as FixedIncomeTerms["percent_of_index"]);
+        }}
+      />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Indexador</span>
+          <Select
+            ariaLabel="Indexador"
+            value={terms.index_code}
+            onChange={(next) => update("index_code", next as FixedIncomeTerms["index_code"])}
+            options={Object.entries(INDEX_LABELS).map(([value, label]) => ({ value, label }))}
+          />
+        </div>
+
+        {isIndexed ? (
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-ink-muted">% do indexador</span>
+            <input
+              className="input tnum"
+              inputMode="decimal"
+              value={String(terms.percent_of_index ?? "")}
+              onChange={(event) =>
+                update("percent_of_index", event.target.value as unknown as number)
+              }
+            />
+          </label>
+        ) : null}
+
+        {terms.index_code === "PRE" ? (
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-ink-muted">Taxa a.a. (%)</span>
+            <input
+              className="input tnum"
+              inputMode="decimal"
+              value={String(terms.fixed_rate_annual ?? "")}
+              onChange={(event) =>
+                update("fixed_rate_annual", event.target.value as unknown as number)
+              }
+            />
+          </label>
+        ) : (
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-ink-muted">Spread a.a. (%)</span>
+            <input
+              className="input tnum"
+              inputMode="decimal"
+              value={String(terms.spread_annual ?? "")}
+              onChange={(event) => update("spread_annual", event.target.value as unknown as number)}
+            />
+          </label>
+        )}
+
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Vencimento</span>
+          <DateField
+            ariaLabel="Vencimento"
+            className="w-full"
+            value={terms.maturity_date ?? ""}
+            onChange={(next) => update("maturity_date", next || null)}
+          />
+        </div>
+
+        <button
+          type="button"
+          className={clsx(dirty ? "btn-primary" : "btn-ghost")}
+          disabled={save.isPending}
+          onClick={() => save.mutate()}
+        >
+          <Save size={15} /> {save.isPending ? "Salvando…" : dirty ? "Salvar" : "Salvo"}
+        </button>
       </div>
-
-      {isIndexed ? (
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">% do indexador</span>
-          <input
-            className="input tnum"
-            inputMode="decimal"
-            value={String(terms.percent_of_index ?? "")}
-            onChange={(event) => update("percent_of_index", event.target.value as unknown as number)}
-          />
-        </label>
-      ) : null}
-
-      {terms.index_code === "PRE" ? (
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Taxa a.a. (%)</span>
-          <input
-            className="input tnum"
-            inputMode="decimal"
-            value={String(terms.fixed_rate_annual ?? "")}
-            onChange={(event) => update("fixed_rate_annual", event.target.value as unknown as number)}
-          />
-        </label>
-      ) : (
-        <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Spread a.a. (%)</span>
-          <input
-            className="input tnum"
-            inputMode="decimal"
-            value={String(terms.spread_annual ?? "")}
-            onChange={(event) => update("spread_annual", event.target.value as unknown as number)}
-          />
-        </label>
-      )}
-
-      <div>
-        <span className="mb-1.5 block text-xs font-medium text-ink-muted">Vencimento</span>
-        <DateField
-          ariaLabel="Vencimento"
-          className="w-full"
-          value={terms.maturity_date ?? ""}
-          onChange={(next) => update("maturity_date", next || null)}
-        />
-      </div>
-
-      <button
-        type="button"
-        className={clsx(dirty ? "btn-primary" : "btn-ghost")}
-        disabled={save.isPending}
-        onClick={() => save.mutate()}
-      >
-        <Save size={15} /> {save.isPending ? "Salvando…" : dirty ? "Salvar" : "Salvo"}
-      </button>
-    </div>
     </>
   );
 }
@@ -236,7 +248,12 @@ function TreasuryCard({ item }: { item: TreasuryItem }) {
         action={
           <div className="text-right">
             <p className="tnum text-lg font-semibold">{money(item.value)}</p>
-            <p className={clsx("tnum text-xs", item.unrealized >= 0 ? "text-positive" : "text-negative")}>
+            <p
+              className={clsx(
+                "tnum text-xs",
+                item.unrealized >= 0 ? "text-positive" : "text-negative",
+              )}
+            >
               {item.unrealized >= 0 ? "+" : ""}
               {money(item.unrealized)} ({percent(item.unrealized_pct, 2)})
             </p>
@@ -247,7 +264,9 @@ function TreasuryCard({ item }: { item: TreasuryItem }) {
       <div className="mb-4 flex flex-wrap gap-2">
         <Badge>{quantity(item.quantity)} títulos</Badge>
         <Badge>custo {money(item.cost_basis)}</Badge>
-        {item.price_date ? <Badge tone="accent">preço de {shortDate(item.price_date)}</Badge> : null}
+        {item.price_date ? (
+          <Badge tone="accent">preço de {shortDate(item.price_date)}</Badge>
+        ) : null}
         {item.stale ? <Badge tone="warning">preços desatualizados</Badge> : null}
       </div>
 
@@ -265,7 +284,9 @@ function TreasuryCard({ item }: { item: TreasuryItem }) {
         <Field label="Preço médio pago" value={money(item.average_price)} />
         <Field
           label="Taxa contratada"
-          value={item.contracted_rate === null ? "-" : `${basis} ${percent(item.contracted_rate, 2)}`}
+          value={
+            item.contracted_rate === null ? "-" : `${basis} ${percent(item.contracted_rate, 2)}`
+          }
           hint={
             rateMoved === null || item.buy_rate === null
               ? undefined
@@ -303,11 +324,18 @@ function TreasuryPanel() {
     <section className="space-y-4 animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm text-ink-secondary">
-          Preços diários do Tesouro Transparente. A posição é marcada pelo preço de recompra (o que o
-          Tesouro paga em um resgate antecipado) e não pelo preço de compra, que é sempre mais alto.
+          Preços diários do Tesouro Transparente. A posição é marcada pelo preço de recompra (o que
+          o Tesouro paga em um resgate antecipado) e não pelo preço de compra, que é sempre mais
+          alto.
         </p>
-        <button type="button" className="btn-ghost" onClick={() => sync.mutate()} disabled={sync.isPending}>
-          <RefreshCw size={15} className={sync.isPending ? "animate-spin" : undefined} /> Atualizar preços
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => sync.mutate()}
+          disabled={sync.isPending}
+        >
+          <RefreshCw size={15} className={sync.isPending ? "animate-spin" : undefined} /> Atualizar
+          preços
         </button>
       </div>
 
@@ -373,11 +401,18 @@ function PrivatePanel() {
     <div className="space-y-4 animate-fade-up">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm text-ink-secondary">
-          CDB, LCI, LCA e RDB são calculados: o extrato da B3 não informa a taxa, então ela é configurada
-          aqui e o indexador é acumulado desde a data de cada aplicação, com as séries do Banco Central.
+          CDB, LCI, LCA e RDB são calculados: o extrato da B3 não informa a taxa, então ela é
+          configurada aqui e o indexador é acumulado desde a data de cada aplicação, com as séries
+          do Banco Central.
         </p>
-        <button type="button" className="btn-ghost" onClick={() => sync.mutate()} disabled={sync.isPending}>
-          <RefreshCw size={15} className={sync.isPending ? "animate-spin" : undefined} /> Atualizar índices
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={() => sync.mutate()}
+          disabled={sync.isPending}
+        >
+          <RefreshCw size={15} className={sync.isPending ? "animate-spin" : undefined} /> Atualizar
+          índices
         </button>
       </div>
 
@@ -389,7 +424,9 @@ function PrivatePanel() {
             {index.code}: {shortDate(index.start)} → {shortDate(index.end)} ({index.points} pontos)
           </Badge>
         ))}
-        {cdi ? <span className="text-xs text-ink-muted">atualizado {dateTime(cdi.checked_at)}</span> : null}
+        {cdi ? (
+          <span className="text-xs text-ink-muted">atualizado {dateTime(cdi.checked_at)}</span>
+        ) : null}
       </Card>
 
       {!open.length ? (
@@ -401,7 +438,11 @@ function PrivatePanel() {
       ) : (
         <section className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-3">
-            <StatTile label="Principal aplicado" value={money(data.totals.principal)} icon={Building2} />
+            <StatTile
+              label="Principal aplicado"
+              value={money(data.totals.principal)}
+              icon={Building2}
+            />
             <StatTile label="Valor atualizado" value={money(data.totals.value)} tone="accent" />
             <StatTile
               label="Juros acumulados"
@@ -437,10 +478,15 @@ function PrivatePanel() {
                   <Badge>principal {money(item.accrual.principal)}</Badge>
                   <Badge>{item.accrual.business_days} dias úteis</Badge>
                   <Badge tone="accent">
-                    fator {Number(item.accrual.factor).toLocaleString("pt-BR", { maximumFractionDigits: 6 })}
+                    fator{" "}
+                    {Number(item.accrual.factor).toLocaleString("pt-BR", {
+                      maximumFractionDigits: 6,
+                    })}
                   </Badge>
                   {item.accrual.stale ? (
-                    <Badge tone="warning">série do índice desatualizada, valor até {shortDate(item.accrual.through)}</Badge>
+                    <Badge tone="warning">
+                      série do índice desatualizada, valor até {shortDate(item.accrual.through)}
+                    </Badge>
                   ) : null}
                 </div>
               ) : (
@@ -544,7 +590,12 @@ function AccountEntryForm({ account }: { account: CashAccount }) {
         </label>
         <div>
           <span className="mb-1.5 block text-xs font-medium text-ink-muted">Data</span>
-          <DateField ariaLabel="Data do movimento" className="w-full" value={when} onChange={setWhen} />
+          <DateField
+            ariaLabel="Data do movimento"
+            className="w-full"
+            value={when}
+            onChange={setWhen}
+          />
         </div>
         <button
           type="button"
@@ -612,7 +663,11 @@ function AccountCard({ account }: { account: CashAccount }) {
       <AccountEntryForm account={account} />
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <button type="button" className="btn-ghost text-xs" onClick={() => setOpen((value) => !value)}>
+        <button
+          type="button"
+          className="btn-ghost text-xs"
+          onClick={() => setOpen((value) => !value)}
+        >
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           {account.entries.length} lançamento{account.entries.length === 1 ? "" : "s"}
         </button>
@@ -634,8 +689,8 @@ function AccountCard({ account }: { account: CashAccount }) {
         onClose={() => setConfirmRemove(false)}
       >
         <p className="text-sm text-ink-secondary">
-          A conta e todos os seus lançamentos serão apagados. Esta ação não pode ser desfeita:
-          os depósitos e saques teriam de ser lançados de novo.
+          A conta e todos os seus lançamentos serão apagados. Esta ação não pode ser desfeita: os
+          depósitos e saques teriam de ser lançados de novo.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button type="button" className="btn-ghost" onClick={() => setConfirmRemove(false)}>
@@ -662,7 +717,9 @@ function AccountCard({ account }: { account: CashAccount }) {
               key={entry.id}
               className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-hover"
             >
-              <span className="tnum w-[74px] shrink-0 text-xs text-ink-muted">{shortDate(entry.date)}</span>
+              <span className="tnum w-[74px] shrink-0 text-xs text-ink-muted">
+                {shortDate(entry.date)}
+              </span>
               <Badge tone={entry.kind === "deposit" ? "positive" : "negative"}>
                 {entry.kind === "deposit" ? "Depósito" : "Saque"}
               </Badge>
@@ -726,7 +783,9 @@ function NewAccountForm() {
       />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
         <label className="block lg:col-span-2">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Onde está o dinheiro</span>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+            Onde está o dinheiro
+          </span>
           <input
             className="input"
             placeholder="Nubank"
@@ -735,7 +794,9 @@ function NewAccountForm() {
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Saldo inicial (R$)</span>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+            Saldo inicial (R$)
+          </span>
           <input
             className="input tnum"
             inputMode="decimal"
@@ -746,7 +807,12 @@ function NewAccountForm() {
         </label>
         <div>
           <span className="mb-1.5 block text-xs font-medium text-ink-muted">Desde</span>
-          <DateField ariaLabel="Data do saldo inicial" className="w-full" value={when} onChange={setWhen} />
+          <DateField
+            ariaLabel="Data do saldo inicial"
+            className="w-full"
+            value={when}
+            onChange={setWhen}
+          />
         </div>
         <label className="block">
           <span className="mb-1.5 block text-xs font-medium text-ink-muted">% do CDI</span>
@@ -785,7 +851,12 @@ function AccountsPanel() {
     <div className="space-y-4">
       {data.items.length ? (
         <section className="grid gap-4 sm:grid-cols-3">
-          <StatTile label="Saldo total" value={money(data.totals.balance)} icon={Wallet} tone="accent" />
+          <StatTile
+            label="Saldo total"
+            value={money(data.totals.balance)}
+            icon={Wallet}
+            tone="accent"
+          />
           <StatTile label="Aplicado" value={money(data.totals.principal)} />
           <StatTile
             label="Juros acumulados"
@@ -846,15 +917,17 @@ export default function FixedIncome() {
         <p className="text-sm text-ink-muted">Carteira</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Renda fixa</h1>
         <p className="mt-2 max-w-2xl text-sm text-ink-secondary">
-          Papéis privados são calculados a partir do indexador contratado; títulos públicos são cotados: o
-          Tesouro publica o preço de cada título todo dia útil. Contas guardam o dinheiro que nenhum extrato
-          alcança, rendendo o índice desde a data de cada movimento.
+          Papéis privados são calculados a partir do indexador contratado; títulos públicos são
+          cotados: o Tesouro publica o preço de cada título todo dia útil. Contas guardam o dinheiro
+          que nenhum extrato alcança, rendendo o índice desde a data de cada movimento.
         </p>
       </header>
 
       <Tabs
         value={tab}
-        onChange={(value) => setParams(value === "privados" ? {} : { aba: value }, { replace: true })}
+        onChange={(value) =>
+          setParams(value === "privados" ? {} : { aba: value }, { replace: true })
+        }
         options={[
           { ...TABS[0], count: openCount(fixedIncome.data?.items) },
           { ...TABS[1], count: openCount(treasury.data?.items) },
@@ -862,7 +935,13 @@ export default function FixedIncome() {
         ]}
       />
 
-      {tab === "privados" ? <PrivatePanel /> : tab === "tesouro" ? <TreasuryPanel /> : <AccountsPanel />}
+      {tab === "privados" ? (
+        <PrivatePanel />
+      ) : tab === "tesouro" ? (
+        <TreasuryPanel />
+      ) : (
+        <AccountsPanel />
+      )}
     </div>
   );
 }

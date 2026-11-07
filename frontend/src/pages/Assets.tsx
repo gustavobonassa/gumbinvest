@@ -5,7 +5,16 @@ import { ArrowDown, ArrowUp, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { Badge, Card, EmptyState, ErrorState, Pager, Segmented, Skeleton, Tabs } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  Pager,
+  Segmented,
+  Skeleton,
+  Tabs,
+} from "@/components/ui";
 import { api, type PositionRow } from "@/lib/api";
 import { kindColor } from "@/lib/colors";
 import { KIND_LABELS, kindLabel, money, percent, quantity } from "@/lib/format";
@@ -75,7 +84,11 @@ function CategoryTotals({ rows, kind }: { rows: PositionRow[]; kind: string }) {
   }, [rows]);
 
   const figures: { label: string; value: string; hint?: string; tone?: number }[] = [
-    { label: "Investido", value: money(totals.invested), hint: `${rows.length} ativo${rows.length === 1 ? "" : "s"}` },
+    {
+      label: "Investido",
+      value: money(totals.invested),
+      hint: `${rows.length} ativo${rows.length === 1 ? "" : "s"}`,
+    },
     { label: "Valor atual", value: money(totals.value) },
     {
       label: "Não realizado",
@@ -110,7 +123,11 @@ function CategoryTotals({ rows, kind }: { rows: PositionRow[]; kind: string }) {
       {/* Positioned, so it paints above the absolutely positioned wash. */}
       <div className="relative">
         <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} aria-hidden />
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{ background: color }}
+            aria-hidden
+          />
           <span className="text-sm font-medium text-ink">{kindLabel(kind)}</span>
         </div>
         <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -121,7 +138,8 @@ function CategoryTotals({ rows, kind }: { rows: PositionRow[]; kind: string }) {
                 className={clsx(
                   "tnum mt-0.5 truncate text-lg font-semibold leading-tight",
                   figure.tone === undefined && "text-ink",
-                  figure.tone !== undefined && (figure.tone >= 0 ? "text-positive" : "text-negative"),
+                  figure.tone !== undefined &&
+                    (figure.tone >= 0 ? "text-positive" : "text-negative"),
                 )}
                 title={figure.value}
               >
@@ -161,7 +179,8 @@ export default function Assets() {
     if (filter.trim()) {
       const needle = filter.trim().toLowerCase();
       list = list.filter(
-        (asset) => asset.ticker.toLowerCase().includes(needle) || asset.name.toLowerCase().includes(needle),
+        (asset) =>
+          asset.ticker.toLowerCase().includes(needle) || asset.name.toLowerCase().includes(needle),
       );
     }
     return list;
@@ -186,7 +205,9 @@ export default function Assets() {
   // A class the current scope or search leaves empty has no tab to sit on, so
   // the selection falls back to the first class that does.
   const requested = params.get("classe");
-  const kind = tabs.some((tab) => tab.value === requested) ? String(requested) : (tabs[0]?.value ?? "");
+  const kind = tabs.some((tab) => tab.value === requested)
+    ? String(requested)
+    : (tabs[0]?.value ?? "");
 
   const rows = useMemo(() => {
     const list = scoped.filter((asset) => asset.kind === kind);
@@ -194,7 +215,8 @@ export default function Assets() {
     return [...list].sort((a, b) => {
       const left = a[sort as keyof PositionRow];
       const right = b[sort as keyof PositionRow];
-      if (typeof left === "string" && typeof right === "string") return left.localeCompare(right) * factor;
+      if (typeof left === "string" && typeof right === "string")
+        return left.localeCompare(right) * factor;
       return (Number(left) - Number(right)) * factor;
     });
   }, [scoped, kind, sort, direction]);
@@ -242,7 +264,10 @@ export default function Assets() {
 
       <Card className="flex flex-wrap items-center gap-3 p-3" hover={false}>
         <div className="relative min-w-[220px] flex-1">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+          />
           <input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
@@ -260,7 +285,10 @@ export default function Assets() {
             ))}
           </div>
         ) : !rows.length ? (
-          <EmptyState title="Nenhum ativo encontrado" description="Ajuste os filtros ou importe novas transações." />
+          <EmptyState
+            title="Nenhum ativo encontrado"
+            description="Ajuste os filtros ou importe novas transações."
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -300,7 +328,10 @@ export default function Assets() {
                 {visible.map((asset) => (
                   <tr key={asset.ticker} className="table-row">
                     <td className="px-4 py-3">
-                      <Link to={`/ativos/${asset.ticker}`} className="group flex items-center gap-3">
+                      <Link
+                        to={`/ativos/${asset.ticker}`}
+                        className="group flex items-center gap-3"
+                      >
                         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-hover text-[11px] font-semibold text-ink-secondary">
                           {asset.ticker.slice(0, 4)}
                         </span>
@@ -310,9 +341,14 @@ export default function Assets() {
                           <span className="flex items-center gap-2 font-medium text-ink group-hover:text-accent">
                             {asset.ticker}
                             {!asset.is_open ? <Badge>encerrado</Badge> : null}
-                            {!asset.has_market_price && asset.is_open ? <Badge tone="warning">sem cotação</Badge> : null}
+                            {!asset.has_market_price && asset.is_open ? (
+                              <Badge tone="warning">sem cotação</Badge>
+                            ) : null}
                           </span>
-                          <span className="block truncate text-xs text-ink-muted" title={asset.name}>
+                          <span
+                            className="block truncate text-xs text-ink-muted"
+                            title={asset.name}
+                          >
                             {asset.name}
                           </span>
                         </span>
@@ -330,8 +366,11 @@ export default function Assets() {
                         {money(asset.market_value_base)}
                       </span>
                       <span className="tnum block text-xs text-ink-muted">
-                        {quantity(asset.quantity)} × {money(asset.current_price, { currency: asset.currency })}
-                        {asset.is_foreign ? ` = ${money(asset.market_value, { currency: asset.currency })}` : ""}
+                        {quantity(asset.quantity)} ×{" "}
+                        {money(asset.current_price, { currency: asset.currency })}
+                        {asset.is_foreign
+                          ? ` = ${money(asset.market_value, { currency: asset.currency })}`
+                          : ""}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -343,7 +382,9 @@ export default function Assets() {
                       >
                         {money(asset.unrealized_pnl_base)}
                       </span>
-                      <span className="tnum block text-xs text-ink-muted">{percent(asset.unrealized_pct, 2, true)}</span>
+                      <span className="tnum block text-xs text-ink-muted">
+                        {percent(asset.unrealized_pct, 2, true)}
+                      </span>
                     </td>
                     <td className="tnum hidden px-4 py-3 text-right text-ink-secondary xl:table-cell">
                       {money(asset.income_base)}
@@ -357,10 +398,14 @@ export default function Assets() {
                       >
                         {money(asset.total_return_base)}
                       </span>
-                      <span className="tnum block text-xs text-ink-muted">{percent(asset.total_return_pct, 1, true)}</span>
+                      <span className="tnum block text-xs text-ink-muted">
+                        {percent(asset.total_return_pct, 1, true)}
+                      </span>
                     </td>
                     <td className="hidden px-4 py-3 text-right md:table-cell">
-                      <span className="tnum text-ink-secondary">{percent(asset.allocation_pct, 1)}</span>
+                      <span className="tnum text-ink-secondary">
+                        {percent(asset.allocation_pct, 1)}
+                      </span>
                       <span className="mt-1 block h-1 w-full overflow-hidden rounded-full bg-surface-hover">
                         <span
                           className="block h-full rounded-full bg-accent transition-all duration-500 ease-premium"

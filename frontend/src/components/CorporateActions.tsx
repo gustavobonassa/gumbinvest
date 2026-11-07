@@ -4,7 +4,16 @@ import { ArrowRight, Check, GitMerge, Plus, Sparkles, Trash2, X } from "lucide-r
 import { useEffect, useRef, useState } from "react";
 
 import { useToast } from "@/components/Toast";
-import { Badge, Card, DateField, ErrorState, Modal, SectionTitle, Select, Skeleton } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  DateField,
+  ErrorState,
+  Modal,
+  SectionTitle,
+  Select,
+  Skeleton,
+} from "@/components/ui";
 import { api, ApiError, type CorporateAiSuggestion, type SuccessionSuggestion } from "@/lib/api";
 import { money, quantity as qty, shortDate } from "@/lib/format";
 
@@ -86,8 +95,8 @@ function AiEventScan() {
     <div className="border-t border-line pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-ink-secondary">
-          A IA pesquisa na web eventos que afetaram os seus ativos. Cada achado vira uma
-          sugestão para você aceitar ou recusar, agora ou depois:
+          A IA pesquisa na web eventos que afetaram os seus ativos. Cada achado vira uma sugestão
+          para você aceitar ou recusar, agora ou depois:
         </p>
         <button
           type="button"
@@ -103,7 +112,9 @@ function AiEventScan() {
         <p className="mt-2 flex items-center gap-2 text-sm text-ink-secondary">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden />
           {job.status}
-          <span className="text-xs text-ink-muted">: pode levar alguns minutos; você pode navegar à vontade.</span>
+          <span className="text-xs text-ink-muted">
+            : pode levar alguns minutos; você pode navegar à vontade.
+          </span>
         </p>
       ) : null}
       {!running && job?.error ? <p className="mt-2 text-sm text-negative">{job.error}</p> : null}
@@ -130,14 +141,18 @@ function AiEventScan() {
                 )}
                 <span className="text-sm text-ink-secondary">{shortDate(item.effective_date)}</span>
                 {Number(item.cash_amount) ? (
-                  <span className="tnum text-sm text-ink-secondary">caixa {money(item.cash_amount)}</span>
+                  <span className="tnum text-sm text-ink-secondary">
+                    caixa {money(item.cash_amount)}
+                  </span>
                 ) : null}
                 <Badge className="ml-auto">{item.model}</Badge>
               </div>
               {item.rationale ? (
                 <p className="mt-2 max-w-3xl text-sm text-ink-secondary">{item.rationale}</p>
               ) : null}
-              {item.source ? <p className="mt-1 text-xs text-ink-muted">Fonte: {item.source}</p> : null}
+              {item.source ? (
+                <p className="mt-1 text-xs text-ink-muted">Fonte: {item.source}</p>
+              ) : null}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
@@ -172,7 +187,11 @@ function SuggestionRow({
   pending,
 }: {
   suggestion: SuccessionSuggestion;
-  onApply: (payload: { to_ticker: string | null; effective_date: string; cash_amount: number }) => void;
+  onApply: (payload: {
+    to_ticker: string | null;
+    effective_date: string;
+    cash_amount: number;
+  }) => void;
   pending: boolean;
 }) {
   const best = suggestion.candidates[0];
@@ -188,8 +207,8 @@ function SuggestionRow({
         <span className="font-medium">{suggestion.ticker}</span>
         <span className="text-sm text-ink-secondary">{suggestion.name}</span>
         <span className="tnum text-xs text-ink-muted">
-          {qty(suggestion.quantity)} un. · custo {money(suggestion.cost_basis)} · sem movimento desde{" "}
-          {shortDate(suggestion.last_trade)}
+          {qty(suggestion.quantity)} un. · custo {money(suggestion.cost_basis)} · sem movimento
+          desde {shortDate(suggestion.last_trade)}
         </span>
       </div>
 
@@ -213,7 +232,9 @@ function SuggestionRow({
         </div>
 
         <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Caixa recebido (R$)</span>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+            Caixa recebido (R$)
+          </span>
           <input
             className="input tnum"
             inputMode="decimal"
@@ -240,8 +261,8 @@ function SuggestionRow({
 
       {best?.exact_quantity_match ? (
         <p className="mt-2 text-xs text-ink-muted">
-          {best.ticker} recebeu exatamente {qty(best.quantity)} unidades (a mesma posição, creditada sem
-          custo).
+          {best.ticker} recebeu exatamente {qty(best.quantity)} unidades (a mesma posição, creditada
+          sem custo).
         </p>
       ) : null}
     </li>
@@ -327,7 +348,11 @@ export default function CorporateActions() {
     queryFn: api.corporateActions,
   });
   // Undoing a succession reprocesses the entire history — it earns a confirm.
-  const [undoTarget, setUndoTarget] = useState<{ id: number; from: string; to: string | null } | null>(null);
+  const [undoTarget, setUndoTarget] = useState<{
+    id: number;
+    from: string;
+    to: string | null;
+  } | null>(null);
 
   const create = useMutation({
     mutationFn: api.createSuccession,
@@ -386,7 +411,9 @@ export default function CorporateActions() {
                   <button
                     type="button"
                     className="btn-ghost ml-auto px-2.5 py-1.5 text-xs"
-                    onClick={() => setUndoTarget({ id: item.id, from: item.from_ticker, to: item.to_ticker })}
+                    onClick={() =>
+                      setUndoTarget({ id: item.id, from: item.from_ticker, to: item.to_ticker })
+                    }
                   >
                     <Trash2 size={14} /> Desfazer
                   </button>
@@ -429,8 +456,8 @@ export default function CorporateActions() {
 
           <div className="border-t border-line pt-4">
             <p className="mb-3 text-sm text-ink-secondary">
-              Declarar um evento que a detecção não encontrou (inclusive veículos intermediários, que o
-              extrato cria e resgata dentro da própria operação):
+              Declarar um evento que a detecção não encontrou (inclusive veículos intermediários,
+              que o extrato cria e resgata dentro da própria operação):
             </p>
             <ManualForm onSubmit={(payload) => create.mutate(payload)} pending={create.isPending} />
           </div>
@@ -450,8 +477,8 @@ export default function CorporateActions() {
         onClose={() => setUndoTarget(null)}
       >
         <p className="text-sm text-ink-secondary">
-          Todo o histórico será reprocessado sem este vínculo: a posição antiga volta a aparecer
-          em aberto e o custo carregado retorna a ela. Nada é apagado das movimentações. Dá para
+          Todo o histórico será reprocessado sem este vínculo: a posição antiga volta a aparecer em
+          aberto e o custo carregado retorna a ela. Nada é apagado das movimentações. Dá para
           declarar o evento de novo depois.
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">

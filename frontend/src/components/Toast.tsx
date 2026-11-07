@@ -112,7 +112,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       warning: (message, options) => show("warning", message, options),
       info: (message, options) => show("info", message, options),
       error: (message, cause, options) =>
-        show("error", message, { ...options, description: options?.description ?? describeError(cause) }),
+        show("error", message, {
+          ...options,
+          description: options?.description ?? describeError(cause),
+        }),
     }),
     [show, dismiss],
   );

@@ -1,6 +1,14 @@
 /** Portfolio overview: headline metrics, evolution, allocation and income. */
 import { useQuery } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ArrowRight, Coins, RefreshCw, TrendingUp, Wallet } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Coins,
+  RefreshCw,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -14,7 +22,16 @@ import {
   ProfitByAssetChart,
   ReturnsBars,
 } from "@/components/charts";
-import { Badge, Card, EmptyState, ErrorState, SectionTitle, Segmented, Skeleton, StatTile } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  EmptyState,
+  ErrorState,
+  SectionTitle,
+  Segmented,
+  Skeleton,
+  StatTile,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { withOther } from "@/lib/colors";
 import { kindLabel, money, opLabel, percent, periodLabel, shortDate } from "@/lib/format";
@@ -29,17 +46,31 @@ export default function Dashboard() {
 
   // Focus refetching is off globally; the interval keeps the headline numbers
   // from freezing at whatever the page loaded with.
-  const overview = useQuery({ queryKey: ["overview"], queryFn: api.overview, refetchInterval: 5 * 60_000 });
+  const overview = useQuery({
+    queryKey: ["overview"],
+    queryFn: api.overview,
+    refetchInterval: 5 * 60_000,
+  });
   const history = useQuery({ queryKey: ["history", range], queryFn: () => api.history(range) });
-  const allocation = useQuery({ queryKey: ["allocation", grouping], queryFn: () => api.allocation(grouping) });
+  const allocation = useQuery({
+    queryKey: ["allocation", grouping],
+    queryFn: () => api.allocation(grouping),
+  });
   const income = useQuery({ queryKey: ["income", "month"], queryFn: () => api.income("month") });
-  const contributions = useQuery({ queryKey: ["contributions"], queryFn: () => api.contributions("month") });
+  const contributions = useQuery({
+    queryKey: ["contributions"],
+    queryFn: () => api.contributions("month"),
+  });
   const returns = useQuery({ queryKey: ["monthly-returns"], queryFn: api.monthlyReturns });
   const positions = useQuery({ queryKey: ["positions"], queryFn: () => api.positions(false) });
-  const movers = useQuery({ queryKey: ["performers", "day"], queryFn: () => api.performers("day", 4) });
-  const recentIncome = useQuery({ queryKey: ["dividend-calendar", "recent"], queryFn: () => api.dividendCalendar(8) });
-
-  if (overview.isError) return <ErrorState error={overview.error} retry={() => overview.refetch()} />;
+  const movers = useQuery({
+    queryKey: ["performers", "day"],
+    queryFn: () => api.performers("day", 4),
+  });
+  const recentIncome = useQuery({
+    queryKey: ["dividend-calendar", "recent"],
+    queryFn: () => api.dividendCalendar(8),
+  });
 
   const data = overview.data;
   const hasData = (data?.assets_tracked ?? 0) > 0;
@@ -61,8 +92,11 @@ export default function Dashboard() {
               legend: `Outros (${count})`,
               value,
               percent:
-                ((value / Math.max((allocation.data ?? []).reduce((sum, item) => sum + item.value, 0), 1)) as number) *
-                100,
+                ((value /
+                  Math.max(
+                    (allocation.data ?? []).reduce((sum, item) => sum + item.value, 0),
+                    1,
+                  )) as number) * 100,
               // The folded slices, so the tooltip can answer "outros o quê?".
               members: tail.map((item) => ({
                 label: item.key,
@@ -88,6 +122,12 @@ export default function Dashboard() {
     () => (income.data ?? []).slice(-12).reduce((sum, item) => sum + Number(item.total), 0),
     [income.data],
   );
+
+  // Only after every hook: returning early above them changes the hook count
+  // between renders (a failed 5-minute refetch after a good load) and React
+  // throws instead of showing the error state.
+  if (overview.isError)
+    return <ErrorState error={overview.error} retry={() => overview.refetch()} />;
 
   if (!hasData && !overview.isLoading) {
     return (
@@ -150,7 +190,10 @@ export default function Dashboard() {
       </section>
 
       {data?.unpriced_positions?.length ? (
-        <Card className="flex flex-wrap items-center gap-3 border-warning/25 bg-warning/5 px-5 py-3.5 text-sm" hover={false}>
+        <Card
+          className="flex flex-wrap items-center gap-3 border-warning/25 bg-warning/5 px-5 py-3.5 text-sm"
+          hover={false}
+        >
           <AlertTriangle size={16} className="text-warning" aria-hidden />
           <span className="text-ink-secondary">
             {data.unpriced_positions.length} ativo(s) sem cotação, avaliados pelo preço médio:
@@ -161,9 +204,14 @@ export default function Dashboard() {
                 {ticker}
               </Badge>
             ))}
-            {data.unpriced_positions.length > 8 ? <Badge tone="warning">+{data.unpriced_positions.length - 8}</Badge> : null}
+            {data.unpriced_positions.length > 8 ? (
+              <Badge tone="warning">+{data.unpriced_positions.length - 8}</Badge>
+            ) : null}
           </span>
-          <Link to="/configuracoes?aba=eventos" className="ml-auto text-xs text-accent hover:underline">
+          <Link
+            to="/configuracoes?aba=eventos"
+            className="ml-auto text-xs text-accent hover:underline"
+          >
             Resolver eventos corporativos
           </Link>
         </Card>
@@ -212,14 +260,17 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {(history.data ?? []).slice(-60).reverse().map((point) => (
-                <tr key={point.date} className="table-row">
-                  <td className="px-2 py-1.5">{shortDate(point.date)}</td>
-                  <td className="tnum px-2 py-1.5 text-right">{money(point.market_value)}</td>
-                  <td className="tnum px-2 py-1.5 text-right">{money(point.cost_basis)}</td>
-                  <td className="tnum px-2 py-1.5 text-right">{money(point.profit)}</td>
-                </tr>
-              ))}
+              {(history.data ?? [])
+                .slice(-60)
+                .reverse()
+                .map((point) => (
+                  <tr key={point.date} className="table-row">
+                    <td className="px-2 py-1.5">{shortDate(point.date)}</td>
+                    <td className="tnum px-2 py-1.5 text-right">{money(point.market_value)}</td>
+                    <td className="tnum px-2 py-1.5 text-right">{money(point.cost_basis)}</td>
+                    <td className="tnum px-2 py-1.5 text-right">{money(point.profit)}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         }
@@ -386,48 +437,52 @@ export default function Dashboard() {
               ))}
             </div>
           ) : (
-          // Fixed layout: the ticker column absorbs the leftover width and
-          // truncates, so a long fixed-income ticker can never push the
-          // numeric columns off a phone screen.
-          <div className="-mx-2">
-            <table className="w-full table-fixed text-sm">
-              <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
-                <tr>
-                  <th className="px-2 pb-2">Ativo</th>
-                  <th className="w-[88px] px-2 pb-2 text-right sm:w-24">Valor</th>
-                  <th className="w-[88px] px-2 pb-2 text-right sm:w-24">Result.</th>
-                  <th className="w-12 px-2 pb-2 text-right sm:w-14">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(positions.data ?? []).slice(0, 8).map((position) => (
-                  <tr key={position.ticker} className="table-row">
-                    <td className="px-2 py-2">
-                      <Link
-                        to={`/ativos/${position.ticker}`}
-                        className="block truncate font-medium text-ink hover:text-accent"
-                        title={position.ticker}
-                      >
-                        {position.ticker}
-                      </Link>
-                      <p className="truncate text-xs text-ink-muted">{kindLabel(position.kind)}</p>
-                    </td>
-                    <td className="tnum px-2 py-2 text-right">{money(position.market_value_base, { compact: true })}</td>
-                    <td
-                      className={`tnum px-2 py-2 text-right ${
-                        position.unrealized_pnl_base >= 0 ? "text-positive" : "text-negative"
-                      }`}
-                    >
-                      {money(position.unrealized_pnl_base, { compact: true })}
-                    </td>
-                    <td className="tnum px-2 py-2 text-right text-ink-secondary">
-                      {percent(position.allocation_pct, 1)}
-                    </td>
+            // Fixed layout: the ticker column absorbs the leftover width and
+            // truncates, so a long fixed-income ticker can never push the
+            // numeric columns off a phone screen.
+            <div className="-mx-2">
+              <table className="w-full table-fixed text-sm">
+                <thead className="text-left text-xs uppercase tracking-wide text-ink-muted">
+                  <tr>
+                    <th className="px-2 pb-2">Ativo</th>
+                    <th className="w-[88px] px-2 pb-2 text-right sm:w-24">Valor</th>
+                    <th className="w-[88px] px-2 pb-2 text-right sm:w-24">Result.</th>
+                    <th className="w-12 px-2 pb-2 text-right sm:w-14">%</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {(positions.data ?? []).slice(0, 8).map((position) => (
+                    <tr key={position.ticker} className="table-row">
+                      <td className="px-2 py-2">
+                        <Link
+                          to={`/ativos/${position.ticker}`}
+                          className="block truncate font-medium text-ink hover:text-accent"
+                          title={position.ticker}
+                        >
+                          {position.ticker}
+                        </Link>
+                        <p className="truncate text-xs text-ink-muted">
+                          {kindLabel(position.kind)}
+                        </p>
+                      </td>
+                      <td className="tnum px-2 py-2 text-right">
+                        {money(position.market_value_base, { compact: true })}
+                      </td>
+                      <td
+                        className={`tnum px-2 py-2 text-right ${
+                          position.unrealized_pnl_base >= 0 ? "text-positive" : "text-negative"
+                        }`}
+                      >
+                        {money(position.unrealized_pnl_base, { compact: true })}
+                      </td>
+                      <td className="tnum px-2 py-2 text-right text-ink-secondary">
+                        {percent(position.allocation_pct, 1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       </div>
@@ -453,15 +508,25 @@ export default function Dashboard() {
                 // instead of truncating.
                 <div key={column === 0 ? "best" : "worst"} className="min-w-0">
                   {rows.map((row) => (
-                    <p key={row.ticker} className="flex items-baseline justify-between gap-3 py-1.5">
-                      <Link to={`/ativos/${row.ticker}`} className="min-w-0 truncate font-medium text-ink hover:text-accent">
+                    <p
+                      key={row.ticker}
+                      className="flex items-baseline justify-between gap-3 py-1.5"
+                    >
+                      <Link
+                        to={`/ativos/${row.ticker}`}
+                        className="min-w-0 truncate font-medium text-ink hover:text-accent"
+                      >
                         {row.ticker}
                       </Link>
                       <span className="flex shrink-0 items-baseline gap-2">
-                        <span className={`tnum text-xs ${row.window_change >= 0 ? "text-positive" : "text-negative"}`}>
+                        <span
+                          className={`tnum text-xs ${row.window_change >= 0 ? "text-positive" : "text-negative"}`}
+                        >
                           {money(row.window_change, { compact: true })}
                         </span>
-                        <span className={`tnum ${row.window_change >= 0 ? "text-positive" : "text-negative"}`}>
+                        <span
+                          className={`tnum ${row.window_change >= 0 ? "text-positive" : "text-negative"}`}
+                        >
                           {row.window_pct === null ? "-" : percent(row.window_pct, 2, true)}
                         </span>
                       </span>
@@ -499,7 +564,10 @@ export default function Dashboard() {
                   className="flex items-baseline justify-between gap-3 py-1.5"
                 >
                   <span className="min-w-0 truncate">
-                    <Link to={`/ativos/${payment.ticker}`} className="font-medium text-ink hover:text-accent">
+                    <Link
+                      to={`/ativos/${payment.ticker}`}
+                      className="font-medium text-ink hover:text-accent"
+                    >
                       {payment.ticker}
                     </Link>
                     <span className="ml-2 text-xs text-ink-muted">

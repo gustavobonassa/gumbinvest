@@ -81,7 +81,10 @@ function formatAmount(value: number, decimals = 2): string {
 }
 
 /** The close on or before `day`; the series is ascending, so scan backwards. */
-function closeOn(history: { date: string; close: number }[] | undefined, day: string): number | null {
+function closeOn(
+  history: { date: string; close: number }[] | undefined,
+  day: string,
+): number | null {
   if (!history?.length || !day) return null;
   for (let index = history.length - 1; index >= 0; index -= 1) {
     if (history[index].date <= day) return Number(history[index].close);
@@ -149,7 +152,10 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
   // only asked for once the local list has nothing — it leaves the machine.
   const [marketQuery, setMarketQuery] = useState("");
   useEffect(() => {
-    const timer = setTimeout(() => setMarketQuery(cleanTicker.length >= 2 && !known ? cleanTicker : ""), 350);
+    const timer = setTimeout(
+      () => setMarketQuery(cleanTicker.length >= 2 && !known ? cleanTicker : ""),
+      350,
+    );
     return () => clearTimeout(timer);
   }, [cleanTicker, known]);
   const market = useQuery({
@@ -191,7 +197,9 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
     retry: false,
   });
 
-  const suggestedPrice = closeOn(history.data, when) ?? Number(detail.data?.current_price) ?? null;
+  const currentPrice = Number(detail.data?.current_price);
+  const suggestedPrice =
+    closeOn(history.data, when) ?? (Number.isFinite(currentPrice) ? currentPrice : null);
 
   useEffect(() => {
     if (priceTouched || needs !== "trade" || !suggestedPrice) return;
@@ -247,7 +255,8 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
     when &&
     (needs === "amount"
       ? parseAmount(amount) > 0
-      : parseAmount(qty) > 0 && (needs !== "trade" || parseAmount(price) > 0 || parseAmount(amount) > 0));
+      : parseAmount(qty) > 0 &&
+        (needs !== "trade" || parseAmount(price) > 0 || parseAmount(amount) > 0));
 
   return (
     <Modal
@@ -301,7 +310,12 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
           <div>
             <span className="mb-1.5 block text-xs font-medium text-ink-muted">Data</span>
-            <DateField ariaLabel="Data do lançamento" className="w-full" value={when} onChange={setWhen} />
+            <DateField
+              ariaLabel="Data do lançamento"
+              className="w-full"
+              value={when}
+              onChange={setWhen}
+            />
           </div>
         </div>
 
@@ -338,7 +352,9 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
             <label className="block">
               <span className="mb-1.5 block text-xs font-medium text-ink-muted">
                 Preço unitário
-                {foreignCurrency ? <span className="ml-1 text-warning">em {foreignCurrency}</span> : null}
+                {foreignCurrency ? (
+                  <span className="ml-1 text-warning">em {foreignCurrency}</span>
+                ) : null}
               </span>
               <input
                 className="input tnum"
@@ -360,7 +376,9 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
           <label className="block">
             <span className="mb-1.5 block text-xs font-medium text-ink-muted">
               {needs === "amount" ? "Valor" : "Total"}
-              {foreignCurrency ? <span className="ml-1 text-warning">em {foreignCurrency}</span> : null}
+              {foreignCurrency ? (
+                <span className="ml-1 text-warning">em {foreignCurrency}</span>
+              ) : null}
             </span>
             <input
               className="input tnum"
@@ -416,7 +434,11 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
           <span className="mb-1.5 block text-xs font-medium text-ink-muted">
             Observação <span className="font-normal">(opcional)</span>
           </span>
-          <input className="input" value={notes} onChange={(event) => setNotes(event.target.value)} />
+          <input
+            className="input"
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+          />
         </label>
 
         {error ? <p className="text-xs text-negative">{error}</p> : null}
@@ -438,7 +460,6 @@ function ManualEntryModal({ open, onClose }: { open: boolean; onClose: () => voi
     </Modal>
   );
 }
-
 
 export default function Transactions() {
   const [search, setSearch] = useState("");
@@ -520,7 +541,10 @@ export default function Transactions() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Transações</h1>
         </div>
         <div className="flex items-center gap-2">
-          <a href={api.exportUrl({ ...params, page: undefined, page_size: undefined })} className="btn-ghost">
+          <a
+            href={api.exportUrl({ ...params, page: undefined, page_size: undefined })}
+            className="btn-ghost"
+          >
             <Download size={15} /> Exportar CSV
           </a>
           <button type="button" className="btn-primary" onClick={() => setAdding(true)}>
@@ -534,7 +558,10 @@ export default function Transactions() {
       <Card className="space-y-3 p-4" hover={false}>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-[240px] flex-1">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+            />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -551,7 +578,10 @@ export default function Transactions() {
               setOpTypes(next);
               setPage(1);
             }}
-            options={(filters.data?.op_types ?? []).map((type) => ({ value: type, label: opLabel(type) }))}
+            options={(filters.data?.op_types ?? []).map((type) => ({
+              value: type,
+              label: opLabel(type),
+            }))}
           />
           <Select
             ariaLabel="Corretora"
@@ -600,42 +630,71 @@ export default function Transactions() {
             ))}
           </div>
         ) : !data?.items.length ? (
-          <EmptyState title="Nenhuma transação encontrada" description="Ajuste os filtros ou importe um novo arquivo." />
+          <EmptyState
+            title="Nenhuma transação encontrada"
+            description="Ajuste os filtros ou importe um novo arquivo."
+          />
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className={clsx("w-full text-sm transition-opacity", isFetching && "opacity-60")}>
+              <table
+                className={clsx("w-full text-sm transition-opacity", isFetching && "opacity-60")}
+              >
                 <thead className="border-b border-line bg-surface-raised/60 text-xs uppercase tracking-wide text-ink-muted">
                   <tr>
                     {SORTABLE.map((column) => (
                       <th
                         key={column.key}
-                        aria-sort={sort === column.key ? (order === "asc" ? "ascending" : "descending") : undefined}
+                        aria-sort={
+                          sort === column.key
+                            ? order === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
                         className={clsx(
                           "px-4 py-3 font-medium",
-                          ["quantity", "unit_price", "gross_amount"].includes(column.key) ? "text-right" : "text-left",
+                          ["quantity", "unit_price", "gross_amount"].includes(column.key)
+                            ? "text-right"
+                            : "text-left",
                           "hide" in column ? column.hide : undefined,
                         )}
                       >
                         <button
                           type="button"
                           onClick={() => toggleSort(column.key)}
-                          className={clsx("inline-flex items-center gap-1 hover:text-ink", sort === column.key && "text-ink")}
+                          className={clsx(
+                            "inline-flex items-center gap-1 hover:text-ink",
+                            sort === column.key && "text-ink",
+                          )}
                         >
                           {column.label}
-                          {sort === column.key ? order === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}
+                          {sort === column.key ? (
+                            order === "asc" ? (
+                              <ArrowUp size={12} />
+                            ) : (
+                              <ArrowDown size={12} />
+                            )
+                          ) : null}
                         </button>
                       </th>
                     ))}
-                    <th className="hidden px-4 py-3 text-left font-medium xl:table-cell">Corretora</th>
+                    <th className="hidden px-4 py-3 text-left font-medium xl:table-cell">
+                      Corretora
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.items.map((transaction) => (
                     <tr key={transaction.id} className="table-row">
-                      <td className="whitespace-nowrap px-4 py-2.5 text-ink-secondary">{shortDate(transaction.date)}</td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-ink-secondary">
+                        {shortDate(transaction.date)}
+                      </td>
                       <td className="px-4 py-2.5">
-                        <Link to={`/ativos/${transaction.ticker}`} className="font-medium hover:text-accent">
+                        <Link
+                          to={`/ativos/${transaction.ticker}`}
+                          className="font-medium hover:text-accent"
+                        >
                           {transaction.ticker}
                         </Link>
                         <span className="block max-w-[7.5rem] truncate text-xs text-ink-muted sm:max-w-[220px]">
@@ -649,7 +708,9 @@ export default function Transactions() {
                               ? "accent"
                               : transaction.op_type === "SELL"
                                 ? "negative"
-                                : ["DIVIDEND", "JCP", "YIELD", "INTEREST"].includes(transaction.op_type)
+                                : ["DIVIDEND", "JCP", "YIELD", "INTEREST"].includes(
+                                      transaction.op_type,
+                                    )
                                   ? "positive"
                                   : "neutral"
                           }
@@ -660,7 +721,9 @@ export default function Transactions() {
                           {transaction.movement}
                         </span>
                       </td>
-                      <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">{quantity(transaction.quantity)}</td>
+                      <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">
+                        {quantity(transaction.quantity)}
+                      </td>
                       <td className="tnum hidden px-4 py-2.5 text-right lg:table-cell">
                         {money(transaction.unit_price, { currency: transaction.currency })}
                       </td>
@@ -677,7 +740,9 @@ export default function Transactions() {
                       >
                         {money(transaction.gross_amount, { currency: transaction.currency })}
                       </td>
-                      <td className="hidden px-4 py-2.5 text-xs text-ink-muted xl:table-cell">{transaction.broker ?? "-"}</td>
+                      <td className="hidden px-4 py-2.5 text-xs text-ink-muted xl:table-cell">
+                        {transaction.broker ?? "-"}
+                      </td>
                       {/* Only hand-entered rows: an imported one is reproducible
                           from its file, and deleting it would either come back
                           on the next upload or quietly rewrite history. */}

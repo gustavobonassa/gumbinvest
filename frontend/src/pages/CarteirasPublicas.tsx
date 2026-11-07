@@ -66,9 +66,22 @@ function WalletView({ slug }: { slug: string }) {
       <p className="max-w-3xl text-sm text-ink-secondary">{data.description}</p>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="Carteira divulgada" value={inUsd(data.total_value)} tone="accent" hint="ações listadas nos EUA" />
-        <StatTile label="Posições" value={String(data.positions)} hint={`${data.exits.length} saídas no trimestre`} />
-        <StatTile label="Trimestre" value={quarterLabel(data.quarter)} hint={`retrato de ${shortDate(data.quarter)}`} />
+        <StatTile
+          label="Carteira divulgada"
+          value={inUsd(data.total_value)}
+          tone="accent"
+          hint="ações listadas nos EUA"
+        />
+        <StatTile
+          label="Posições"
+          value={String(data.positions)}
+          hint={`${data.exits.length} saídas no trimestre`}
+        />
+        <StatTile
+          label="Trimestre"
+          value={quarterLabel(data.quarter)}
+          hint={`retrato de ${shortDate(data.quarter)}`}
+        />
         <StatTile label="Enviado à SEC" value={shortDate(data.filed_at)} hint="formulário 13F-HR" />
       </section>
 
@@ -110,7 +123,12 @@ function WalletView({ slug }: { slug: string }) {
                             {holding.ticker}
                           </Link>
                         ) : null}
-                        <span className={clsx("truncate", holding.ticker ? "text-xs text-ink-muted" : "font-medium text-ink")}>
+                        <span
+                          className={clsx(
+                            "truncate",
+                            holding.ticker ? "text-xs text-ink-muted" : "font-medium text-ink",
+                          )}
+                        >
                           {holding.issuer}
                         </span>
                       </span>
@@ -129,9 +147,15 @@ function WalletView({ slug }: { slug: string }) {
                         </span>
                       </span>
                     </td>
-                    <td className="tnum px-3 py-2 text-right text-ink-secondary">{inUsd(holding.value)}</td>
-                    <td className="tnum px-3 py-2 text-right text-ink-muted">{quantity(holding.shares)}</td>
-                    <td className="px-3 py-2">{badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}</td>
+                    <td className="tnum px-3 py-2 text-right text-ink-secondary">
+                      {inUsd(holding.value)}
+                    </td>
+                    <td className="tnum px-3 py-2 text-right text-ink-muted">
+                      {quantity(holding.shares)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
+                    </td>
                   </tr>
                 );
               })}
@@ -178,7 +202,11 @@ function WalletView({ slug }: { slug: string }) {
 }
 
 export default function CarteirasPublicas() {
-  const registry = useQuery({ queryKey: ["investors"], queryFn: api.investors, staleTime: 24 * 60 * 60_000 });
+  const registry = useQuery({
+    queryKey: ["investors"],
+    queryFn: api.investors,
+    staleTime: 24 * 60 * 60_000,
+  });
   const [params, setParams] = useSearchParams();
   const investors = registry.data ?? [];
   const requested = params.get("investidor");
@@ -205,7 +233,9 @@ export default function CarteirasPublicas() {
         <>
           <Tabs
             value={active}
-            onChange={(slug) => setParams(slug === investors[0]?.slug ? {} : { investidor: slug }, { replace: true })}
+            onChange={(slug) =>
+              setParams(slug === investors[0]?.slug ? {} : { investidor: slug }, { replace: true })
+            }
             options={investors.map((item) => ({ value: item.slug, label: item.manager }))}
           />
           <p className="-mt-3 flex items-center gap-1.5 text-xs text-ink-muted">

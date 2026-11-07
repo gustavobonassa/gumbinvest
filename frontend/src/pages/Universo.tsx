@@ -13,15 +13,7 @@ import { ArrowDown, ArrowUp, Database, Radar, Search } from "lucide-react";
 
 import { api, type UniverseRow } from "@/lib/api";
 import { decimal, money, percent, shortDate } from "@/lib/format";
-import {
-  Badge,
-  Card,
-  EmptyState,
-  ErrorState,
-  Pager,
-  Skeleton,
-  Tabs,
-} from "@/components/ui";
+import { Badge, Card, EmptyState, ErrorState, Pager, Skeleton, Tabs } from "@/components/ui";
 import PortfolioFitPanel from "@/components/PortfolioFit";
 import UniverseJobs from "@/components/UniverseJobs";
 import UniverseSettings from "@/components/UniverseSettings";
@@ -71,7 +63,6 @@ const DEFAULT_ORDER: Record<TableTab, string> = {
   REITS: "receita",
 };
 
-
 type Column = {
   key: string;
   label: string;
@@ -82,7 +73,11 @@ type Column = {
 };
 
 /** A missing figure is stated, not dashed away as if it were a value. */
-const absent = <span className="text-ink-muted" title="não publicado">sem dado</span>;
+const absent = (
+  <span className="text-ink-muted" title="não publicado">
+    sem dado
+  </span>
+);
 
 const num = (value: number | null, format: (v: number) => string) =>
   value === null || value === undefined ? absent : <span className="tnum">{format(value)}</span>;
@@ -258,7 +253,8 @@ export default function Universo() {
   // The human name of the sort column — echoing the raw key produced
   // unaccented pseudo-Portuguese ("divida sobre patrimonio").
   const orderLabel =
-    COLUMNS.find((column) => column.key === effectiveOrder)?.label ?? effectiveOrder.replace(/_/g, " ");
+    COLUMNS.find((column) => column.key === effectiveOrder)?.label ??
+    effectiveOrder.replace(/_/g, " ");
   useEffect(() => setOrderBy(null), [tab]);
   useEffect(
     () => setPage(1),
@@ -270,7 +266,19 @@ export default function Universo() {
   const total = statusQ.data?.coverage?.total ?? 0;
 
   const listQ = useQuery({
-    queryKey: ["universe", tab, text, effectiveOrder, descending, page, pageSize, minDy, maxPe, maxPb, index],
+    queryKey: [
+      "universe",
+      tab,
+      text,
+      effectiveOrder,
+      descending,
+      page,
+      pageSize,
+      minDy,
+      maxPe,
+      maxPb,
+      index,
+    ],
     queryFn: () =>
       api.universe({
         kind: KINDS[tab as Exclude<TabValue, "COMPARAR" | "SINCRONIZAR">],
@@ -335,7 +343,9 @@ export default function Universo() {
         <Card className="p-5">
           <EmptyState
             icon={Radar}
-            title={enabled ? "O universo ainda não foi baixado" : "O universo de ativos está desativado"}
+            title={
+              enabled ? "O universo ainda não foi baixado" : "O universo de ativos está desativado"
+            }
             description={
               enabled
                 ? "Baixe os arquivos públicos da B3 e da CVM para montar a tabela local. Leva poucos minutos e roda em segundo plano."
@@ -376,7 +386,10 @@ export default function Universo() {
           <Card className="p-4">
             <div className="flex flex-wrap items-end gap-3">
               <label className="relative min-w-56 flex-1">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                <Search
+                  size={15}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted"
+                />
                 <input
                   className="input pl-9"
                   placeholder="Buscar por código ou nome"
@@ -440,8 +453,8 @@ export default function Universo() {
               </span>
               {listQ.data?.dropped_for_missing_data ? (
                 <span className="text-warning">
-                  {listQ.data.dropped_for_missing_data} fora da lista por não terem “
-                  {orderLabel}” publicado
+                  {listQ.data.dropped_for_missing_data} fora da lista por não terem “{orderLabel}”
+                  publicado
                 </span>
               ) : null}
             </p>
@@ -507,11 +520,16 @@ export default function Universo() {
                                   own is exactly the one worth reading about.
                                   Opening it does not enrol it in the scheduled
                                   refresh; see market.service.tracked_asset_ids. */}
-                              <Link className="font-medium hover:text-accent" to={`/ativos/${row.ticker}`}>
+                              <Link
+                                className="font-medium hover:text-accent"
+                                to={`/ativos/${row.ticker}`}
+                              >
                                 {row.ticker}
                               </Link>
                               {row.na_carteira ? <Badge tone="accent">na carteira</Badge> : null}
-                              {row.na_carteira_ia ? <Badge tone="neutral">carteira IA</Badge> : null}
+                              {row.na_carteira_ia ? (
+                                <Badge tone="neutral">carteira IA</Badge>
+                              ) : null}
                               {!row.na_carteira && !row.na_carteira_ia && row.na_watchlist ? (
                                 <Badge tone="neutral">watchlist</Badge>
                               ) : null}
@@ -528,7 +546,6 @@ export default function Universo() {
                               className={`px-4 py-3 ${column.align === "right" ? "text-right" : ""}`}
                             >
                               {column.render(row)}
-
                             </td>
                           ))}
                         </tr>

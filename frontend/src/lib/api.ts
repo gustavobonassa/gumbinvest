@@ -21,7 +21,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `${response.status} ${response.statusText}`;
     try {
       const payload = await response.json();
-      if (payload?.detail) detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
+      if (payload?.detail)
+        detail =
+          typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
     } catch {
       /* keep the status text */
     }
@@ -215,7 +217,13 @@ export interface AssetDetail extends Omit<PositionRow, "transactions"> {
   user_notes: string | null;
   transactions: TransactionRow[];
   transactions_count: number;
-  dividends: { date: string; op_type: string; amount: number; unit_price: number; quantity: number }[];
+  dividends: {
+    date: string;
+    op_type: string;
+    amount: number;
+    unit_price: number;
+    quantity: number;
+  }[];
   /** Monthly income in the asset's own currency, net of withholding — the same
    *  basis the Proventos page uses, so both screens agree on a given month. */
   income_months: { period: string; gross: number; tax: number; net: number; payments: number }[];
@@ -495,6 +503,47 @@ export interface IrpfIncomeRow {
   gross: number;
   withheld: number;
   net: number;
+}
+
+/** One month of the sales-tax worksheet (DARF 6015). Money arrives as JSON numbers. */
+export interface TaxMonth {
+  period: string;
+  status: "em_andamento" | "a_pagar" | "vencido" | "pago" | "acumulado" | "sem_imposto";
+  sales: { acoes: number; outras_comuns: number; fii: number };
+  results: { acoes: number; outras_comuns: number; fii: number; day_trade: number | null };
+  exempt: boolean;
+  exempt_gain: number;
+  common: { base: number; loss_used: number; tax: number };
+  fii: { base: number; loss_used: number; tax: number };
+  day_trade: { informed: boolean; base: number; loss_used: number; tax: number; irrf: number };
+  irrf_estimated: number;
+  irrf_used: number;
+  gross_tax: number;
+  carried_in: number;
+  darf: number;
+  due_date: string;
+  losses_after: { common: number; fii: number; day_trade: number };
+}
+
+export interface TaxWarning {
+  kind: string;
+  message: string;
+  items?: { date: string; ticker: string; bought: number; sold: number }[];
+}
+
+export interface TaxSheet {
+  months: TaxMonth[];
+  warnings: TaxWarning[];
+  excluded_sales: { period: string; exterior?: number; cripto?: number }[];
+  rules: {
+    exemption_limit: number;
+    rate_common: number;
+    rate_fii: number;
+    rate_day_trade: number;
+    irrf_rate: number;
+    darf_minimum: number;
+    darf_code: string;
+  };
 }
 
 /** Something the ledger cannot answer, named with the positions it affects. */
@@ -1072,7 +1121,13 @@ export interface AiWalletDetail {
   /** Whether the pinned provider/model has server-side web search. */
   web_search: boolean;
   key_configured: boolean;
-  totals: { value: number; invested: number; cash: number; return_pct: number | null; unpriced: string[] };
+  totals: {
+    value: number;
+    invested: number;
+    cash: number;
+    return_pct: number | null;
+    unpriced: string[];
+  };
   categories: AiWalletCategoryBlock[];
 }
 
@@ -1182,7 +1237,6 @@ export interface SmartInvestResult {
 
 /** A persisted analysis — the durable copy of a finished run. */
 export type SmartInvestRun = SmartInvestResult & { id: number; created_at: string };
-
 
 // --- universo de ativos ---------------------------------------------------
 export interface UniverseRow {
@@ -1328,7 +1382,12 @@ export interface PortfolioFit {
     percentis_no_setor: Record<string, number | null>;
     exercicio_dos_fundamentos: string | null;
   }[];
-  sectors?: { setor: string; meu_peso_pct: number | null; peso_de_mercado_pct: number | null; diferenca_pp: number | null }[];
+  sectors?: {
+    setor: string;
+    meu_peso_pct: number | null;
+    peso_de_mercado_pct: number | null;
+    diferenca_pp: number | null;
+  }[];
   gaps?: string[];
   outside?: string[];
   sem_setor?: string[];
@@ -1384,6 +1443,8 @@ export interface PipelineInfo {
   name: string;
   description: string;
   schedule: string;
+  /** Offers "Simular": collect everything, save nothing, report what would be added. */
+  supports_preview: boolean;
   configured: boolean;
   /** Write-only credentials: whether each is set, never its value. */
   credentials: { key: string; label: string; configured: boolean }[];
@@ -1408,7 +1469,7 @@ export const api = {
     request<{ runs: PipelineRun[]; total: number; page: number; pages: number; page_size: number }>(
       `/pipelines/runs${query({ pipeline, page, page_size: pageSize })}`,
     ),
-  startPipeline: (key: string, options?: { full_history?: boolean }) =>
+  startPipeline: (key: string, options?: { full_history?: boolean; preview?: boolean }) =>
     request<{ run_id: number }>(`/pipelines/${encodeURIComponent(key)}/run`, {
       method: "POST",
       body: JSON.stringify(options ?? {}),
@@ -1447,26 +1508,49 @@ export const api = {
         assets: { ticker: string; name: string; total: number; payments: number }[];
       }[];
     }>(`/portfolio/dividends/breakdown${query({ period, granularity })}`),
-  dividendCalendar: (limit = 40) => request<IncomePayment[]>(`/dividends/calendar${query({ limit })}`),
+  dividendCalendar: (limit = 40) =>
+    request<IncomePayment[]>(`/dividends/calendar${query({ limit })}`),
   upcomingDividends: (refresh = false) =>
     request<UpcomingDividends>(`/dividends/upcoming${query({ refresh: refresh || undefined })}`),
   aiChats: () => request<AiChatSummary[]>("/ai/chats"),
   aiChatDetail: (id: number) => request<AiChatDetail>(`/ai/chats/${id}`),
-  deleteAiChat: (id: number) => request<{ deleted: number }>(`/ai/chats/${id}`, { method: "DELETE" }),
+  deleteAiChat: (id: number) =>
+    request<{ deleted: number }>(`/ai/chats/${id}`, { method: "DELETE" }),
   monthlyReturns: () => request<MonthlyReturn[]>("/portfolio/monthly-returns"),
   irpf: (year?: number) => request<IrpfReport>(`/reports/irpf${query({ year })}`),
-  portfolioWarnings: () => request<{ ticker: string; name: string; message: string }[]>("/portfolio/warnings"),
+  monthlyTaxes: () => request<TaxSheet>("/taxes/monthly"),
+  // Strings, not numbers: money never round-trips through a float.
+  saveDayTrade: (period: string, payload: { result: string; irrf: string }) =>
+    request<{ saved: boolean }>(`/taxes/day-trade/${period}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  clearDayTrade: (period: string) =>
+    request<{ deleted: boolean }>(`/taxes/day-trade/${period}`, { method: "DELETE" }),
+  setTaxPaid: (period: string, paid: boolean) =>
+    request<{ paid: boolean }>(`/taxes/paid/${period}`, {
+      method: "PUT",
+      body: JSON.stringify({ paid }),
+    }),
+  portfolioWarnings: () =>
+    request<{ ticker: string; name: string; message: string }[]>("/portfolio/warnings"),
 
-  assets: (includeClosed = true) => request<PositionRow[]>(`/assets${query({ include_closed: includeClosed })}`),
+  assets: (includeClosed = true) =>
+    request<PositionRow[]>(`/assets${query({ include_closed: includeClosed })}`),
   asset: (ticker: string) => request<AssetDetail>(`/assets/${encodeURIComponent(ticker)}`),
   assetPriceHistory: (ticker: string) =>
-    request<{ date: string; close: number }[]>(`/assets/${encodeURIComponent(ticker)}/price-history`),
+    request<{ date: string; close: number }[]>(
+      `/assets/${encodeURIComponent(ticker)}/price-history`,
+    ),
   assetFundamentals: (ticker: string, refresh = false) =>
     request<FundamentalsResponse>(
       `/assets/${encodeURIComponent(ticker)}/fundamentals${query({ refresh: refresh || undefined })}`,
     ),
   updateAsset: (ticker: string, payload: Record<string, unknown>) =>
-    request(`/assets/${encodeURIComponent(ticker)}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    request(`/assets/${encodeURIComponent(ticker)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   /**
    * State the balance the venue actually reports. Appends the difference as a
    * movement rather than overwriting the position, so it stays derived.
@@ -1485,9 +1569,13 @@ export const api = {
     }),
 
   transactions: (params: Record<string, unknown>) =>
-    request<{ total: number; page: number; page_size: number; pages: number; items: TransactionRow[] }>(
-      `/transactions${query(params)}`,
-    ),
+    request<{
+      total: number;
+      page: number;
+      page_size: number;
+      pages: number;
+      items: TransactionRow[];
+    }>(`/transactions${query(params)}`),
   transactionFilters: () =>
     request<{ op_types: string[]; brokers: string[]; date_range: { start: string; end: string } }>(
       "/transactions/filters",
@@ -1508,10 +1596,11 @@ export const api = {
     currency?: string;
     broker?: string | null;
     notes?: string | null;
-  }) => request<{ id: number; ticker: string; op_type: string }>("/transactions", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  }),
+  }) =>
+    request<{ id: number; ticker: string; op_type: string }>("/transactions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   deleteTransaction: (id: number) => request(`/transactions/${id}`, { method: "DELETE" }),
   exportUrl: (params: Record<string, unknown>) => `${BASE}/transactions/export${query(params)}`,
 
@@ -1526,9 +1615,12 @@ export const api = {
       { method: "POST" },
     ),
   gdriveDevicePoll: () =>
-    request<{ status: "pending" | "connected"; interval?: number }>("/cloud-backup/gdrive/device/poll", {
-      method: "POST",
-    }),
+    request<{ status: "pending" | "connected"; interval?: number }>(
+      "/cloud-backup/gdrive/device/poll",
+      {
+        method: "POST",
+      },
+    ),
   dropboxAuthorize: () =>
     request<{ authorize_url: string }>("/cloud-backup/dropbox/authorize", { method: "POST" }),
   dropboxComplete: (code: string) =>
@@ -1550,10 +1642,13 @@ export const api = {
     /** Wipe the current data first (typed-confirmation reset) instead of refusing a non-empty install. */
     confirm_replace?: boolean;
   }) =>
-    request<{ status: string; rows_imported: number; rows_total: number }>("/cloud-backup/restore", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+    request<{ status: string; rows_imported: number; rows_total: number }>(
+      "/cloud-backup/restore",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
 
   /** Live model catalog from the provider (needs its key); curated fallback otherwise. */
   aiModels: (provider: string) =>
@@ -1564,10 +1659,8 @@ export const api = {
     request<ClaudeCodeStatus>(`/ai/claude-code/status${query({ refresh })}`),
   /** Opens the Anthropic sign-in in the user's browser and returns at once —
    *  the authorization happens there, so poll `claudeCodeStatus` afterwards. */
-  claudeCodeLogin: () =>
-    request<ClaudeCodeStatus>("/ai/claude-code/login", { method: "POST" }),
-  claudeCodeLogout: () =>
-    request<ClaudeCodeStatus>("/ai/claude-code/logout", { method: "POST" }),
+  claudeCodeLogin: () => request<ClaudeCodeStatus>("/ai/claude-code/login", { method: "POST" }),
+  claudeCodeLogout: () => request<ClaudeCodeStatus>("/ai/claude-code/logout", { method: "POST" }),
 
   // Carteira IA — generate/suggest run as backend jobs; poll aiWalletJob.
   aiWallets: () => request<AiWalletSummary[]>("/ai-wallets"),
@@ -1583,7 +1676,8 @@ export const api = {
     request<AiWalletJob>(`/ai-wallets/${id}/categories/${encodeURIComponent(category)}/suggest`, {
       method: "POST",
     }),
-  deleteAiWallet: (id: number) => request<{ deleted: boolean }>(`/ai-wallets/${id}`, { method: "DELETE" }),
+  deleteAiWallet: (id: number) =>
+    request<{ deleted: boolean }>(`/ai-wallets/${id}`, { method: "DELETE" }),
   aiWalletDetail: (id: number) => request<AiWalletDetail>(`/ai-wallets/${id}`),
   aiWalletEvents: (id: number, page = 1, category?: string) =>
     request<{ total: number; page: number; page_size: number; items: AiWalletEvent[] }>(
@@ -1597,28 +1691,33 @@ export const api = {
       { method: "POST" },
     ),
   declineAiSuggestion: (id: number, suggestionId: number) =>
-    request<{ suggestion: AiWalletSuggestion }>(`/ai-wallets/${id}/suggestions/${suggestionId}/decline`, {
-      method: "POST",
-    }),
+    request<{ suggestion: AiWalletSuggestion }>(
+      `/ai-wallets/${id}/suggestions/${suggestionId}/decline`,
+      {
+        method: "POST",
+      },
+    ),
   aiWalletCompare: (range: AiWalletRange = "max") =>
     request<AiWalletCompare>(`/ai-wallets/compare${query({ range })}`),
 
   // Aporte inteligente — the analysis runs as a backend job; poll smartInvestJob.
-  smartInvestOptions: () =>
-    request<{ categories: SmartInvestCategory[] }>("/smart-invest/options"),
+  smartInvestOptions: () => request<{ categories: SmartInvestCategory[] }>("/smart-invest/options"),
   smartInvestJob: () => request<AiWalletJob>("/smart-invest"),
   startSmartInvest: (
     payload: { amount: number; currency: "BRL" | "USD"; kinds: string[] } & SmartInvestOptions,
-  ) =>
-    request<AiWalletJob>("/smart-invest", { method: "POST", body: JSON.stringify(payload) }),
+  ) => request<AiWalletJob>("/smart-invest", { method: "POST", body: JSON.stringify(payload) }),
   smartInvestHistory: () => request<SmartInvestRun[]>("/smart-invest/history"),
   deleteSmartInvestRun: (id: number) =>
     request<{ deleted: boolean }>(`/smart-invest/history/${id}`, { method: "DELETE" }),
 
   imports: (page = 1, pageSize = 5) =>
-    request<{ total: number; page: number; page_size: number; pages: number; items: ImportBatch[] }>(
-      `/imports${query({ page, page_size: pageSize })}`,
-    ),
+    request<{
+      total: number;
+      page: number;
+      page_size: number;
+      pages: number;
+      items: ImportBatch[];
+    }>(`/imports${query({ page, page_size: pageSize })}`),
   importDetail: (id: number) => request<ImportBatch>(`/imports/${id}`),
   coverage: () =>
     request<{ accounts: CoverageAccount[]; formats: { format: string; broker: string }[] }>(
@@ -1642,7 +1741,14 @@ export const api = {
   reports: () =>
     request<{
       overview: Overview;
-      annual: { year: string; bought: number; sold: number; income: number; transactions: number; market_value: number }[];
+      annual: {
+        year: string;
+        bought: number;
+        sold: number;
+        income: number;
+        transactions: number;
+        market_value: number;
+      }[];
       income_by_year: IncomePoint[];
       performers: { best: PositionRow[]; worst: PositionRow[] };
       allocation: { by_kind: AllocationSlice[]; by_broker: AllocationSlice[] };
@@ -1652,7 +1758,14 @@ export const api = {
   search: (q: string) =>
     request<{
       assets: { ticker: string; name: string; kind: string }[];
-      transactions: { id: number; date: string; ticker: string; op_type: string; movement: string; gross_amount: number }[];
+      transactions: {
+        id: number;
+        date: string;
+        ticker: string;
+        op_type: string;
+        movement: string;
+        gross_amount: number;
+      }[];
     }>(`/search${query({ q })}`),
   /** Tickers the market knows but the portfolio never traded (B3 + US). */
   searchMarket: (q: string) =>
@@ -1672,12 +1785,14 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(terms),
     }),
-  syncIndices: () => request<Record<string, unknown>>("/fixed-income/indices/sync", { method: "POST" }),
+  syncIndices: () =>
+    request<Record<string, unknown>>("/fixed-income/indices/sync", { method: "POST" }),
 
   cashAccounts: () =>
-    request<{ items: CashAccount[]; totals: { principal: number; balance: number; interest: number } }>(
-      "/fixed-income/accounts",
-    ),
+    request<{
+      items: CashAccount[];
+      totals: { principal: number; balance: number; interest: number };
+    }>("/fixed-income/accounts"),
   createCashAccount: (payload: {
     name: string;
     index_code?: string;
@@ -1685,7 +1800,11 @@ export const api = {
     opening_amount?: number | null;
     opening_date?: string | null;
     notes?: string | null;
-  }) => request<CashAccount>("/fixed-income/accounts", { method: "POST", body: JSON.stringify(payload) }),
+  }) =>
+    request<CashAccount>("/fixed-income/accounts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateCashAccount: (ticker: string, payload: Record<string, unknown>) =>
     request<CashAccount>(`/fixed-income/accounts/${encodeURIComponent(ticker)}`, {
       method: "PATCH",
@@ -1693,15 +1812,21 @@ export const api = {
     }),
   deleteCashAccount: (ticker: string) =>
     request(`/fixed-income/accounts/${encodeURIComponent(ticker)}`, { method: "DELETE" }),
-  addCashEntry: (ticker: string, payload: { amount: number; date: string; kind: "deposit" | "withdrawal" }) =>
+  addCashEntry: (
+    ticker: string,
+    payload: { amount: number; date: string; kind: "deposit" | "withdrawal" },
+  ) =>
     request<CashAccount>(`/fixed-income/accounts/${encodeURIComponent(ticker)}/entries`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   deleteCashEntry: (ticker: string, entryId: number) =>
-    request<CashAccount>(`/fixed-income/accounts/${encodeURIComponent(ticker)}/entries/${entryId}`, {
-      method: "DELETE",
-    }),
+    request<CashAccount>(
+      `/fixed-income/accounts/${encodeURIComponent(ticker)}/entries/${entryId}`,
+      {
+        method: "DELETE",
+      },
+    ),
 
   treasury: () =>
     request<{
@@ -1721,30 +1846,40 @@ export const api = {
     cash_amount?: number;
     note?: string | null;
     source?: string;
-  }) => request<Succession>("/corporate-actions", { method: "POST", body: JSON.stringify(payload) }),
+  }) =>
+    request<Succession>("/corporate-actions", { method: "POST", body: JSON.stringify(payload) }),
   deleteSuccession: (id: number) => request(`/corporate-actions/${id}`, { method: "DELETE" }),
 
   splits: () => request<AssetSplit[]>("/corporate-actions/splits"),
   createSplit: (payload: { ticker: string; date: string; ratio: string }) =>
-    request<AssetSplit>("/corporate-actions/splits", { method: "POST", body: JSON.stringify(payload) }),
-  deleteSplit: (id: number) =>
-    request(`/corporate-actions/splits/${id}`, { method: "DELETE" }),
+    request<AssetSplit>("/corporate-actions/splits", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteSplit: (id: number) => request(`/corporate-actions/splits/${id}`, { method: "DELETE" }),
   splitLookup: () => request<AiWalletJob>("/corporate-actions/splits/lookup"),
   startSplitLookup: (ticker: string) =>
-    request<AiWalletJob>(`/corporate-actions/splits/lookup${query({ ticker })}`, { method: "POST" }),
+    request<AiWalletJob>(`/corporate-actions/splits/lookup${query({ ticker })}`, {
+      method: "POST",
+    }),
   // AI event scan: background job (poll status) + stored accept/decline proposals.
   corporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan"),
-  startCorporateAiScan: () => request<AiWalletJob>("/corporate-actions/ai-scan", { method: "POST" }),
-  corporateAiSuggestions: () => request<CorporateAiSuggestion[]>("/corporate-actions/ai-suggestions"),
+  startCorporateAiScan: () =>
+    request<AiWalletJob>("/corporate-actions/ai-scan", { method: "POST" }),
+  corporateAiSuggestions: () =>
+    request<CorporateAiSuggestion[]>("/corporate-actions/ai-suggestions"),
   acceptCorporateAiSuggestion: (id: number) =>
     request<{ succession: Succession; suggestion: CorporateAiSuggestion }>(
       `/corporate-actions/ai-suggestions/${id}/accept`,
       { method: "POST" },
     ),
   declineCorporateAiSuggestion: (id: number) =>
-    request<{ suggestion: CorporateAiSuggestion }>(`/corporate-actions/ai-suggestions/${id}/decline`, {
-      method: "POST",
-    }),
+    request<{ suggestion: CorporateAiSuggestion }>(
+      `/corporate-actions/ai-suggestions/${id}/decline`,
+      {
+        method: "POST",
+      },
+    ),
 
   settings: () => request<AppSettings>("/settings"),
   updateSettings: (values: Record<string, unknown>) =>
@@ -1754,7 +1889,13 @@ export const api = {
     request<{
       provider: string;
       last_update: string | null;
-      quotes: { ticker: string; price: number; change_percent: number | null; source: string; fetched_at: string }[];
+      quotes: {
+        ticker: string;
+        price: number;
+        change_percent: number | null;
+        source: string;
+        fetched_at: string;
+      }[];
       /** Rate series held, one entry per pair. */
       fx: {
         pair: string;
@@ -1825,9 +1966,16 @@ export const api = {
   portfolioFit: () => request<PortfolioFit>("/universe/fit"),
 
   watchlist: () =>
-    request<{ id: number; ticker: string; note: string | null; target_price: number | null; price: number | null; change_percent: number | null }[]>(
-      "/watchlist",
-    ),
+    request<
+      {
+        id: number;
+        ticker: string;
+        note: string | null;
+        target_price: number | null;
+        price: number | null;
+        change_percent: number | null;
+      }[]
+    >("/watchlist"),
   addWatchlist: (ticker: string, note?: string) =>
     request("/watchlist", { method: "POST", body: JSON.stringify({ ticker, note }) }),
   removeWatchlist: (id: number) => request(`/watchlist/${id}`, { method: "DELETE" }),

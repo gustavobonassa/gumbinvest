@@ -20,7 +20,10 @@ function iso(date: Date): string {
 }
 
 function monthTitle(year: number, month: number): string {
-  const label = new Date(year, month, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const label = new Date(year, month, 1).toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
@@ -79,7 +82,13 @@ export default function DividendCalendar({
     const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
     let monthPaid = 0;
     let monthUpcoming = 0;
-    const monthRows: { date: string; ticker: string; label: string; value: number; isUpcoming: boolean }[] = [];
+    const monthRows: {
+      date: string;
+      ticker: string;
+      label: string;
+      value: number;
+      isUpcoming: boolean;
+    }[] = [];
     for (const payment of payments) {
       if (!payment.date.startsWith(prefix)) continue;
       monthPaid += payment.net;
@@ -111,7 +120,11 @@ export default function DividendCalendar({
   const first = new Date(year, month, 1);
   const gridStart = new Date(year, month, 1 - first.getDay());
   const cells = Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+    const date = new Date(
+      gridStart.getFullYear(),
+      gridStart.getMonth(),
+      gridStart.getDate() + index,
+    );
     return { date, key: iso(date), inMonth: date.getMonth() === month };
   });
   const todayKey = iso(today);
@@ -130,13 +143,27 @@ export default function DividendCalendar({
               className="btn-ghost px-2 py-1.5 text-xs"
               title="Buscar novos anúncios na B3"
             >
-              <RefreshCw size={14} className={refreshing ? "animate-spin" : undefined} aria-hidden />
+              <RefreshCw
+                size={14}
+                className={refreshing ? "animate-spin" : undefined}
+                aria-hidden
+              />
               <span className="hidden sm:inline">Atualizar previsões</span>
             </button>
-            <button type="button" onClick={() => move(-1)} className="btn-ghost px-2 py-1.5" aria-label="Mês anterior">
+            <button
+              type="button"
+              onClick={() => move(-1)}
+              className="btn-ghost px-2 py-1.5"
+              aria-label="Mês anterior"
+            >
               <ChevronLeft size={16} />
             </button>
-            <button type="button" onClick={() => move(1)} className="btn-ghost px-2 py-1.5" aria-label="Próximo mês">
+            <button
+              type="button"
+              onClick={() => move(1)}
+              className="btn-ghost px-2 py-1.5"
+              aria-label="Próximo mês"
+            >
               <ChevronRight size={16} />
             </button>
           </div>
@@ -160,7 +187,10 @@ export default function DividendCalendar({
 
           <div className="grid grid-cols-7 gap-1">
             {WEEKDAYS.map((day) => (
-              <p key={day} className="pb-1 text-center text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+              <p
+                key={day}
+                className="pb-1 text-center text-[11px] font-medium uppercase tracking-wide text-ink-muted"
+              >
                 {day}
               </p>
             ))}
@@ -180,12 +210,20 @@ export default function DividendCalendar({
                   title={entry?.lines.join("\n")}
                   className={[
                     "min-h-[40px] rounded-lg border p-1.5 text-left text-xs transition-colors sm:min-h-[64px]",
-                    cell.inMonth ? "border-line bg-surface-raised/40" : "border-transparent opacity-40",
+                    cell.inMonth
+                      ? "border-line bg-surface-raised/40"
+                      : "border-transparent opacity-40",
                     cell.key === todayKey ? "ring-1 ring-accent/60" : "",
-                    entry ? "cursor-pointer hover:border-line-strong hover:bg-surface-hover/60" : "",
+                    entry
+                      ? "cursor-pointer hover:border-line-strong hover:bg-surface-hover/60"
+                      : "",
                   ].join(" ")}
                 >
-                  <p className={cell.key === todayKey ? "font-semibold text-accent" : "text-ink-muted"}>
+                  <p
+                    className={
+                      cell.key === todayKey ? "font-semibold text-accent" : "text-ink-muted"
+                    }
+                  >
                     {cell.date.getDate()}
                   </p>
                   {/* A phone-width cell (~37px) cannot carry a money chip, so
@@ -196,7 +234,10 @@ export default function DividendCalendar({
                       <p className="tnum mt-1 hidden truncate rounded bg-positive/10 px-1 py-0.5 text-[11px] font-medium text-positive sm:block">
                         {money(entry.paid, { compact: true })}
                       </p>
-                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-positive sm:hidden" aria-hidden />
+                      <span
+                        className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-positive sm:hidden"
+                        aria-hidden
+                      />
                     </>
                   ) : null}
                   {entry && entry.upcoming > 0 ? (
@@ -204,7 +245,10 @@ export default function DividendCalendar({
                       <p className="tnum mt-1 hidden truncate rounded border border-accent/40 bg-accent-soft px-1 py-0.5 text-[11px] font-medium text-accent sm:block">
                         ≈ {money(entry.upcoming, { compact: true })}
                       </p>
-                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-accent sm:hidden" aria-hidden />
+                      <span
+                        className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-accent sm:hidden"
+                        aria-hidden
+                      />
                     </>
                   ) : null}
                 </Tag>
@@ -214,13 +258,20 @@ export default function DividendCalendar({
 
           <p className="mt-3 text-xs text-ink-muted">
             Verde: creditado na conta. Azul: anunciado na B3, estimado pela posição atual (
-            {upcoming?.updated_at ? `previsões atualizadas ${dateTime(upcoming.updated_at)}` : "sem previsões carregadas"}
-            {upcoming?.missing.length ? ` · ${upcoming.missing.length} ativo(s) ainda sem consulta` : ""}).
+            {upcoming?.updated_at
+              ? `previsões atualizadas ${dateTime(upcoming.updated_at)}`
+              : "sem previsões carregadas"}
+            {upcoming?.missing.length
+              ? ` · ${upcoming.missing.length} ativo(s) ainda sem consulta`
+              : ""}
+            ).
           </p>
         </div>
 
         <div className="min-w-0">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">No mês</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            No mês
+          </p>
           {!monthRows.length ? (
             <p className="py-4 text-sm text-ink-muted">Nenhum provento neste mês.</p>
           ) : (
@@ -231,13 +282,20 @@ export default function DividendCalendar({
                   className="flex items-baseline justify-between gap-3 py-1"
                 >
                   <span className="min-w-0 truncate">
-                    <span className="tnum mr-2 text-xs text-ink-muted">{shortDate(row.date).slice(0, 5)}</span>
-                    <Link to={`/ativos/${row.ticker}`} className="font-medium text-ink hover:text-accent">
+                    <span className="tnum mr-2 text-xs text-ink-muted">
+                      {shortDate(row.date).slice(0, 5)}
+                    </span>
+                    <Link
+                      to={`/ativos/${row.ticker}`}
+                      className="font-medium text-ink hover:text-accent"
+                    >
                       {row.ticker}
                     </Link>
                     <span className="ml-2 text-xs text-ink-muted">{row.label}</span>
                   </span>
-                  <span className={`tnum shrink-0 text-sm ${row.isUpcoming ? "text-accent" : "text-positive"}`}>
+                  <span
+                    className={`tnum shrink-0 text-sm ${row.isUpcoming ? "text-accent" : "text-positive"}`}
+                  >
                     {row.isUpcoming ? "≈ " : ""}
                     {money(row.value)}
                   </span>
@@ -253,9 +311,15 @@ export default function DividendCalendar({
               </p>
               <div className="space-y-0.5">
                 {pendingRows.map((row, index) => (
-                  <p key={`${row.ticker}-${index}`} className="flex items-baseline justify-between gap-3 py-1">
+                  <p
+                    key={`${row.ticker}-${index}`}
+                    className="flex items-baseline justify-between gap-3 py-1"
+                  >
                     <span className="min-w-0 truncate">
-                      <Link to={`/ativos/${row.ticker}`} className="font-medium text-ink hover:text-accent">
+                      <Link
+                        to={`/ativos/${row.ticker}`}
+                        className="font-medium text-ink hover:text-accent"
+                      >
                         {row.ticker}
                       </Link>
                       <span className="ml-2 text-xs text-ink-muted">{row.label ?? "provento"}</span>
@@ -277,7 +341,9 @@ export default function DividendCalendar({
           dayDetail
             ? [
                 dayDetail.bucket.paid > 0 ? `${money(dayDetail.bucket.paid)} recebidos` : null,
-                dayDetail.bucket.upcoming > 0 ? `≈ ${money(dayDetail.bucket.upcoming)} previstos` : null,
+                dayDetail.bucket.upcoming > 0
+                  ? `≈ ${money(dayDetail.bucket.upcoming)} previstos`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" · ")

@@ -13,13 +13,7 @@ import { useEffect, useState } from "react";
 import { Badge, Card, SectionTitle } from "@/components/ui";
 
 type UpdateStatus =
-  | "idle"
-  | "checking"
-  | "available"
-  | "downloading"
-  | "downloaded"
-  | "current"
-  | "error";
+  "idle" | "checking" | "available" | "downloading" | "downloaded" | "current" | "error";
 
 type UpdateState = {
   status: UpdateStatus;
@@ -71,7 +65,10 @@ export default function UpdateCard() {
 
   return (
     <Card className="p-5">
-      <SectionTitle title="Versão e atualizações" subtitle="Baixe e instale novas versões sem sair do app" />
+      <SectionTitle
+        title="Versão e atualizações"
+        subtitle="Baixe e instale novas versões sem sair do app"
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <Badge>versão instalada: {version || "—"}</Badge>
@@ -88,7 +85,10 @@ export default function UpdateCard() {
           onClick={() => bridge.checkForUpdates()}
           disabled={busy}
         >
-          <RefreshCw size={15} className={state.status === "checking" ? "animate-spin" : undefined} />
+          <RefreshCw
+            size={15}
+            className={state.status === "checking" ? "animate-spin" : undefined}
+          />
           {state.status === "checking" ? "Procurando…" : "Verificar atualizações"}
         </button>
 
@@ -122,8 +122,8 @@ export default function UpdateCard() {
       ) : null}
 
       <p className="mt-4 text-xs text-ink-muted">
-        A atualização troca só o programa: seus dados, chaves e backups continuam onde estão. Como
-        o instalador não é assinado digitalmente, o Windows ainda mostra o aviso de origem
+        A atualização troca só o programa: seus dados, chaves e backups continuam onde estão. Como o
+        instalador não é assinado digitalmente, o Windows ainda mostra o aviso de origem
         desconhecida ao aplicar a nova versão.
       </p>
     </Card>

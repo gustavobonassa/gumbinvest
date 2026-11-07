@@ -45,7 +45,9 @@ const listeners = new Set<() => void>();
 
 function paint(theme: Theme) {
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BROWSER_CHROME[theme]);
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", BROWSER_CHROME[theme]);
   // Charts draw into SVG attributes, which no stylesheet reaches — the chart
   // token module is switched in the same breath as the CSS variables.
   setChartTheme(theme);

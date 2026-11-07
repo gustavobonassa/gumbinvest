@@ -67,7 +67,9 @@ export default function InvestorProfileCard({ values }: { values: Record<string,
   const [goals, setGoals] = useState<string[]>(
     Array.isArray(stored.objetivos) ? stored.objetivos.map(String) : [],
   );
-  const [horizon, setHorizon] = useState(typeof stored.horizonte === "string" ? stored.horizonte : "");
+  const [horizon, setHorizon] = useState(
+    typeof stored.horizonte === "string" ? stored.horizonte : "",
+  );
   const [risk, setRisk] = useState(typeof stored.risco === "string" ? stored.risco : "");
   const [notes, setNotes] = useState(typeof stored.notas === "string" ? stored.notas : "");
   const [dirty, setDirty] = useState(false);
@@ -100,10 +102,12 @@ export default function InvestorProfileCard({ values }: { values: Record<string,
     return () => clearTimeout(timer);
   }, [dirty, name, goals, horizon, risk, notes, mutate]);
 
-  const touch = <T,>(setter: (next: T) => void) => (next: T) => {
-    setter(next);
-    setDirty(true);
-  };
+  const touch =
+    <T,>(setter: (next: T) => void) =>
+    (next: T) => {
+      setter(next);
+      setDirty(true);
+    };
   const setNameTouched = touch(setName);
   const setGoalsTouched = touch(setGoals);
   const setHorizonTouched = touch(setHorizon);
@@ -115,11 +119,15 @@ export default function InvestorProfileCard({ values }: { values: Record<string,
       <SectionTitle
         title="Perfil do investidor"
         subtitle="Seu nome e objetivos — a IA usa isso nas conversas e no aporte inteligente"
-        action={save.isPending ? <span className="text-xs text-ink-muted">salvando…</span> : undefined}
+        action={
+          save.isPending ? <span className="text-xs text-ink-muted">salvando…</span> : undefined
+        }
       />
       <div className="space-y-5">
         <div className="max-w-sm">
-          <span className="mb-1.5 block text-xs font-medium text-ink-muted">Como você quer ser chamado</span>
+          <span className="mb-1.5 block text-xs font-medium text-ink-muted">
+            Como você quer ser chamado
+          </span>
           <input
             className="input"
             value={name}
@@ -148,7 +156,9 @@ export default function InvestorProfileCard({ values }: { values: Record<string,
           </div>
         </div>
         <div>
-          <span className="mb-2 block text-xs font-medium text-ink-muted">Horizonte de investimento</span>
+          <span className="mb-2 block text-xs font-medium text-ink-muted">
+            Horizonte de investimento
+          </span>
           <div className="flex flex-wrap gap-2">
             {HORIZON_OPTIONS.map((option) => (
               <Chip

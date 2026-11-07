@@ -36,12 +36,33 @@ import {
 import { Table2, TrendingUp } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { OTHER_COLOR, OTHER_KIND, SERIES, TOKENS, kindColor, kindRank, sequentialFill } from "@/lib/colors";
+import {
+  OTHER_COLOR,
+  OTHER_KIND,
+  SERIES,
+  TOKENS,
+  kindColor,
+  kindRank,
+  sequentialFill,
+} from "@/lib/colors";
 import { MASK, kindLabel, money, percent, periodLabel, shortDate } from "@/lib/format";
 import { getValuesHidden as valuesHidden } from "@/lib/privacy";
 import { Card, EmptyState, ErrorState, SectionTitle } from "@/components/ui";
 
-const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MONTH_LABELS = [
+  "Jan",
+  "Fev",
+  "Mar",
+  "Abr",
+  "Mai",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Set",
+  "Out",
+  "Nov",
+  "Dez",
+];
 
 /**
  * Honour the OS "reduce motion" setting: Recharts' entry animations are
@@ -79,7 +100,9 @@ const cursorFill = () => ({ fill: TOKENS.cursor });
 const compact = (value: number) =>
   valuesHidden()
     ? MASK
-    : new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+    : new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(
+        value,
+      );
 
 /** Shared tooltip shell: crosshair values, never a number on every point. */
 function TooltipCard({
@@ -91,13 +114,19 @@ function TooltipCard({
 }) {
   return (
     <div className="animate-scale-in rounded-xl border border-line-strong bg-surface-raised/95 px-3 py-2 shadow-raised backdrop-blur-xl">
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-muted">
+        {label}
+      </p>
       <div className="space-y-1">
         {rows.map((row) => (
           <div key={row.name} className="flex items-center justify-between gap-6 text-xs">
             <span className="flex items-center gap-1.5 text-ink-secondary">
               {row.color ? (
-                <span className="h-2 w-2 rounded-full" style={{ background: row.color }} aria-hidden />
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: row.color }}
+                  aria-hidden
+                />
               ) : null}
               {row.name}
             </span>
@@ -199,7 +228,13 @@ export interface HistorySeriesPoint {
   dividends: number;
 }
 
-export function PortfolioHistoryChart({ data, height = 300 }: { data: HistorySeriesPoint[]; height?: number }) {
+export function PortfolioHistoryChart({
+  data,
+  height = 300,
+}: {
+  data: HistorySeriesPoint[];
+  height?: number;
+}) {
   const gradientId = useId().replace(/:/g, "");
   // Press and drag measures a stretch of the series: the anchor is where the
   // button went down, the cursor is where it is now. Both are dates, so the
@@ -253,7 +288,12 @@ export function PortfolioHistoryChart({ data, height = 300 }: { data: HistorySer
   }, [anchor, cursor, data]);
 
   if (!data.length) {
-    return <EmptyState title="Sem histórico" description="Importe transações para ver a evolução da carteira." />;
+    return (
+      <EmptyState
+        title="Sem histórico"
+        description="Importe transações para ver a evolução da carteira."
+      />
+    );
   }
 
   return (
@@ -265,7 +305,8 @@ export function PortfolioHistoryChart({ data, height = 300 }: { data: HistorySer
               {shortDate(selection.from)} → {shortDate(selection.to)} · {selection.days} dias
             </span>
             <span className="tnum font-medium text-ink">
-              {money(selection.startValue, { compact: true })} → {money(selection.endValue, { compact: true })}
+              {money(selection.startValue, { compact: true })} →{" "}
+              {money(selection.endValue, { compact: true })}
             </span>
             <span
               className={clsx(
@@ -283,97 +324,112 @@ export function PortfolioHistoryChart({ data, height = 300 }: { data: HistorySer
         </div>
       ) : null}
       <ResponsiveContainer debounce={150} width="100%" height={height}>
-      <AreaChart
-        data={data}
-        margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
-        onMouseDown={(state: { activeLabel?: string | number }) => {
-          const label = state?.activeLabel;
-          if (label === undefined) return;
-          setAnchor(String(label));
-          setCursor(String(label));
-        }}
-        onMouseMove={(state: { activeLabel?: string | number }) => {
-          if (anchor === null) return;
-          const label = state?.activeLabel;
-          if (label !== undefined) setCursor(String(label));
-        }}
-        onMouseUp={() => {
-          setAnchor(null);
-          setCursor(null);
-        }}
-      >
-        <defs>
-          <linearGradient id={`fill-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.35} />
-            <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        {grid()}
-        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
-        <YAxis {...axisProps()} width={58} tickFormatter={compact} />
-        <Tooltip
-          cursor={{ stroke: TOKENS.axis, strokeDasharray: "4 4" }}
-          // While a range is being dragged the readout above answers the
-          // question; a per-day tooltip on top of it is two answers at once.
-          content={({ active, payload, label }) =>
-            active && payload?.length && anchor === null ? (
-              <TooltipCard
-                label={shortDate(String(label))}
-                rows={[
-                  { name: "Valor de mercado", value: money(payload[0]?.payload.market_value), color: SERIES[0] },
-                  { name: "Capital investido", value: money(payload[0]?.payload.cost_basis), color: SERIES[1] },
-                  {
-                    name: "Resultado",
-                    value: money(payload[0]?.payload.market_value - payload[0]?.payload.cost_basis),
-                  },
-                ]}
-              />
-            ) : null
-          }
-        />
+        <AreaChart
+          data={data}
+          margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+          onMouseDown={(state: { activeLabel?: string | number }) => {
+            const label = state?.activeLabel;
+            if (label === undefined) return;
+            setAnchor(String(label));
+            setCursor(String(label));
+          }}
+          onMouseMove={(state: { activeLabel?: string | number }) => {
+            if (anchor === null) return;
+            const label = state?.activeLabel;
+            if (label !== undefined) setCursor(String(label));
+          }}
+          onMouseUp={() => {
+            setAnchor(null);
+            setCursor(null);
+          }}
+        >
+          <defs>
+            <linearGradient id={`fill-${gradientId}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          {grid()}
+          <XAxis
+            dataKey="date"
+            {...axisProps()}
+            tickFormatter={(value) => shortDate(value).slice(3)}
+            minTickGap={40}
+          />
+          <YAxis {...axisProps()} width={58} tickFormatter={compact} />
+          <Tooltip
+            cursor={{ stroke: TOKENS.axis, strokeDasharray: "4 4" }}
+            // While a range is being dragged the readout above answers the
+            // question; a per-day tooltip on top of it is two answers at once.
+            content={({ active, payload, label }) =>
+              active && payload?.length && anchor === null ? (
+                <TooltipCard
+                  label={shortDate(String(label))}
+                  rows={[
+                    {
+                      name: "Valor de mercado",
+                      value: money(payload[0]?.payload.market_value),
+                      color: SERIES[0],
+                    },
+                    {
+                      name: "Capital investido",
+                      value: money(payload[0]?.payload.cost_basis),
+                      color: SERIES[1],
+                    },
+                    {
+                      name: "Resultado",
+                      value: money(
+                        payload[0]?.payload.market_value - payload[0]?.payload.cost_basis,
+                      ),
+                    },
+                  ]}
+                />
+              ) : null
+            }
+          />
 
-        {/* Always mounted, only sometimes visible. Adding or removing a child
+          {/* Always mounted, only sometimes visible. Adding or removing a child
             makes Recharts rebuild the chart, which reads as the whole plot
             flickering on every mouse move — so the band is hidden by opacity
             and pinned to a single date, never unmounted. */}
-        <ReferenceArea
-          x1={selection ? selection.from : data[0]?.date}
-          x2={selection ? selection.to : data[0]?.date}
-          fill={selection && selection.change < 0 ? TOKENS.negative : TOKENS.positive}
-          fillOpacity={selection ? 0.12 : 0}
-          stroke={selection && selection.change < 0 ? TOKENS.negative : TOKENS.positive}
-          strokeOpacity={selection ? 0.4 : 0}
-          isAnimationActive={false}
-        />
-        <Legend
-          verticalAlign="top"
-          align="right"
-          height={28}
-          iconType="plainline"
-          formatter={(value) => <span className="text-xs text-ink-secondary">{value}</span>}
-        />
-        <Area
-          type="monotone"
-          dataKey="market_value"
-          name="Valor de mercado"
-          stroke={SERIES[0]}
-          strokeWidth={2}
-          fill={`url(#fill-${gradientId})`}
-          isAnimationActive={animated}
-          activeDot={{ r: 4, strokeWidth: 2, stroke: TOKENS.surface }}
-        />
-        <Area
-          type="monotone"
-          dataKey="cost_basis"
-          name="Capital investido"
-          stroke={SERIES[1]}
-          strokeWidth={2}
-          strokeDasharray="5 4"
-          fill="none"
-          isAnimationActive={animated}
-          activeDot={{ r: 4, strokeWidth: 2, stroke: TOKENS.surface }}
-        />
-      </AreaChart>
+          <ReferenceArea
+            x1={selection ? selection.from : data[0]?.date}
+            x2={selection ? selection.to : data[0]?.date}
+            fill={selection && selection.change < 0 ? TOKENS.negative : TOKENS.positive}
+            fillOpacity={selection ? 0.12 : 0}
+            stroke={selection && selection.change < 0 ? TOKENS.negative : TOKENS.positive}
+            strokeOpacity={selection ? 0.4 : 0}
+            isAnimationActive={false}
+          />
+          <Legend
+            verticalAlign="top"
+            align="right"
+            height={28}
+            iconType="plainline"
+            formatter={(value) => <span className="text-xs text-ink-secondary">{value}</span>}
+          />
+          <Area
+            type="monotone"
+            dataKey="market_value"
+            name="Valor de mercado"
+            stroke={SERIES[0]}
+            strokeWidth={2}
+            fill={`url(#fill-${gradientId})`}
+            isAnimationActive={animated}
+            activeDot={{ r: 4, strokeWidth: 2, stroke: TOKENS.surface }}
+          />
+          <Area
+            type="monotone"
+            dataKey="cost_basis"
+            name="Capital investido"
+            stroke={SERIES[1]}
+            strokeWidth={2}
+            strokeDasharray="5 4"
+            fill="none"
+            isAnimationActive={animated}
+            activeDot={{ r: 4, strokeWidth: 2, stroke: TOKENS.surface }}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
@@ -399,7 +455,12 @@ export function YearlyFinancialsBars({
     value === undefined ? "-" : money(value, { currency, compact: true, decimals: 0 });
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="28%" barGap={2}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+        barCategoryGap="28%"
+        barGap={2}
+      >
         {grid()}
         <XAxis dataKey="year" {...axisProps()} />
         <YAxis {...axisProps()} width={58} tickFormatter={compact} />
@@ -412,7 +473,11 @@ export function YearlyFinancialsBars({
                 label={String(label)}
                 rows={[
                   { name: "Receita", value: fmt(payload[0]?.payload.revenue), color: SERIES[1] },
-                  { name: "Lucro líquido", value: fmt(payload[0]?.payload.earnings), color: SERIES[0] },
+                  {
+                    name: "Lucro líquido",
+                    value: fmt(payload[0]?.payload.earnings),
+                    color: SERIES[0],
+                  },
                 ]}
               />
             ) : null
@@ -424,8 +489,22 @@ export function YearlyFinancialsBars({
           height={28}
           formatter={(value) => <span className="text-xs text-ink-secondary">{value}</span>}
         />
-        <Bar dataKey="revenue" name="Receita" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={34} {...MOTION} />
-        <Bar dataKey="earnings" name="Lucro líquido" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={34} {...MOTION} />
+        <Bar
+          dataKey="revenue"
+          name="Receita"
+          fill={SERIES[1]}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={34}
+          {...MOTION}
+        />
+        <Bar
+          dataKey="earnings"
+          name="Lucro líquido"
+          fill={SERIES[0]}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={34}
+          {...MOTION}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -470,7 +549,14 @@ export function DividendPerShareBars({
             ) : null
           }
         />
-        <Bar dataKey="total_rate" name="Por cota/ação" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={38} {...MOTION}>
+        <Bar
+          dataKey="total_rate"
+          name="Por cota/ação"
+          fill={SERIES[2]}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={38}
+          {...MOTION}
+        >
           <LabelList
             dataKey="yield_pct"
             position="top"
@@ -498,9 +584,16 @@ export interface ProjectionPoint {
   interest: number;
 }
 
-export function ProjectionChart({ data, height = 320 }: { data: ProjectionPoint[]; height?: number }) {
+export function ProjectionChart({
+  data,
+  height = 320,
+}: {
+  data: ProjectionPoint[];
+  height?: number;
+}) {
   const gradientId = useId().replace(/:/g, "");
-  if (!data.length) return <EmptyState title="Sem projeção" description="Preencha os campos para simular." />;
+  if (!data.length)
+    return <EmptyState title="Sem projeção" description="Preencha os campos para simular." />;
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -525,8 +618,16 @@ export function ProjectionChart({ data, height = 320 }: { data: ProjectionPoint[
               <TooltipCard
                 label={periodLabel(String(label))}
                 rows={[
-                  { name: "Patrimônio projetado", value: money(payload[0]?.payload.total), color: SERIES[0] },
-                  { name: "Total investido", value: money(payload[0]?.payload.invested), color: SERIES[1] },
+                  {
+                    name: "Patrimônio projetado",
+                    value: money(payload[0]?.payload.total),
+                    color: SERIES[0],
+                  },
+                  {
+                    name: "Total investido",
+                    value: money(payload[0]?.payload.invested),
+                    color: SERIES[1],
+                  },
                   { name: "Juros acumulados", value: money(payload[0]?.payload.interest) },
                 ]}
               />
@@ -575,7 +676,8 @@ export function ProjectionBreakdownBars({
   data: { period: string; invested: number; interest: number }[];
   height?: number;
 }) {
-  if (!data.length) return <EmptyState title="Sem projeção" description="Preencha os campos para simular." />;
+  if (!data.length)
+    return <EmptyState title="Sem projeção" description="Preencha os campos para simular." />;
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="22%">
@@ -589,8 +691,16 @@ export function ProjectionBreakdownBars({
               <TooltipCard
                 label={String(label)}
                 rows={[
-                  { name: "Total investido", value: money(payload[0]?.payload.invested), color: SERIES[1] },
-                  { name: "Juros acumulados", value: money(payload[0]?.payload.interest), color: SERIES[0] },
+                  {
+                    name: "Total investido",
+                    value: money(payload[0]?.payload.invested),
+                    color: SERIES[1],
+                  },
+                  {
+                    name: "Juros acumulados",
+                    value: money(payload[0]?.payload.interest),
+                    color: SERIES[0],
+                  },
                   {
                     name: "Patrimônio",
                     value: money(payload[0]?.payload.invested + payload[0]?.payload.interest),
@@ -606,7 +716,14 @@ export function ProjectionBreakdownBars({
           height={28}
           formatter={(value) => <span className="text-xs text-ink-secondary">{value}</span>}
         />
-        <Bar dataKey="invested" stackId="projection" name="Total investido" fill={SERIES[1]} maxBarSize={38} {...MOTION} />
+        <Bar
+          dataKey="invested"
+          stackId="projection"
+          name="Total investido"
+          fill={SERIES[1]}
+          maxBarSize={38}
+          {...MOTION}
+        />
         <Bar
           dataKey="interest"
           stackId="projection"
@@ -662,7 +779,12 @@ export function ReturnLinesChart({
   height?: number;
 }) {
   if (!data.length || !series.length) {
-    return <EmptyState title="Sem histórico" description="Importe transações para ver a rentabilidade." />;
+    return (
+      <EmptyState
+        title="Sem histórico"
+        description="Importe transações para ver a rentabilidade."
+      />
+    );
   }
   const off = hidden ?? new Set<string>();
   const visible = series.filter((item) => !off.has(item.key));
@@ -671,7 +793,12 @@ export function ReturnLinesChart({
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
         {grid()}
-        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
+        <XAxis
+          dataKey="date"
+          {...axisProps()}
+          tickFormatter={(value) => shortDate(value).slice(3)}
+          minTickGap={40}
+        />
         <YAxis {...axisProps()} width={56} tickFormatter={(value) => `${Math.round(value)}%`} />
         <ReferenceLine y={0} stroke={TOKENS.axis} strokeWidth={1} />
         <Tooltip
@@ -689,7 +816,9 @@ export function ReturnLinesChart({
                 value: percent(Number(point[item.key]), 2, true),
                 color: item.color,
               }));
-            return rows.length ? <TooltipCard label={shortDate(String(label))} rows={rows} /> : null;
+            return rows.length ? (
+              <TooltipCard label={shortDate(String(label))} rows={rows} />
+            ) : null;
           }}
         />
         <Legend
@@ -777,7 +906,11 @@ export function kindSlices(
       otherValue += Number(row.value);
       otherPercent += Number(row.percent);
       otherCount += 1;
-      otherMembers.push({ label: kindLabel(row.kind), value: Number(row.value), percent: Number(row.percent) });
+      otherMembers.push({
+        label: kindLabel(row.kind),
+        value: Number(row.value),
+        percent: Number(row.percent),
+      });
       continue;
     }
     mapped.push({
@@ -819,16 +952,20 @@ export function AllocationDonut({
   valueMode?: "percent" | "value";
 }) {
   const legendValue = (item: AllocationDatum) =>
-    valueMode === "value" ? money(item.value, { compact: true, decimals: 1 }) : percent(item.percent, 1);
+    valueMode === "value"
+      ? money(item.value, { compact: true, decimals: 1 })
+      : percent(item.percent, 1);
   const colored = useMemo(
     () =>
       data.map((item, index) => ({
         ...item,
-        color: item.color ?? (item.key === OTHER_KIND ? OTHER_COLOR : SERIES[index % SERIES.length]),
+        color:
+          item.color ?? (item.key === OTHER_KIND ? OTHER_COLOR : SERIES[index % SERIES.length]),
       })),
     [data],
   );
-  if (!colored.length) return <EmptyState title="Sem posições" description="Nenhuma posição em aberto." />;
+  if (!colored.length)
+    return <EmptyState title="Sem posições" description="Nenhuma posição em aberto." />;
 
   return (
     <div className="flex h-full flex-col gap-4 lg:flex-row lg:items-center">
@@ -867,12 +1004,19 @@ export function AllocationDonut({
                 for (const member of (slice.members ?? []).slice(0, 8)) {
                   rows.push({
                     name: `· ${member.label}`,
-                    value: valueMode === "value" ? money(member.value, { compact: true, decimals: 1 }) : percent(member.percent, 1),
+                    value:
+                      valueMode === "value"
+                        ? money(member.value, { compact: true, decimals: 1 })
+                        : percent(member.percent, 1),
                     color: undefined,
                   });
                 }
                 if ((slice.members?.length ?? 0) > 8) {
-                  rows.push({ name: `…e mais ${(slice.members?.length ?? 0) - 8}`, value: "", color: undefined });
+                  rows.push({
+                    name: `…e mais ${(slice.members?.length ?? 0) - 8}`,
+                    value: "",
+                    color: undefined,
+                  });
                 }
                 return <TooltipCard label={slice.label} rows={rows} />;
               }}
@@ -881,7 +1025,9 @@ export function AllocationDonut({
         </ResponsiveContainer>
         {centerValue ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
-            <span className="text-[11px] uppercase tracking-wide text-ink-muted">{centerLabel}</span>
+            <span className="text-[11px] uppercase tracking-wide text-ink-muted">
+              {centerLabel}
+            </span>
             <span className="tnum text-xl font-semibold text-ink">{centerValue}</span>
           </div>
         ) : null}
@@ -897,10 +1043,18 @@ export function AllocationDonut({
             className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-hover"
             // The browser-native tooltip answers "o que tem dentro de Outros?"
             // from the legend too, not just from hovering the slice.
-            title={item.members?.length ? item.members.map((member) => member.label).join(", ") : undefined}
+            title={
+              item.members?.length
+                ? item.members.map((member) => member.label).join(", ")
+                : undefined
+            }
           >
             <span className="flex min-w-0 items-center gap-2">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: item.color }} aria-hidden />
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                style={{ background: item.color }}
+                aria-hidden
+              />
               <span className="truncate text-ink-secondary">
                 {item.key === OTHER_KIND ? item.label : (item.legend ?? item.key)}
               </span>
@@ -948,7 +1102,9 @@ export function IncomeBars({
             active && payload?.length ? (
               <TooltipCard
                 label={periodLabel(String(period))}
-                rows={[{ name: label, value: money(Number(payload[0]?.value), { currency }), color }]}
+                rows={[
+                  { name: label, value: money(Number(payload[0]?.value), { currency }), color },
+                ]}
               />
             ) : null
           }
@@ -978,7 +1134,12 @@ export function ContributionBars({
   if (!data.length) return <EmptyState title="Sem aportes no período" />;
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barCategoryGap="24%" barGap={2}>
+      <BarChart
+        data={data}
+        margin={{ top: 8, right: 8, bottom: 0, left: 8 }}
+        barCategoryGap="24%"
+        barGap={2}
+      >
         {grid()}
         <XAxis dataKey="period" {...axisProps()} tickFormatter={periodLabel} minTickGap={12} />
         <YAxis {...axisProps()} width={58} tickFormatter={compact} />
@@ -1004,8 +1165,22 @@ export function ContributionBars({
           iconType="square"
           formatter={(value) => <span className="text-xs text-ink-secondary">{value}</span>}
         />
-        <Bar dataKey="bought" name="Compras" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={26} {...MOTION} />
-        <Bar dataKey="sold" name="Vendas" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={26} {...MOTION} />
+        <Bar
+          dataKey="bought"
+          name="Compras"
+          fill={SERIES[0]}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={26}
+          {...MOTION}
+        />
+        <Bar
+          dataKey="sold"
+          name="Vendas"
+          fill={SERIES[1]}
+          radius={[4, 4, 0, 0]}
+          maxBarSize={26}
+          {...MOTION}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -1065,7 +1240,12 @@ export function ProfitByAssetChart({
   if (!data.length) return <EmptyState title="Sem resultados" />;
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }} barCategoryGap="18%">
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 4, right: 16, bottom: 4, left: 8 }}
+        barCategoryGap="18%"
+      >
         <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" {...axisProps()} tickFormatter={compact} />
         <YAxis type="category" dataKey="ticker" {...axisProps()} width={72} />
@@ -1074,7 +1254,10 @@ export function ProfitByAssetChart({
           cursor={cursorFill()}
           content={({ active, payload, label }) =>
             active && payload?.length ? (
-              <TooltipCard label={String(label)} rows={[{ name: "Resultado", value: money(Number(payload[0]?.value)) }]} />
+              <TooltipCard
+                label={String(label)}
+                rows={[{ name: "Resultado", value: money(Number(payload[0]?.value)) }]}
+              />
             ) : null
           }
         />
@@ -1137,7 +1320,9 @@ export function IncomeBreakdownBars({
   // With segments switched off the bar no longer reaches the stored total, so
   // the tooltip adds up what is actually drawn.
   const totalOf = (point: Record<string, number>) =>
-    stacked ? visible.reduce((sum, key) => sum + (Number(point[key]) || 0), 0) : Number(point.total);
+    stacked
+      ? visible.reduce((sum, key) => sum + (Number(point[key]) || 0), 0)
+      : Number(point.total);
 
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
@@ -1258,7 +1443,12 @@ export function TopPayersBars({
   if (!data.length) return <EmptyState title="Sem proventos" />;
   return (
     <ResponsiveContainer debounce={150} width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 8 }} barCategoryGap="20%">
+      <BarChart
+        data={data}
+        layout="vertical"
+        margin={{ top: 4, right: 56, bottom: 4, left: 8 }}
+        barCategoryGap="20%"
+      >
         <CartesianGrid stroke={TOKENS.grid} strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" {...axisProps()} tickFormatter={compact} />
         <YAxis type="category" dataKey="ticker" {...axisProps()} width={78} />
@@ -1268,7 +1458,13 @@ export function TopPayersBars({
             active && payload?.length ? (
               <TooltipCard
                 label={String(label)}
-                rows={[{ name: "Proventos (líquido)", value: money(Number(payload[0]?.value)), color: SERIES[2] }]}
+                rows={[
+                  {
+                    name: "Proventos (líquido)",
+                    value: money(Number(payload[0]?.value)),
+                    color: SERIES[2],
+                  },
+                ]}
               />
             ) : null
           }
@@ -1346,7 +1542,11 @@ export function IncomeMatrix({ data }: { data: { period: string; total: number }
                     style={{ background: sequentialFill(max ? value / max : 0) }}
                     title={`${month}/${year}: ${money(value)}`}
                   >
-                    {value ? money(value, { compact: true }) : <span className="text-ink-muted">-</span>}
+                    {value ? (
+                      money(value, { compact: true })
+                    ) : (
+                      <span className="text-ink-muted">-</span>
+                    )}
                   </td>
                 );
               })}
@@ -1399,7 +1599,12 @@ export function PriceLine({
     <ResponsiveContainer debounce={150} width="100%" height={height}>
       <LineChart data={data} margin={{ top: 16, right: 8, bottom: 0, left: 8 }}>
         {grid()}
-        <XAxis dataKey="date" {...axisProps()} tickFormatter={(value) => shortDate(value).slice(3)} minTickGap={40} />
+        <XAxis
+          dataKey="date"
+          {...axisProps()}
+          tickFormatter={(value) => shortDate(value).slice(3)}
+          minTickGap={40}
+        />
         <YAxis {...axisProps()} width={58} domain={["auto", "auto"]} tickFormatter={compact} />
         {extremes ? (
           <>
@@ -1438,7 +1643,12 @@ export function PriceLine({
             y={averagePrice}
             stroke={SERIES[3]}
             strokeDasharray="5 4"
-            label={{ value: "Preço médio", fill: TOKENS.axis, fontSize: 11, position: "insideTopLeft" }}
+            label={{
+              value: "Preço médio",
+              fill: TOKENS.axis,
+              fontSize: 11,
+              position: "insideTopLeft",
+            }}
           />
         ) : null}
         <Tooltip
@@ -1447,7 +1657,13 @@ export function PriceLine({
             active && payload?.length ? (
               <TooltipCard
                 label={shortDate(String(label))}
-                rows={[{ name: "Fechamento", value: money(Number(payload[0]?.value), { currency }), color: SERIES[0] }]}
+                rows={[
+                  {
+                    name: "Fechamento",
+                    value: money(Number(payload[0]?.value), { currency }),
+                    color: SERIES[0],
+                  },
+                ]}
               />
             ) : null
           }

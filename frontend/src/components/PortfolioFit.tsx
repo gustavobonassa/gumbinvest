@@ -97,8 +97,8 @@ export default function PortfolioFitPanel() {
         ) : null}
         {fit.gaps?.length ? (
           <p className="mt-3 text-xs text-ink-muted">
-            Sem exposição a: <span className="text-ink-secondary">{fit.gaps.join(", ")}</span>. Não é
-            uma recomendação: um setor pode estar fora da carteira de propósito.
+            Sem exposição a: <span className="text-ink-secondary">{fit.gaps.join(", ")}</span>. Não
+            é uma recomendação: um setor pode estar fora da carteira de propósito.
           </p>
         ) : null}
       </Card>

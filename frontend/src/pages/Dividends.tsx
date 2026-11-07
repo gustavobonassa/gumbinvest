@@ -118,11 +118,17 @@ function PeriodBreakdown({
               </div>
               <ul className="space-y-1">
                 {group.assets.map((asset) => (
-                  <li key={asset.ticker} className="flex items-baseline justify-between gap-3 text-sm">
+                  <li
+                    key={asset.ticker}
+                    className="flex items-baseline justify-between gap-3 text-sm"
+                  >
                     <Link to={`/ativos/${asset.ticker}`} className="font-medium hover:text-accent">
                       {asset.ticker}
                     </Link>
-                    <span className="min-w-0 flex-1 truncate text-xs text-ink-muted" title={asset.name}>
+                    <span
+                      className="min-w-0 flex-1 truncate text-xs text-ink-muted"
+                      title={asset.name}
+                    >
                       {asset.name}
                     </span>
                     <span className="tnum shrink-0 text-ink-secondary">{money(asset.total)}</span>
@@ -146,7 +152,14 @@ type AssetIncome = DividendReport["by_asset"][number];
  * income totals, but not to a table read as "what my dividend payers pay" —
  * a CDB's coupon has no yield to compare against a REIT's.
  */
-const NON_DIVIDEND_KINDS = new Set(["FIXED_INCOME", "TREASURY", "SUBSCRIPTION", "OTHER", "OPTION", "FUTURE"]);
+const NON_DIVIDEND_KINDS = new Set([
+  "FIXED_INCOME",
+  "TREASURY",
+  "SUBSCRIPTION",
+  "OTHER",
+  "OPTION",
+  "FUTURE",
+]);
 
 /** Per-asset income: one class at a time, paged within that class. */
 function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
@@ -186,7 +199,8 @@ function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
   const activeTab = tabs.find((tab) => tab.value === active);
 
   const classRows = useMemo(
-    () => eligible.filter((row) => row.kind === active).sort((a, b) => Number(b.net) - Number(a.net)),
+    () =>
+      eligible.filter((row) => row.kind === active).sort((a, b) => Number(b.net) - Number(a.net)),
     [eligible, active],
   );
 
@@ -205,7 +219,9 @@ function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
         subtitle={
           activeTab
             ? `${kindLabel(active)}: ${money(activeTab.net)} líquidos de ${activeTab.count} ativo(s)` +
-              (showAll || !excluded.length ? "" : ` · ${money(excludedNet)} de renda fixa e outras classes fora da lista`)
+              (showAll || !excluded.length
+                ? ""
+                : ` · ${money(excludedNet)} de renda fixa e outras classes fora da lista`)
             : "Yield on cost compara o que o ativo paga com o capital que ainda está nele"
         }
         action={
@@ -251,8 +267,12 @@ function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
                   {row.tax ? `− ${money(row.tax)}` : "-"}
                 </td>
-                <td className="tnum px-3 py-2 text-right font-medium text-positive">{money(row.net)}</td>
-                <td className="tnum px-3 py-2 text-right text-ink-secondary">{percent(row.share, 1)}</td>
+                <td className="tnum px-3 py-2 text-right font-medium text-positive">
+                  {money(row.net)}
+                </td>
+                <td className="tnum px-3 py-2 text-right text-ink-secondary">
+                  {percent(row.share, 1)}
+                </td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">{row.payments}</td>
                 <td className="tnum px-3 py-2 text-right text-ink-secondary">
                   {row.cost_basis ? money(row.cost_basis) : "-"}
@@ -264,8 +284,8 @@ function AssetIncomeTable({ rows }: { rows: AssetIncome[] }) {
                     percent(row.yield_on_cost_net, 1)
                   )}
                 </td>
-              <td className="px-3 py-2 text-right text-ink-muted">{shortDate(row.last)}</td>
-            </tr>
+                <td className="px-3 py-2 text-right text-ink-muted">{shortDate(row.last)}</td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -316,7 +336,9 @@ function RecentPayments({ payments }: { payments: IncomePayment[] }) {
                 key={`${payment.date}-${payment.ticker}-${index}`}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-hover"
               >
-                <span className="tnum w-[74px] shrink-0 text-xs text-ink-muted">{shortDate(payment.date)}</span>
+                <span className="tnum w-[74px] shrink-0 text-xs text-ink-muted">
+                  {shortDate(payment.date)}
+                </span>
                 <Link to={`/ativos/${payment.ticker}`} className="font-medium hover:text-accent">
                   {payment.ticker}
                 </Link>
@@ -368,7 +390,10 @@ export default function Dividends() {
   });
   // Paged rather than scrolled now, so the window is worth widening — 60 was
   // sized for a list you could only scroll a little way down.
-  const calendar = useQuery({ queryKey: ["dividend-calendar"], queryFn: () => api.dividendCalendar(300) });
+  const calendar = useQuery({
+    queryKey: ["dividend-calendar"],
+    queryFn: () => api.dividendCalendar(300),
+  });
   const queryClient = useQueryClient();
   // The scheduled side of the calendar. Cached server-side; the button asks
   // the backend to re-query B3 for stale assets and hands back the new list.
@@ -439,7 +464,14 @@ export default function Dividends() {
   );
 
   const byKind = useMemo(
-    () => kindSlices((data?.by_kind ?? []).map((row) => ({ kind: row.kind, value: Number(row.total), percent: Number(row.share) }))),
+    () =>
+      kindSlices(
+        (data?.by_kind ?? []).map((row) => ({
+          kind: row.kind,
+          value: Number(row.total),
+          percent: Number(row.share),
+        })),
+      ),
     [data?.by_kind],
   );
 
@@ -573,7 +605,9 @@ export default function Dividends() {
                     {point.tax ? `− ${money(point.tax)}` : "-"}
                   </td>
                   <td className="tnum px-2 py-1.5 text-right font-medium">{money(point.net)}</td>
-                  <td className="tnum px-2 py-1.5 text-right text-ink-muted">{money(point.cumulative)}</td>
+                  <td className="tnum px-2 py-1.5 text-right text-ink-muted">
+                    {money(point.cumulative)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -676,7 +710,9 @@ export default function Dividends() {
         {monthly.isError ? (
           <ErrorState error={monthly.error} retry={() => monthly.refetch()} />
         ) : monthly.data ? (
-          <IncomeMatrix data={monthly.data.series.map((p) => ({ period: p.period, total: p.net }))} />
+          <IncomeMatrix
+            data={monthly.data.series.map((p) => ({ period: p.period, total: p.net }))}
+          />
         ) : (
           <Skeleton className="h-40 w-full" />
         )}
@@ -701,7 +737,9 @@ export default function Dividends() {
                 {data.by_asset.map((row) => (
                   <tr key={row.ticker} className="table-row">
                     <td className="px-2 py-1.5">{row.ticker}</td>
-                    <td className="tnum px-2 py-1.5 text-right text-ink-secondary">{money(row.total)}</td>
+                    <td className="tnum px-2 py-1.5 text-right text-ink-secondary">
+                      {money(row.total)}
+                    </td>
                     <td className="tnum px-2 py-1.5 text-right">{money(row.net)}</td>
                     <td className="tnum px-2 py-1.5 text-right">
                       {row.yield_on_cost_net === null ? "-" : percent(row.yield_on_cost_net, 1)}
@@ -717,7 +755,10 @@ export default function Dividends() {
 
         {calendar.isError ? (
           <Card className="p-5">
-            <SectionTitle title="Últimos pagamentos" subtitle="O que caiu na conta mais recentemente" />
+            <SectionTitle
+              title="Últimos pagamentos"
+              subtitle="O que caiu na conta mais recentemente"
+            />
             <ErrorState error={calendar.error} retry={() => calendar.refetch()} />
           </Card>
         ) : !calendar.data ? (
@@ -729,7 +770,11 @@ export default function Dividends() {
 
       <AssetIncomeTable rows={data.by_asset} />
 
-      <PeriodBreakdown period={selected} granularity={granularity} onClose={() => setSelected(null)} />
+      <PeriodBreakdown
+        period={selected}
+        granularity={granularity}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

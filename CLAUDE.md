@@ -18,7 +18,11 @@ docker compose up -d                 # dashboard :3000, API :8000/api, Postgres 
 docker compose up -d db redis backend
 cd frontend && npm install && npm run dev    # :5173, proxies /api to :8000
 npm run build                        # tsc -b && vite build
-npm run typecheck                    # no ESLint/Prettier configured; no frontend tests
+npm run typecheck                    # tsc --noEmit
+npm run lint                         # ESLint, zero warnings allowed
+npm run format                       # Prettier (format:check is what CI runs)
+npm test                             # Vitest + Testing Library on jsdom
+npm run check                        # all four, in CI's order
 
 # Backend without Docker (Windows venv activation shown; see README for unix)
 cd backend

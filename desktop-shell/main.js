@@ -41,6 +41,11 @@ const dataDir =
     : path.join(process.env.LOCALAPPDATA || os.homedir(), "GumbInvest");
 const portFile = path.join(dataDir, "port.txt");
 const themeFile = path.join(dataDir, "theme.txt");
+// The update version the user said "Agora não" to — the startup prompt stays
+// quiet for it and comes back for the next one. Kept here rather than in the
+// page's localStorage because that is per origin, and the server's port (part
+// of the origin) can change between launches.
+const dismissedUpdateFile = path.join(dataDir, "update-dismissed.txt");
 
 let mainWindow = null;
 let tray = null;
@@ -127,8 +132,23 @@ async function waitForServer(deadlineMs = 300000) {
  * stand from events it wasn't listening for.
  *
  * `status`: idle | checking | available | downloading | downloaded | current | error
+ * `dismissed`: the version the startup prompt was waved off for, or null.
  */
-let updateState = { status: "idle", version: null, percent: 0, error: null };
+let updateState = {
+  status: "idle",
+  version: null,
+  percent: 0,
+  error: null,
+  dismissed: readDismissedUpdate(),
+};
+
+function readDismissedUpdate() {
+  try {
+    return fs.readFileSync(dismissedUpdateFile, "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
 let autoUpdater = null;
 
 function setUpdateState(patch) {
@@ -214,6 +234,18 @@ function registerUpdateIpc() {
     return updateState;
   });
 
+  ipcMain.handle("update:dismiss", (_event, version) => {
+    if (typeof version !== "string" || !version) return updateState;
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(dismissedUpdateFile, version, "utf8");
+    } catch {
+      /* not remembered: the prompt simply returns on the next launch */
+    }
+    setUpdateState({ dismissed: version });
+    return updateState;
+  });
+
   ipcMain.handle("update:install", () => {
     const updater = getUpdater();
     if (!updater) return updateState;
@@ -228,8 +260,9 @@ function registerUpdateIpc() {
   });
 }
 
-/** One quiet check a little after launch, so the badge is already right when
- *  the user wanders into Configurações. Never downloads on its own. */
+/** One quiet check right after launch. A new version surfaces as the update
+ *  prompt in the SPA (UpdatePrompt.tsx) and as the badge in Configurações.
+ *  Never downloads on its own. */
 function scheduleStartupCheck() {
   const updater = getUpdater();
   if (!updater) return;
@@ -237,7 +270,7 @@ function scheduleStartupCheck() {
     updater.checkForUpdates().catch(() => {
       /* offline is not worth an error banner on startup */
     });
-  }, 15000);
+  }, 5000);
 }
 
 // ---------------------------------------------------------------- theme

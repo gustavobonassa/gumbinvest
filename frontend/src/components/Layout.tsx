@@ -50,6 +50,7 @@ import Notifications from "@/components/Notifications";
 import Onboarding from "@/components/Onboarding";
 import PrivacyToggle from "@/components/PrivacyToggle";
 import TitleBar from "@/components/TitleBar";
+import UpdatePrompt from "@/components/UpdatePrompt";
 import { Badge, Skeleton } from "@/components/ui";
 
 /** Query families whose answers move with quotes. New prices must not refetch
@@ -720,6 +721,8 @@ export default function Layout() {
       {/* First-run wizard: decides for itself whether to appear (no data yet,
           never completed) and covers the whole shell while it does. */}
       <Onboarding />
+      {/* Desktop only: offers a new version once per launch, after the wizard. */}
+      <UpdatePrompt />
     </div>
   );
 }

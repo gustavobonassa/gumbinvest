@@ -360,12 +360,16 @@ export function Modal({
   title,
   subtitle,
   onClose,
+  centered = false,
   children,
 }: {
   open: boolean;
   title: ReactNode;
   subtitle?: ReactNode;
   onClose: () => void;
+  /** Vertically centred, for short fixed-size messages. The default anchors
+   *  the top edge instead, so forms and lists that grow don't jump around. */
+  centered?: boolean;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -377,7 +381,12 @@ export function Modal({
   // nearest containing block, and a `.cq` card (container-type) is one — a
   // modal opened from inside a card would be trapped and sized to it.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-[10vh] backdrop-blur-sm animate-fade-in">
+    <div
+      className={clsx(
+        "fixed inset-0 z-50 flex justify-center bg-black/60 px-4 backdrop-blur-sm animate-fade-in",
+        centered ? "items-center py-4" : "items-start pt-[10vh]",
+      )}
+    >
       {/* Click-to-close only: Escape and the × carry the keyboard path, so the
           backdrop stays out of the tab order. */}
       <button

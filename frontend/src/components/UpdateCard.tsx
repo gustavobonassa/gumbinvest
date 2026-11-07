@@ -5,58 +5,23 @@
  * this renders nothing rather than showing a button that cannot work.
  *
  * The updater lives in the shell (desktop-shell/main.js); this is a view of
- * its state machine: ask once on mount, then follow the pushes.
+ * its state machine through `useUpdateState`. The same state also drives the
+ * startup prompt (UpdatePrompt.tsx).
  */
 import { Download, RefreshCw, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge, Card, SectionTitle } from "@/components/ui";
-
-type UpdateStatus =
-  "idle" | "checking" | "available" | "downloading" | "downloaded" | "current" | "error";
-
-type UpdateState = {
-  status: UpdateStatus;
-  version: string | null;
-  percent: number;
-  error: string | null;
-};
-
-/** Everything the Electron preload exposes; see desktop-shell/preload.js. */
-type UpdateBridge = {
-  version: () => Promise<string>;
-  /** Repaints the native window chrome — `lib/theme.ts` is its only caller. */
-  setTheme?: (theme: "dark" | "light") => Promise<void>;
-  checkForUpdates: () => Promise<UpdateState>;
-  downloadUpdate: () => Promise<UpdateState>;
-  installUpdate: () => Promise<UpdateState>;
-  updateState: () => Promise<UpdateState>;
-  onUpdateState: (handler: (state: UpdateState) => void) => () => void;
-};
-
-declare global {
-  interface Window {
-    gumbinvest?: UpdateBridge;
-  }
-}
+import { useUpdateState } from "@/lib/updates";
 
 export default function UpdateCard() {
-  const bridge = window.gumbinvest;
+  // The shell may already be mid-check from the startup poll — the hook's
+  // subscription is what keeps this screen in step with it.
+  const { bridge, state } = useUpdateState();
   const [version, setVersion] = useState<string>("");
-  const [state, setState] = useState<UpdateState>({
-    status: "idle",
-    version: null,
-    percent: 0,
-    error: null,
-  });
 
   useEffect(() => {
-    if (!bridge) return;
-    bridge.version().then(setVersion);
-    bridge.updateState().then(setState);
-    // The shell may already be mid-check from the startup poll — subscribing
-    // is what keeps this screen in step with it.
-    return bridge.onUpdateState(setState);
+    bridge?.version().then(setVersion);
   }, [bridge]);
 
   if (!bridge) return null;

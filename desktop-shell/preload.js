@@ -4,9 +4,9 @@
  * The window loads the SPA from the local Python server, so the page and the
  * shell are separate worlds: `contextIsolation` keeps Node out of the page and
  * this file hand-picks what crosses over. Most of it is about updates — the
- * version to display, the three actions, and a subscription to the updater's
- * progress — plus the one thing the page's own stylesheet cannot reach: the
- * colour of the native window buttons. A browser or a phone has no
+ * version to display, the actions (check, download, install, dismiss), and a
+ * subscription to the updater's progress — plus the one thing the page's own
+ * stylesheet cannot reach: the colour of the native window buttons. A browser or a phone has no
  * `window.gumbinvest`, which is exactly how the UI knows to hide the update
  * card (and how the theme switch knows there is no window to recolour).
  */
@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld("gumbinvest", {
   setTheme: (theme) => ipcRenderer.invoke("theme:set", theme),
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  /** "Agora não" on the startup prompt: stays quiet until a newer version. */
+  dismissUpdate: (version) => ipcRenderer.invoke("update:dismiss", version),
   /** Quits and runs the installer; the app relaunches on the new version. */
   installUpdate: () => ipcRenderer.invoke("update:install"),
   /** Current updater state, so a freshly opened screen isn't blank. */

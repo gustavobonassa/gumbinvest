@@ -12,7 +12,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from app.core.config import settings
 
 
 class PipelineError(Exception):
@@ -39,6 +38,9 @@ class PipelineSpec:
     credentials: tuple[tuple[str, str], ...] = ()
     #: Human sentence about the schedule ("Semanal, segunda de manhã").
     schedule: str = ""
+    #: Whether ``run`` honours ``options["preview"]``: collect everything, save
+    #: nothing, and report what an import would add. The UI shows "Simular".
+    supports_preview: bool = False
 
 
 class Pipeline(ABC):
@@ -47,8 +49,11 @@ class Pipeline(ABC):
     spec: PipelineSpec
 
     def is_configured(self) -> bool:
-        """Every credential present (stored through the UI or via env)."""
-        return all(bool(getattr(settings, key, "")) for key, _ in self.spec.credentials)
+        """Every credential present (stored through the UI or, for the keys
+        that have one, via env)."""
+        from app.services.secrets import read_secret
+
+        return all(bool(read_secret(key)) for key, _ in self.spec.credentials)
 
     @abstractmethod
     def run(self, ctx) -> dict:  # noqa: ANN001 — RunContext, avoided to keep imports one-way

@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from app.importer.crypto import binance, binance_ledger
+from app.importer.crypto import binance, binance_api, binance_ledger
 from app.importer.crypto.base import CryptoFormatError, ParsedTradeFile
 
-#: Most specific first. The ledger is tried ahead of the spot exports because it
-#: is the richer file and its header is unambiguous.
-PARSERS: tuple[ModuleType, ...] = (binance_ledger, binance)
+#: Most specific first. The pipeline's API file comes first because its header
+#: is a superset of the ledger's (it adds ``Source`` and ``Ref``); the ledger is
+#: tried ahead of the spot exports because it is the richer file and its header
+#: is unambiguous.
+PARSERS: tuple[ModuleType, ...] = (binance_api, binance_ledger, binance)
 
 
 def sniff_format(payload: bytes | str) -> str | None:
@@ -41,6 +43,7 @@ def parse_crypto_csv(payload: bytes | str) -> ParsedTradeFile:
 def available_formats() -> list[dict]:
     """Descriptions of the supported exports (Settings/diagnostics page)."""
     return [
+        {"format": binance_api.API_FORMAT, "broker": binance_api.EXCHANGE},
         {"format": binance_ledger.LEDGER_FORMAT, "broker": binance_ledger.EXCHANGE},
         {"format": binance.TRADES_FORMAT, "broker": binance.EXCHANGE},
         {"format": binance.ORDERS_FORMAT, "broker": binance.EXCHANGE},

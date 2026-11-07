@@ -17,6 +17,16 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.models import AppSetting
 
+#: Keys that only ever come from the UI: no settings field, so no environment
+#: variable can set them. The desktop app is the target, and its users type
+#: credentials into the Automações card; there is no ``.env`` to edit. They are
+#: read from ``app_settings`` on each use (:func:`read_secret`), which also
+#: means the Celery worker sees a key the moment it is saved.
+UI_ONLY_KEYS = (
+    "binance_api_key",
+    "binance_api_secret",
+)
+
 SECRET_KEYS = (
     "anthropic_api_key",
     "openai_api_key",
@@ -35,20 +45,42 @@ SECRET_KEYS = (
     # anything typed into a credential slot.
     "b3_cpf",
     "b3_password",
+    *UI_ONLY_KEYS,
 )
 
 #: What the environment provided, captured before any UI override mutates the
 #: singleton — clearing a stored key falls back to this, not to empty.
-_ENV_VALUES = {key: getattr(settings, key) for key in SECRET_KEYS}
+_ENV_VALUES = {key: getattr(settings, key, "") for key in SECRET_KEYS if key not in UI_ONLY_KEYS}
+
+
+def _stored(db: Session, key: str) -> str:
+    row = db.get(AppSetting, key)
+    value = (row.value or {}).get("value") if row is not None else None
+    return str(value) if value else ""
+
+
+def read_secret(key: str, db: Session | None = None) -> str:
+    """A key's effective value: the saved one, else (for env-backed keys) the env.
+
+    Opens its own short session when none is given, so a pipeline thread can
+    call it between steps without holding a transaction.
+    """
+    if db is None:
+        from app.db.session import session_scope
+
+        with session_scope() as own:
+            return read_secret(key, own)
+    return _stored(db, key) or (str(getattr(settings, key, "") or "") if key not in UI_ONLY_KEYS else "")
 
 
 def apply_stored_secrets(db: Session) -> None:
     """Load UI-saved keys over the env values. Called once at startup."""
     for key in SECRET_KEYS:
-        row = db.get(AppSetting, key)
-        value = (row.value or {}).get("value") if row is not None else None
+        if key in UI_ONLY_KEYS:
+            continue
+        value = _stored(db, key)
         if value:
-            setattr(settings, key, str(value))
+            setattr(settings, key, value)
 
 
 def store_secret(db: Session, key: str, value: str) -> None:
@@ -58,14 +90,19 @@ def store_secret(db: Session, key: str, value: str) -> None:
     value = (value or "").strip()
     if value:
         db.merge(AppSetting(key=key, value={"value": value}))
-        setattr(settings, key, value)
+        if key not in UI_ONLY_KEYS:
+            setattr(settings, key, value)
     else:
         row = db.get(AppSetting, key)
         if row is not None:
             db.delete(row)
-        setattr(settings, key, _ENV_VALUES[key])
+        if key not in UI_ONLY_KEYS:
+            setattr(settings, key, _ENV_VALUES[key])
 
 
-def secret_status() -> dict[str, bool]:
+def secret_status(db: Session) -> dict[str, bool]:
     """Which keys are effectively configured (stored or env) — never values."""
-    return {key: bool(getattr(settings, key)) for key in SECRET_KEYS}
+    return {
+        key: bool(_stored(db, key)) if key in UI_ONLY_KEYS else bool(getattr(settings, key))
+        for key in SECRET_KEYS
+    }

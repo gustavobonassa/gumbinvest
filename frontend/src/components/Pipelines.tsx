@@ -2,8 +2,10 @@
  * Configurações → Automações: the collectors that keep the portfolio current
  * without manual imports.
  *
- * One card per pipeline (credentials, run button, live narration), one shared
- * history table. The list itself is the poll: while any run is live it
+ * One tile per pipeline (the service's logo and its live state) acting as a
+ * tab: the selected one shows its card (credentials, run button, live
+ * narration) and its own run history. The selection lives in the URL
+ * (`servico`), like every other tab. The list itself is the poll: while any run is live it
  * refetches every 2 s, and quietly every 15 s otherwise — quietly on purpose,
  * because a *scheduled* run can park on a 2FA challenge with nobody watching,
  * and whoever has this tab open should get the modal without having started
@@ -14,14 +16,17 @@
  * modal does not cancel the run — the card keeps a "Informar código" button
  * while the wait lasts, and the wait itself times out server-side.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Loader2, Play, Workflow, X } from "lucide-react";
+import clsx from "clsx";
+import { FlaskConical, KeyRound, Loader2, Play, Workflow, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 import { api, type PipelineInfo, type PipelineRun } from "@/lib/api";
 import { Badge, Card, EmptyState, Modal, Pager, SectionTitle, Skeleton } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import SecretField from "@/components/SecretField";
+import ServiceLogo from "@/components/ServiceLogo";
 
 const RUN_STATE: Record<
   PipelineRun["status"],
@@ -51,10 +56,112 @@ function duration(run: PipelineRun): string {
 
 function resultSentence(run: PipelineRun): string {
   if (run.status === "failed") return run.error ?? "Falhou.";
+  if (run.result?.preview) {
+    const would = Number(run.result.would_import ?? 0).toLocaleString("pt-BR");
+    const inside = Number(run.result.inside_covered ?? 0);
+    return inside
+      ? `Simulação: ${would} seriam adicionadas, ${inside.toLocaleString("pt-BR")} no período já importado`
+      : `Simulação: ${would} seriam adicionadas, nenhuma no período já importado`;
+  }
   const imported = run.result?.rows_imported;
   if (typeof imported !== "number") return "-";
   const duplicate = Number(run.result?.rows_duplicate ?? 0);
   return `${imported.toLocaleString("pt-BR")} novas · ${duplicate.toLocaleString("pt-BR")} repetidas`;
+}
+
+/** The one line a tile has room for: what is happening, or what it needs. */
+function tileStatus(pipeline: PipelineInfo): {
+  label: string;
+  tone: "positive" | "negative" | "warning" | "neutral" | "accent";
+  live?: boolean;
+} {
+  const run = pipeline.active_run;
+  if (run) return { ...RUN_STATE[run.status], live: true };
+  if (!pipeline.configured) return { label: "Credenciais pendentes", tone: "warning" };
+  const last = pipeline.last_run;
+  if (!last) return { label: "Configurada · nunca executada", tone: "neutral" };
+  const day = last.finished_at ?? last.started_at;
+  const date = day ? new Date(day).toLocaleDateString("pt-BR") : "";
+  if (last.status === "failed") return { label: `Falhou em ${date}`, tone: "negative" };
+  return { label: `Última coleta ${date}`, tone: "positive" };
+}
+
+const TONE_DOT: Record<string, string> = {
+  positive: "bg-positive",
+  negative: "bg-negative",
+  warning: "bg-warning",
+  accent: "bg-accent",
+  neutral: "bg-ink-muted",
+};
+
+/** The service picker: one tile per automation, behaving as a tab list. */
+function ServiceTabs({
+  pipelines,
+  selected,
+  onSelect,
+}: {
+  pipelines: PipelineInfo[];
+  selected: string;
+  onSelect: (key: string) => void;
+}) {
+  // Arrow keys move between tiles, as in any tab list.
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const index = pipelines.findIndex((item) => item.key === selected);
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const next = pipelines[(index + step + pipelines.length) % pipelines.length];
+    onSelect(next.key);
+    document.getElementById(`service-tab-${next.key}`)?.focus();
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Automações"
+      className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      onKeyDown={onKeyDown}
+    >
+      {pipelines.map((pipeline) => {
+        const active = pipeline.key === selected;
+        const status = tileStatus(pipeline);
+        return (
+          <button
+            key={pipeline.key}
+            id={`service-tab-${pipeline.key}`}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-controls={`service-panel-${pipeline.key}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onSelect(pipeline.key)}
+            className={clsx(
+              "flex min-w-0 items-center gap-3 rounded-2xl border p-4 text-left transition-colors",
+              active
+                ? "border-accent/60 bg-accent-soft/40 ring-1 ring-accent/30"
+                : "border-line bg-surface hover:border-line-strong hover:bg-surface-hover",
+            )}
+          >
+            <ServiceLogo service={pipeline.key} />
+            <span className="min-w-0">
+              <span className="block truncate font-medium text-ink">{pipeline.name}</span>
+              <span className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">
+                <span
+                  className={clsx(
+                    "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+                    TONE_DOT[status.tone],
+                    status.live && "animate-pulse",
+                  )}
+                  aria-hidden
+                />
+                <span className="truncate">{status.label}</span>
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function lastLogLine(run: PipelineRun): string {
@@ -76,12 +183,22 @@ function PipelineCard({
   const waiting = run?.status === "waiting_input";
 
   const start = useMutation({
-    mutationFn: () => api.startPipeline(pipeline.key, { full_history: fullHistory }),
-    onSuccess: () => {
+    mutationFn: (preview: boolean) =>
+      api.startPipeline(pipeline.key, { full_history: fullHistory, preview }),
+    onSuccess: (_, preview) => {
       queryClient.invalidateQueries({ queryKey: ["pipelines"] });
-      toast.info(fullHistory ? "Coleta do histórico completo iniciada." : "Coleta iniciada.", {
-        description: "Roda em segundo plano, pode fechar esta página.",
-      });
+      toast.info(
+        preview
+          ? "Simulação iniciada."
+          : fullHistory
+            ? "Coleta do histórico completo iniciada."
+            : "Coleta iniciada.",
+        {
+          description: preview
+            ? "Nada é gravado. O resultado aparece no registro desta automação."
+            : "Roda em segundo plano, pode fechar esta página.",
+        },
+      );
     },
     onError: (error) => toast.error("Não foi possível iniciar a coleta.", error),
   });
@@ -144,12 +261,29 @@ function PipelineCard({
         <button
           type="button"
           className="btn-primary"
-          onClick={() => start.mutate()}
+          onClick={() => start.mutate(false)}
           disabled={Boolean(run) || start.isPending || !pipeline.configured}
         >
           {run ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
-          {run ? "Coletando…" : fullHistory ? "Baixar histórico completo" : "Executar agora"}
+          {run
+            ? run.options?.preview
+              ? "Simulando…"
+              : "Coletando…"
+            : fullHistory
+              ? "Baixar histórico completo"
+              : "Executar agora"}
         </button>
+        {pipeline.supports_preview && !run ? (
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => start.mutate(true)}
+            disabled={start.isPending || !pipeline.configured}
+            title="Coleta tudo e mostra o que seria importado, sem gravar nada"
+          >
+            <FlaskConical size={15} /> Simular
+          </button>
+        ) : null}
         {waiting && run ? (
           <button type="button" className="btn-primary" onClick={() => onAnswer(run)}>
             <KeyRound size={15} /> Informar código
@@ -200,13 +334,30 @@ export default function Pipelines() {
     refetchInterval: (query) =>
       query.state.data?.pipelines.some((item) => item.active_run) ? 2_000 : 15_000,
   });
-  const [runsPage, setRunsPage] = useState(1);
-  const runsQ = useQuery({
-    queryKey: ["pipeline-runs", runsPage],
-    queryFn: () => api.pipelineRuns(runsPage),
-  });
-
   const pipelines = pipelinesQ.data?.pipelines;
+
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("servico");
+  const selected =
+    pipelines?.find((item) => item.key === requested)?.key ?? pipelines?.[0]?.key ?? "";
+  const [runsPage, setRunsPage] = useState(1);
+  const select = (key: string) => {
+    setRunsPage(1);
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("servico", key);
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const runsQ = useQuery({
+    queryKey: ["pipeline-runs", selected, runsPage],
+    queryFn: () => api.pipelineRuns(runsPage, 10, selected),
+    enabled: Boolean(selected),
+  });
 
   useEffect(() => {
     if (!pipelines) return;
@@ -270,31 +421,41 @@ export default function Pipelines() {
   if (pipelinesQ.isLoading || !pipelines) return <Skeleton className="h-80 w-full" />;
 
   const runs = runsQ.data?.runs ?? [];
-  const names = Object.fromEntries(pipelines.map((item) => [item.key, item.name]));
+  const current = pipelines.find((item) => item.key === selected);
 
   return (
     <div className="space-y-6">
-      {pipelines.map((pipeline) => (
-        <PipelineCard key={pipeline.key} pipeline={pipeline} onAnswer={setAnswering} />
-      ))}
+      <ServiceTabs pipelines={pipelines} selected={selected} onSelect={select} />
+
+      {current ? (
+        <div
+          role="tabpanel"
+          id={`service-panel-${current.key}`}
+          aria-labelledby={`service-tab-${current.key}`}
+        >
+          <PipelineCard key={current.key} pipeline={current} onAnswer={setAnswering} />
+        </div>
+      ) : null}
 
       <p className="text-xs text-ink-muted">
-        As credenciais ficam no banco de dados local, nunca aparecem de volta nesta tela e não
-        saem no export .gumbinvest. Tudo que uma coleta baixa passa pelo mesmo importador dos
-        arquivos enviados à mão — repetir uma coleta nunca duplica movimentações.
+        As credenciais ficam no banco de dados local, nunca aparecem de volta nesta tela e não saem
+        no export .gumbinvest. Tudo que uma coleta baixa passa pelo mesmo importador dos arquivos
+        enviados à mão — repetir uma coleta nunca duplica movimentações.
       </p>
 
       {runs.length ? (
         <Card className="overflow-hidden p-0">
           <div className="p-5 pb-2">
-            <SectionTitle title="Coletas anteriores" subtitle="As últimas execuções, de todas as automações" />
+            <SectionTitle
+              title="Coletas anteriores"
+              subtitle={`As últimas execuções da automação ${current?.name ?? ""}`}
+            />
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr className="border-b border-line text-xs text-ink-muted">
                   <th className="px-4 py-2 text-left font-medium">Início</th>
-                  <th className="px-4 py-2 text-left font-medium">Automação</th>
                   <th className="hidden px-4 py-2 text-left font-medium sm:table-cell">Origem</th>
                   <th className="px-4 py-2 text-left font-medium">Resultado</th>
                   <th className="hidden px-4 py-2 text-right font-medium md:table-cell">Duração</th>
@@ -306,10 +467,10 @@ export default function Pipelines() {
                   return (
                     <tr key={run.id} className="table-row">
                       <td className="px-4 py-2">{when(run.started_at)}</td>
-                      <td className="px-4 py-2">{names[run.pipeline] ?? run.pipeline}</td>
                       <td className="hidden px-4 py-2 text-ink-muted sm:table-cell">
                         {run.trigger === "scheduled" ? "Agendada" : "Manual"}
                         {run.options?.full_history ? " · completo" : ""}
+                        {run.options?.preview ? " · simulação" : ""}
                       </td>
                       <td className="px-4 py-2">
                         <Badge tone={meta.tone}>{meta.label}</Badge>
@@ -341,7 +502,7 @@ export default function Pipelines() {
         <Card className="p-5">
           <EmptyState
             icon={Workflow}
-            title="Nenhuma coleta ainda"
+            title={`Nenhuma coleta de ${current?.name ?? "automação"} ainda`}
             description="Preencha as credenciais e execute a primeira coleta — depois disso ela roda sozinha toda semana."
           />
         </Card>
@@ -373,14 +534,18 @@ export default function Pipelines() {
             />
           </label>
           <p className="text-xs text-ink-muted">
-            Fechar esta janela não cancela a coleta — ela continua esperando por alguns minutos e
-            o botão "Informar código" reabre aqui.
+            Fechar esta janela não cancela a coleta — ela continua esperando por alguns minutos e o
+            botão "Informar código" reabre aqui.
           </p>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-ghost" onClick={() => setAnswering(null)}>
               Fechar
             </button>
-            <button type="submit" className="btn-primary" disabled={!code.trim() || answer.isPending}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={!code.trim() || answer.isPending}
+            >
               {answer.isPending ? "Enviando…" : "Enviar código"}
             </button>
           </div>

@@ -951,7 +951,12 @@ class ImportService:
 
     # -- public API: crypto exchange CSV ------------------------------------
     def import_crypto_csv(
-        self, payload: bytes | str, filename: str, parsed: ParsedTradeFile | None = None
+        self,
+        payload: bytes | str,
+        filename: str,
+        parsed: ParsedTradeFile | None = None,
+        *,
+        dry_run: bool = False,
     ) -> ImportResult:
         """Parse and persist a crypto exchange trade export.
 
@@ -961,6 +966,12 @@ class ImportService:
         globally priced, dollar-quoted holding, and treating it as one means the
         multi-currency machinery already in place carries it to reais without a
         second conversion path.
+
+        ``dry_run`` runs the whole import (dedup and cross-source reconciliation
+        included) and then rolls back instead of saving anything. The result's
+        ``summary["preview"]`` lists what would have been booked. This is how the
+        Binance pipeline's "Simular" answers "would this duplicate anything?"
+        against the real data before a single row is written.
         """
         raw_bytes = payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8")
         batch = self._start_batch(raw_bytes, filename, "CRYPTO")
@@ -969,7 +980,10 @@ class ImportService:
             if parsed is None:
                 parsed = parse_crypto_csv(raw_bytes)
         except CryptoFormatError as exc:
-            self._fail_batch(batch, str(exc))
+            if dry_run:
+                self.db.rollback()
+            else:
+                self._fail_batch(batch, str(exc))
             raise
 
         batch.source_format = parsed.format
@@ -1058,6 +1072,33 @@ class ImportService:
                 state.issues.append(
                     {"line": event.line_number, "error": str(exc), "raw": event.raw_text[:200]}
                 )
+
+        if dry_run:
+            tickers = {asset.id: asset.ticker for asset in self._asset_cache.values()}
+            preview = [
+                {
+                    "date": row.trade_date.isoformat(),
+                    "op_type": row.op_type,
+                    "ticker": tickers.get(row.asset_id) or str(row.asset_id),
+                    "quantity": format(row.quantity.normalize(), "f"),
+                    "movement": row.raw_movement,
+                }
+                for row in pending
+            ]
+            summary = state.summary(parsed, batch.file_hash)
+            self.db.rollback()
+            return ImportResult(
+                batch_id=0,
+                filename=filename,
+                status="preview",
+                rows_total=parsed.total_rows,
+                rows_imported=state.imported,
+                rows_duplicate=state.duplicates + state.cross_source + state.cancelled,
+                rows_failed=len([issue for issue in state.issues if _is_error(issue)]),
+                rows_warned=0,
+                issues=state.issues[:500],
+                summary={**summary, "preview": preview},
+            )
 
         if pending:
             self.db.bulk_save_objects(pending)

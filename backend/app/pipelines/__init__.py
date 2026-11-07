@@ -2,7 +2,7 @@
 
 The manual loop this replaces — sign into the broker, export a file, drag it
 onto the Importar page — is exactly a pipeline's run. Each pipeline knows one
-source (B3 today; Avenue, Clear, price scrapers later) and produces files the
+source (B3 and Binance today; Avenue, Clear, price scrapers later) and produces files the
 existing importer already understands, so all the invariants that protect a
 manual upload (idempotent dedup, loud parser failures, raw-line audit trail)
 protect the automated path for free.
@@ -26,6 +26,7 @@ from app.pipelines.base import (
 # Import for the side effect of registering. Deliberately at the bottom:
 # a pipeline module may import from .base.
 from app.pipelines import b3 as _b3  # noqa: E402,F401
+from app.pipelines import binance as _binance  # noqa: E402,F401
 
 __all__ = [
     "Pipeline",

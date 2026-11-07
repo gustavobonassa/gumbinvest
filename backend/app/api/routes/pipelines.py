@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from app.api.deps import DbSession
 from app.db.models import AuditLog, PipelineRun
-from app.pipelines.base import PipelineError
+from app.pipelines.base import PipelineError, get_pipeline
 from app.pipelines.runner import (
     ACTIVE_STATUSES,
     PipelineBusy,
@@ -64,11 +64,22 @@ class RunOptions(BaseModel):
     #: Pull the whole available history (a first-time backfill) rather than just
     #: what is new since the last run.
     full_history: bool = False
+    #: Collect everything but save nothing; report what an import would add.
+    #: Only for pipelines whose spec says ``supports_preview``.
+    preview: bool = False
 
 
 @router.post("/{key}/run", response_model=None, summary="Start a collection now")
 def trigger(key: str, db: DbSession, payload: RunOptions | None = Body(default=None)) -> dict:
     options = {"full_history": bool(payload and payload.full_history)}
+    if payload and payload.preview:
+        try:
+            supported = get_pipeline(key).spec.supports_preview
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="automação desconhecida") from exc
+        if not supported:
+            raise HTTPException(status_code=400, detail="esta automação não tem simulação")
+        options["preview"] = True
     try:
         run_id = start_run(key, trigger="manual", options=options)
     except KeyError as exc:

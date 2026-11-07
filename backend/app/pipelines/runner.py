@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.models import AuditLog, PipelineRun
 from app.db.session import session_scope
+from app.importer.crypto import sniff_format
 from app.importer.service import ImportResult, ImportService
 from app.pipelines.base import (
     Pipeline,
@@ -37,6 +38,7 @@ from app.pipelines.base import (
     get_pipeline,
 )
 from app.services.notifications import record
+from app.services.secrets import apply_stored_secrets, read_secret
 from app.services.portfolio_registry import get_default_portfolio
 
 logger = get_logger(__name__)
@@ -114,6 +116,12 @@ def run_scheduled() -> dict:
     pipelines that are unconfigured or already running, so scheduling this
     unconditionally costs nothing on an instance that never set it up.
     """
+    # The Celery worker never runs the FastAPI lifespan, so credentials saved
+    # through the UI are not on its settings yet. Without this every pipeline
+    # reads as unconfigured on the weekly slot in Docker.
+    with session_scope() as db:
+        apply_stored_secrets(db)
+
     outcome: dict[str, str] = {}
     for pipeline in all_pipelines():
         key = pipeline.spec.key
@@ -220,6 +228,10 @@ def _finish(run_id: int, pipeline: Pipeline, status: str, *, result: dict | None
 
 def _result_sentence(result: dict) -> str:
     """The counts as one sentence, or empty when the run had none."""
+    if result.get("preview"):
+        inside = result.get("inside_covered") or 0
+        tail = f", {inside} dentro do período já importado" if inside else ""
+        return f"Simulação: {result.get('would_import', 0)} movimentações seriam adicionadas{tail}. Nada foi gravado."
     imported = result.get("rows_imported")
     duplicate = result.get("rows_duplicate")
     if imported is None:
@@ -310,20 +322,37 @@ class RunContext:
 
     # -- results ------------------------------------------------------------
     def import_file(self, payload: bytes, filename: str) -> ImportResult:
-        """Feed a downloaded export to the importer — the same path an upload takes."""
+        """Feed a downloaded export to the importer — the same path an upload takes.
+
+        Routed by content, like the upload endpoint: an exchange export goes to
+        the crypto importer, anything else is a B3 movimentação.
+        """
         with session_scope() as db:
             portfolio = get_default_portfolio(db)
-            return ImportService(db, portfolio).import_csv(payload, filename)
+            service = ImportService(db, portfolio)
+            if sniff_format(payload):
+                return service.import_crypto_csv(payload, filename)
+            return service.import_csv(payload, filename)
+
+    def preview_file(self, payload: bytes, filename: str) -> ImportResult:
+        """What :meth:`import_file` would book, without saving anything
+        (exchange exports only)."""
+        with session_scope() as db:
+            portfolio = get_default_portfolio(db)
+            return ImportService(db, portfolio).import_crypto_csv(payload, filename, dry_run=True)
 
     def last_success_at(self) -> datetime | None:
         """When this pipeline last finished well — the incremental cursor."""
         with session_scope() as db:
-            value = db.scalar(
-                select(PipelineRun.finished_at)
+            # A simulation collected but saved nothing, so it cannot be where
+            # the next real run resumes from.
+            recent = db.execute(
+                select(PipelineRun.finished_at, PipelineRun.options)
                 .where(PipelineRun.pipeline == self.pipeline.spec.key, PipelineRun.status == "success")
                 .order_by(PipelineRun.finished_at.desc())
-                .limit(1)
-            )
+                .limit(50)
+            ).all()
+            value = next((at for at, options in recent if not (options or {}).get("preview")), None)
             return _aware(value)
 
     # -- filesystem ---------------------------------------------------------
@@ -396,9 +425,10 @@ def pipelines_payload(db) -> list[dict]:
                 "name": spec.name,
                 "description": spec.description,
                 "schedule": spec.schedule,
+                "supports_preview": spec.supports_preview,
                 "configured": pipeline.is_configured(),
                 "credentials": [
-                    {"key": key, "label": label, "configured": bool(getattr(settings, key, ""))}
+                    {"key": key, "label": label, "configured": bool(read_secret(key, db))}
                     for key, label in spec.credentials
                 ],
                 "active_run": run_payload(active),

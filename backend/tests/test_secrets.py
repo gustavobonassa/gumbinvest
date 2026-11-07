@@ -49,7 +49,7 @@ def test_store_apply_and_clear(db: Session) -> None:
     secrets_service.store_secret(db, "anthropic_api_key", "sk-test-123")
     db.commit()
     assert settings.anthropic_api_key == "sk-test-123"
-    assert secrets_service.secret_status()["anthropic_api_key"] is True
+    assert secrets_service.secret_status(db)["anthropic_api_key"] is True
 
     # A fresh process learns the stored value at startup.
     settings.anthropic_api_key = secrets_service._ENV_VALUES["anthropic_api_key"]
@@ -90,3 +90,20 @@ def test_full_export_never_carries_keys(db: Session) -> None:
     assert "theme" in stored_keys
     assert "anthropic_api_key" not in stored_keys
     assert "sk-test-789" not in json.dumps(document)
+
+
+def test_ui_only_keys_ignore_the_environment(db: Session, monkeypatch) -> None:
+    """The Binance keys exist only as typed into the Automações card."""
+    monkeypatch.setenv("BINANCE_API_KEY", "from-env")
+    assert not hasattr(settings, "binance_api_key")
+    assert secrets_service.read_secret("binance_api_key", db) == ""
+    assert secrets_service.secret_status(db)["binance_api_key"] is False
+
+    secrets_service.store_secret(db, "binance_api_key", "typed-in")
+    db.commit()
+    assert secrets_service.read_secret("binance_api_key", db) == "typed-in"
+    assert secrets_service.secret_status(db)["binance_api_key"] is True
+
+    secrets_service.store_secret(db, "binance_api_key", "")
+    db.commit()
+    assert secrets_service.read_secret("binance_api_key", db) == ""

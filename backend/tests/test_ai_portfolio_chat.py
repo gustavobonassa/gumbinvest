@@ -5,6 +5,9 @@ import json
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
+from app.api.routes import ai
 from app.api.routes.ai import ChatRequest, _portfolio_context, _portfolio_context_full
 from app.db.models import AiChat, Asset, Transaction
 from app.portfolio.service import PortfolioService
@@ -85,3 +88,17 @@ def test_chat_rows_persist_without_ticker(db, portfolio):
     db.commit()
     saved = db.query(AiChat).filter(AiChat.ticker.is_(None)).one()
     assert saved.title == "Sobre a carteira"
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [ai.SYSTEM_BASE, ai.SYSTEM_PORTFOLIO, ai.SYSTEM_PORTFOLIO_NO_TOOLS],
+    ids=["asset", "portfolio", "portfolio-no-tools"],
+)
+def test_every_chat_prompt_pins_the_answer_language(prompt):
+    """A buried style bullet let answers open in English before the first tool
+    call ("I'll pull os dados…"); the rule has to cover that preamble too."""
+    assert ai._LANGUAGE in prompt
+    assert "antes de consultar uma ferramenta" in ai._LANGUAGE
+    # Ahead of the tools note and the style list, not one bullet among many.
+    assert prompt.index(ai._LANGUAGE) < prompt.index("Como responder:")

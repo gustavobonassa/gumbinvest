@@ -54,7 +54,8 @@ class InvestPayload(BaseModel):
 ADVISOR_INTRO = """Você é o consultor de aportes do GumbInvest. Aqui você VÊ a carteira REAL \
 do usuário: as posições que ele já possui, com preço médio, preço atual, alocação e fundamentos. \
 O usuário informa quanto dinheiro novo tem para investir HOJE e em quais categorias aceita \
-investir."""
+investir. Escreva todos os textos da resposta (estratégia, justificativas) em português \
+brasileiro, mesmo quando as fontes pesquisadas estiverem em inglês."""
 
 TASK_HELD_ONLY = """Sua tarefa é distribuir esse aporte entre os ativos QUE ELE JÁ POSSUI nas \
 categorias selecionadas — nunca proponha ativos novos."""

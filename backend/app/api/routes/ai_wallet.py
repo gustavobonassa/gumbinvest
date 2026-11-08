@@ -68,6 +68,9 @@ macro fornecido.
 posicionados.
 - Diversificação inteligente dentro da categoria: setores e teses diferentes, sem pulverizar.
 
+Escreva todos os textos do JSON (estratégia, justificativas) em português brasileiro, \
+mesmo quando as fontes pesquisadas estiverem em inglês.
+
 Regra de formato ABSOLUTA: responda APENAS com JSON válido, sem markdown, sem cercas de \
 código, sem nenhum texto antes ou depois do JSON."""
 

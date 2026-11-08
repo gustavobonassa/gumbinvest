@@ -137,6 +137,28 @@ def _rebuild_snapshots(db) -> dict:
     return {"points": PortfolioService(db, get_default_portfolio(db).id).rebuild_snapshots()}
 
 
+def _refresh_chain() -> None:
+    """Rebuild the stored daily chain when stale (see refresh_chain_task).
+
+    Not wrapped in :func:`_audited`: it runs every five minutes and is almost
+    always a no-op. The audit row is written only when it rebuilt.
+    """
+    from app.portfolio.service import PortfolioService
+
+    try:
+        with session_scope() as db:
+            result = PortfolioService(db, get_default_portfolio(db).id).refresh_chain_if_stale()
+            if result["rebuilt"]:
+                db.add(
+                    AuditLog(
+                        action="portfolio.snapshots",
+                        detail={"points": str(result["points"]), "trigger": "stale"},
+                    )
+                )
+    except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
+        logger.exception("scheduled job portfolio.refresh_chain failed")
+
+
 def _snapshot_ai_wallets(db) -> dict:
     from app.services.ai_wallet import snapshot_ai_wallets
 
@@ -239,6 +261,15 @@ def build_scheduler() -> BackgroundScheduler:
         lambda: _audited("portfolio.snapshots", _rebuild_snapshots),
         cron(snapshot_hour, snapshot_minute),
         id="daily-snapshot",
+    )
+    # Mirrors the beat schedule's five-minute refresh-chain. The first run comes
+    # shortly after boot — after the startup quote refresh (90 s), which on a
+    # new day is exactly what makes yesterday's chain stale.
+    scheduler.add_job(
+        _refresh_chain,
+        IntervalTrigger(minutes=5),
+        next_run_time=datetime.now() + timedelta(minutes=2),
+        id="refresh-chain",
     )
     # After the portfolio snapshot, mirroring the beat schedule's 23:30 slot.
     scheduler.add_job(

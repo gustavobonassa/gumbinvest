@@ -136,6 +136,22 @@ def rebuild_snapshots_task() -> dict:
         return {"points": count}
 
 
+@celery_app.task(name="app.workers.tasks.refresh_chain_task")
+def refresh_chain_task() -> dict:
+    """Keep the stored daily chain current, so charts never rebuild it in a request.
+
+    Cheap when nothing changed (a few aggregate queries), so it runs every few
+    minutes; an audit row is written only when it actually rebuilt — one per
+    run would drown the log.
+    """
+    with session_scope() as db:
+        portfolio = get_default_portfolio(db)
+        result = PortfolioService(db, portfolio.id).refresh_chain_if_stale()
+        if result["rebuilt"]:
+            db.add(AuditLog(action="portfolio.snapshots", detail={"points": result["points"], "trigger": "stale"}))
+        return result
+
+
 @celery_app.task(name="app.workers.tasks.snapshot_ai_wallets_task")
 def snapshot_ai_wallets_task() -> dict:
     """Daily value snapshot for every AI-managed virtual wallet."""

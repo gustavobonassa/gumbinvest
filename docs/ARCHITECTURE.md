@@ -794,6 +794,7 @@ so `market/service.py` decides the `.SA` suffix from the asset's *currency*.
 |---|---|---|
 | `refresh_quotes_task` | every `PRICE_REFRESH_MINUTES` | Latest prices |
 | `rebuild_snapshots_task` | daily at `SNAPSHOT_TIME` | Materialise daily history |
+| `refresh_chain_task` | every 5 min | Rebuild the stored daily chain, only when stale |
 | `backup_database_task` | Sundays at `BACKUP_TIME` | `pg_dump` + rotation + cloud sync |
 | `backup_catch_up_task` | hourly | Runs the weekly backup if its slot was missed (host off) |
 | `backfill_history_task` | on demand | Download full daily closes |
@@ -802,6 +803,24 @@ so `market/service.py` decides the `.SA` suffix from the asset's *currency*.
 | `run_pipelines_task` | Mondays 07:30 | The automated collectors (§9c) |
 
 Tasks own their session via `session_scope()` and write to `audit_logs`.
+
+**Why the stored chain is refreshed every five minutes.** The daily chain in
+`portfolio_snapshots` (every day since the first trade, valued and its return
+chained) is what the value chart on the dashboard, the rentabilidade page and
+the monthly returns all read. Building it walks every position on every day and
+costs seconds; reading it costs milliseconds. It is stamped with
+`ledger_fingerprint()`, which aggregates everything a past day is valued from:
+transactions, successions, closes (including a past close restated in place,
+but not today's close, which every quote refresh rewrites), splits, assets,
+Tesouro prices, FX, index rates and fixed income terms. When anything moves,
+the chain is stale, and `refresh_chain_task` (or its twin in the desktop
+scheduler) rebuilds it within five minutes. A no-op costs a few aggregate
+queries. Requests that still find it stale behave differently: the value chart
+walks the days itself, which is as fast as it was before the chain existed,
+rather than paying for the whole chain; the rentabilidade page needs the
+chained returns and rebuilds. Either chart's last point is today; the value
+chart marks it at the live total from `overview()`, so it ends on the header's
+number whatever the stored row was priced at.
 
 In Docker these run under Celery (worker + beat, Redis as broker). The desktop
 build has neither: `app/desktop/scheduler.py` replicates the same schedule with

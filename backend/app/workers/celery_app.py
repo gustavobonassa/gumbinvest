@@ -114,6 +114,16 @@ schedule["daily-snapshot"] = {
     "schedule": crontab(hour=snapshot_hour, minute=snapshot_minute),
 }
 
+# Between the nightly snapshots, the stored chain goes stale whenever its data
+# changes — an import, a price backfill, the first quote of a new day. Catching
+# that here is what lets the dashboard and the rentabilidade page read it
+# instead of rebuilding it inside a request. A no-op costs a few aggregate
+# queries. Offset by two minutes so it never lands on the nightly slot.
+schedule["refresh-chain"] = {
+    "task": "app.workers.tasks.refresh_chain_task",
+    "schedule": crontab(minute="2-59/5"),
+}
+
 # After the portfolio snapshot (23:10 default), so both series close the same
 # day with the same quotes.
 schedule["ai-wallet-snapshot"] = {

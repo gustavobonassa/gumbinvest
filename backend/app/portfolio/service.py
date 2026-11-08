@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from app.core.dates import local_today
 from decimal import Decimal
 
-from sqlalchemy import String, cast, func, select
+from sqlalchemy import String, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
@@ -41,6 +41,12 @@ logger = get_logger(__name__)
 #: mutation happens inside the engine while building).
 _REPLAY_CACHE: dict[int, tuple[str, dict[str, object]]] = {}
 _REPLAY_LOCK = threading.Lock()
+#: One lock per (portfolio, product) while it is being built. The dashboard
+#: fires its requests together, and on a cold cache each of them used to build
+#: the same replay at once — five copies fighting for one interpreter, every
+#: one finishing as late as the slowest. With this the first request builds
+#: and the others wait for its result.
+_BUILD_LOCKS: dict[tuple[int, str], threading.RLock] = {}
 
 #: The two other reads every chart paid for on every request, kept across
 #: requests the same way. Each is keyed by aggregates over exactly the rows it
@@ -595,17 +601,31 @@ class PortfolioService:
     def _shared(self, key: str, builder):
         """Cross-request memo for pure replay products (movements, positions)."""
         fp = self._replay_fingerprint()
+
+        def cached():
+            with _REPLAY_LOCK:
+                cached_fp, values = _REPLAY_CACHE.get(self.portfolio_id, (None, {}))
+                return values.get(key) if cached_fp == fp else None
+
+        value = cached()
+        if value is not None:
+            return value
         with _REPLAY_LOCK:
-            cached_fp, values = _REPLAY_CACHE.get(self.portfolio_id, (None, {}))
-            if cached_fp == fp and key in values:
-                return values[key]
-        value = builder()
-        with _REPLAY_LOCK:
-            cached_fp, values = _REPLAY_CACHE.get(self.portfolio_id, (None, {}))
-            if cached_fp != fp:
-                values = {}
-                _REPLAY_CACHE[self.portfolio_id] = (fp, values)
-            values[key] = value
+            building = _BUILD_LOCKS.setdefault((self.portfolio_id, key), threading.RLock())
+        # Builders only ever reach for the products beneath them (timeline →
+        # base movements → movements), so these locks are always taken in the
+        # same order and cannot deadlock.
+        with building:
+            value = cached()  # built by whoever held the lock before us
+            if value is not None:
+                return value
+            value = builder()
+            with _REPLAY_LOCK:
+                cached_fp, values = _REPLAY_CACHE.get(self.portfolio_id, (None, {}))
+                if cached_fp != fp:
+                    values = {}
+                    _REPLAY_CACHE[self.portfolio_id] = (fp, values)
+                values[key] = value
         return value
 
     def movements(self) -> list[Movement]:
@@ -1039,7 +1059,58 @@ class PortfolioService:
         converted movements, and a foreign asset's daily close is converted at
         *that day's* rate, so the curve shows the currency swing as it happened
         rather than restating history at today's rate.
+
+        Read off the stored daily chain whenever it is current — the same rows
+        the rentabilidade page plots, so the two charts cannot disagree about a
+        past day, and the dashboard skips loading every close and walking every
+        day since the first trade. When the chain is stale (an import, new
+        prices, a new day the background refresh hasn't reached yet) this
+        walks the days itself rather than rebuilding the whole chain inside the
+        request: the full chain costs several times what this chart needs.
+
+        The last point is today, marked at the live value the header shows.
         """
+        rows = self._stored_chain()
+        points = self._walk_history(start, granularity) if rows is None else self._sample_chain(
+            rows, start, granularity
+        )
+        return self._mark_today_live(points)
+
+    def _sample_chain(self, rows: list[dict], start: date | None, granularity: str) -> list[dict]:
+        """:meth:`history` points taken from the stored daily chain."""
+        last_day = rows[-1]["date"]
+        start = start or rows[0]["date"]
+        step = self._resolve_step(start, last_day, granularity)
+        return [
+            {
+                "date": row["date"],
+                "market_value": row["market_value"],
+                "cost_basis": row["cost_basis"],
+                "invested": row["invested"],
+                "dividends": row["income"],
+                "realized": row["realized"],
+                "profit": row["market_value"] - row["cost_basis"],
+            }
+            for row in rows
+            if row["date"] >= start and (row["date"] == last_day or self._is_step_day(row["date"], step))
+        ]
+
+    def _mark_today_live(self, points: list[dict]) -> list[dict]:
+        """Value today's point exactly as :meth:`overview` values the header.
+
+        A stored chain was priced when it was built and the walk prices from
+        closes on file; quotes move in between. Ending the curve anywhere but
+        the headline figure reads as a gap on the same screen.
+        """
+        if not points or points[-1]["date"] != local_today():
+            return points
+        live = sum((ap.market_value_base for ap in self.asset_positions()), ZERO)
+        last = points[-1]
+        points[-1] = {**last, "market_value": live, "profit": live - last["cost_basis"]}
+        return points
+
+    def _walk_history(self, start: date | None, granularity: str) -> list[dict]:
+        """:meth:`history` computed day by day, for when the chain is stale."""
         timeline = self.timeline()
         if not timeline:
             return []
@@ -1994,8 +2065,18 @@ class PortfolioService:
         answer, and a fast wrong chart is worse than a slow right one.
         ``CHAIN_VERSION`` is in the mix so a change to the arithmetic itself
         invalidates every stored row without anyone having to remember.
+
+        Since the dashboard's value chart reads the stored chain too, every
+        input the walk values a past day with is covered: closes, Tesouro
+        prices, exchange rates, the index a CDB accrues on and its terms.
         """
-        from app.db.models import AssetSuccession
+        from app.db.models import (
+            AssetSuccession,
+            FixedIncomeTerms,
+            FxRate,
+            IndexRate,
+            TreasuryPrice,
+        )
 
         transactions = self.db.execute(
             select(func.count(Transaction.id), func.max(Transaction.id)).where(
@@ -2007,17 +2088,40 @@ class PortfolioService:
                 AssetSuccession.portfolio_id == self.portfolio_id
             )
         ).one()
+        # The sum catches a past close the provider restated in place — same
+        # row, same date, same count. Today's close is left out of it on
+        # purpose: every quote refresh rewrites it, and the chart marks today
+        # live anyway (see history), so counting it would only throw the chain
+        # away every half hour.
+        today = local_today()
         history = self.db.execute(
-            select(func.count(PriceHistory.id), func.max(PriceHistory.date))
+            select(
+                func.count(PriceHistory.id),
+                func.max(PriceHistory.date),
+                func.sum(case((PriceHistory.date < today, PriceHistory.close), else_=0)),
+            )
         ).one()
-        assets = self.db.execute(select(func.count(Asset.id), func.max(Asset.id))).one()
+        # updated_at, not the max id: editing an asset's class, currency or
+        # manual price changes how it is valued without adding a row.
+        assets = self.db.execute(select(func.count(Asset.id), func.max(Asset.updated_at))).one()
         # A split restates every close before it, so declaring or correcting one
         # changes every historical value. Summing the ratios as well as counting
         # them catches an edited ratio, which leaves the count untouched.
         splits = self.db.execute(
             select(func.count(AssetSplit.id), func.sum(AssetSplit.ratio))
         ).one()
-        raw = f"{CHAIN_VERSION}|{transactions}|{successions}|{history}|{assets}|{splits}"
+        treasury = self.db.execute(
+            select(func.count(TreasuryPrice.id), func.max(TreasuryPrice.date))
+        ).one()
+        fx = self.db.execute(select(func.count(FxRate.id), func.max(FxRate.date))).one()
+        indices = self.db.execute(select(func.count(IndexRate.id), func.max(IndexRate.date))).one()
+        terms = self.db.execute(
+            select(func.count(FixedIncomeTerms.asset_id), func.max(FixedIncomeTerms.updated_at))
+        ).one()
+        raw = (
+            f"{CHAIN_VERSION}|{transactions}|{successions}|{history}|{assets}|{splits}"
+            f"|{treasury}|{fx}|{indices}|{terms}"
+        )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
     def daily_chain(self) -> list[dict]:
@@ -2270,33 +2374,14 @@ class PortfolioService:
         Trust means two things: it was built from today's ledger, and it
         reaches today. Anything else and the caller recomputes.
         """
-        fingerprint = self.ledger_fingerprint()
+        state = self._stored_chain_state()
+        if state is None:
+            return None
+        fingerprint, aggregates = state
         scope = (
             PortfolioSnapshot.portfolio_id == self.portfolio_id,
             PortfolioSnapshot.fingerprint == fingerprint,
         )
-        # Decoding a few thousand rows (and a JSON column on each) cost every
-        # rentabilidade request more than the arithmetic on them. A chain can
-        # be re-materialised under the same fingerprint with different figures
-        # (the fingerprint covers the ledger, not today's quote), and SQLite
-        # hands the same ids back once the table was emptied — so the key sums
-        # the figures themselves, and _store_chain also drops this process's
-        # copy outright.
-        aggregates = self.db.execute(
-            select(
-                func.count(PortfolioSnapshot.id),
-                func.max(PortfolioSnapshot.id),
-                func.max(PortfolioSnapshot.date),
-                func.sum(PortfolioSnapshot.market_value),
-                func.sum(PortfolioSnapshot.return_factor),
-                func.sum(PortfolioSnapshot.unrealized),
-                func.sum(PortfolioSnapshot.priced_value),
-                func.sum(PortfolioSnapshot.flow),
-            ).where(*scope)
-        ).one()
-        count, last_date = aggregates[0], aggregates[2]
-        if not count or last_date < local_today():
-            return None
         cache_key = (fingerprint, *aggregates)
         with _REPLAY_LOCK:
             cached = _CHAIN_CACHE.get(self.portfolio_id)
@@ -2332,24 +2417,78 @@ class PortfolioService:
             _CHAIN_CACHE[self.portfolio_id] = (cache_key, decoded)
         return decoded
 
+    def _stored_chain_state(self) -> tuple[str, tuple] | None:
+        """The stored chain's fingerprint and aggregates, or ``None`` if stale.
+
+        The cheap half of :meth:`_stored_chain` — a handful of aggregate
+        queries, no rows decoded — so the background refresh can ask "is it
+        still good?" every few minutes for next to nothing.
+        """
+        fingerprint = self.ledger_fingerprint()
+        scope = (
+            PortfolioSnapshot.portfolio_id == self.portfolio_id,
+            PortfolioSnapshot.fingerprint == fingerprint,
+        )
+        # Decoding a few thousand rows (and a JSON column on each) cost every
+        # rentabilidade request more than the arithmetic on them. A chain can
+        # be re-materialised under the same fingerprint with different figures
+        # (the fingerprint covers the ledger, not today's quote), and SQLite
+        # hands the same ids back once the table was emptied — so the key sums
+        # the figures themselves, and _store_chain also drops this process's
+        # copy outright.
+        aggregates = self.db.execute(
+            select(
+                func.count(PortfolioSnapshot.id),
+                func.max(PortfolioSnapshot.id),
+                func.max(PortfolioSnapshot.date),
+                func.sum(PortfolioSnapshot.market_value),
+                func.sum(PortfolioSnapshot.return_factor),
+                func.sum(PortfolioSnapshot.unrealized),
+                func.sum(PortfolioSnapshot.priced_value),
+                func.sum(PortfolioSnapshot.flow),
+            ).where(*scope)
+        ).one()
+        count, last_date = aggregates[0], aggregates[2]
+        if not count or last_date < local_today():
+            return None
+        return fingerprint, tuple(aggregates)
+
+    def refresh_chain_if_stale(self) -> dict:
+        """Rebuild the stored chain only when it no longer matches the data.
+
+        Run every few minutes in the background (Celery beat, or the desktop
+        scheduler), so an import, a price backfill or midnight is absorbed
+        there — the request that comes after finds the chain ready instead of
+        paying the full daily walk itself.
+        """
+        if self._stored_chain_state() is not None:
+            return {"rebuilt": False}
+        return {"rebuilt": True, "points": self.rebuild_snapshots()}
+
     def chain(self) -> list[dict]:
         """The daily chain, materialising it first if the stored one is stale."""
         stored = self._stored_chain()
         if stored is not None:
             return stored
+        fingerprint = self.ledger_fingerprint()
         rows = self.daily_chain()
         if rows:
             try:
-                self._store_chain(rows)
+                self._store_chain(rows, fingerprint)
             except Exception:  # noqa: BLE001 — a cache write must never fail a read
                 self.db.rollback()
                 logger.exception("could not materialise the daily return chain")
         return rows
 
-    def _store_chain(self, rows: list[dict]) -> None:
+    def _store_chain(self, rows: list[dict], fingerprint: str) -> None:
+        """Replace the stored chain with ``rows``.
+
+        ``fingerprint`` is taken by the caller *before* the walk: data that
+        changed while it ran must leave the stored chain stale, not stamp the
+        old figures with the new fingerprint.
+        """
         with _REPLAY_LOCK:
             _CHAIN_CACHE.pop(self.portfolio_id, None)
-        fingerprint = self.ledger_fingerprint()
         self.db.query(PortfolioSnapshot).filter(
             PortfolioSnapshot.portfolio_id == self.portfolio_id
         ).delete()
@@ -2742,8 +2881,9 @@ class PortfolioService:
         The same pass that values the portfolio also chains its return, so the
         nightly job leaves the rentabilidade page with nothing left to compute.
         """
+        fingerprint = self.ledger_fingerprint()
         rows = self.daily_chain()
         if not rows:
             return 0
-        self._store_chain(rows)
+        self._store_chain(rows, fingerprint)
         return len(rows)

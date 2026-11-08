@@ -149,3 +149,36 @@ def test_stored_chain_notices_a_rewrite_by_another_process(db, portfolio):
 
     fresh = PortfolioService(db, portfolio.id).chain()
     assert fresh[-1]["market_value"] == Decimal(321)
+
+
+def test_concurrent_requests_build_a_shared_product_once(db, portfolio):
+    """The dashboard's parallel requests wait for one build instead of racing.
+
+    Five requests replaying the same ledger at once used to take as long as
+    five replays: they share one interpreter.
+    """
+    import threading
+    import time
+
+    services = [PortfolioService(db, portfolio.id) for _ in range(5)]
+    for service in services:
+        service._replay_fingerprint()  # DB work stays on this thread
+    calls = []
+
+    def slow_build():
+        calls.append(1)
+        time.sleep(0.05)
+        return ["built"]
+
+    results = []
+    threads = [
+        threading.Thread(target=lambda s=service: results.append(s._shared("probe", slow_build)))
+        for service in services
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(calls) == 1
+    assert len(results) == 5 and all(result is results[0] for result in results)

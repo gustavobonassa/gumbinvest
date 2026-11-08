@@ -139,6 +139,11 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  /* Where a vertical and a horizontal scrollbar meet. Unstyled, Chromium
+     paints it its default white — a bright square in the dark theme. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
   ::-webkit-scrollbar-thumb {
     @apply rounded-full bg-line-strong;
   }

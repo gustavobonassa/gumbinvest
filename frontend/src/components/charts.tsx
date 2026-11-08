@@ -1032,9 +1032,12 @@ export function AllocationDonut({
           </div>
         ) : null}
       </div>
-      {/* Legend doubles as the direct-label channel: identity never colour-only. */}
+      {/* Legend doubles as the direct-label channel: identity never colour-only.
+          The single column is minmax(0, 1fr), not the implicit auto track,
+          which grows to the longest label and scrolls the legend sideways;
+          long labels wrap onto a second line instead. */}
       <ul
-        className="grid min-h-0 flex-1 auto-rows-min gap-1.5 overflow-auto pr-1 lg:max-w-[46%]"
+        className="grid min-h-0 flex-1 auto-rows-min grid-cols-[minmax(0,1fr)] gap-1.5 overflow-y-auto overflow-x-hidden pr-1 lg:max-w-[46%]"
         style={{ maxHeight: height }}
       >
         {colored.map((item) => (
@@ -1049,13 +1052,14 @@ export function AllocationDonut({
                 : undefined
             }
           >
-            <span className="flex min-w-0 items-center gap-2">
+            <span className="flex min-w-0 items-start gap-2">
+              {/* On the first line of a wrapped label, not mid-paragraph. */}
               <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                className="mt-[5px] h-2.5 w-2.5 shrink-0 rounded-sm"
                 style={{ background: item.color }}
                 aria-hidden
               />
-              <span className="truncate text-ink-secondary">
+              <span className="min-w-0 text-ink-secondary [overflow-wrap:anywhere]">
                 {item.key === OTHER_KIND ? item.label : (item.legend ?? item.key)}
               </span>
             </span>

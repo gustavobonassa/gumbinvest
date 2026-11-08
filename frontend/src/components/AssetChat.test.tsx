@@ -1,9 +1,11 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AssetChat, { AI_CHAT_SLOT_ID } from "@/components/AssetChat";
+import { api, type AiChatDetail, type AiChatSummary } from "@/lib/api";
 
 /**
  * jsdom has no layout, so the scroll container is given one: a fixed 400px
@@ -53,14 +55,25 @@ function streamedResponse() {
   return { fetchMock, push, finish };
 }
 
-async function openChat() {
+/** Where the router is, printed so a test can see a navigation happen. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname + location.search}</output>;
+}
+
+async function openChat(ticker: string | null = null) {
   const slot = document.createElement("div");
   slot.id = AI_CHAT_SLOT_ID;
   document.body.appendChild(slot);
   render(
-    <MemoryRouter>
-      <AssetChat ticker={null} />
-    </MemoryRouter>,
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MemoryRouter>
+        <AssetChat ticker={ticker} />
+        <LocationProbe />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   await userEvent.click(await screen.findByRole("button", { name: /Analista IA/ }));
   const panel = await screen.findByRole("complementary");
@@ -169,5 +182,79 @@ describe("AssetChat scrolling", () => {
 
     expect(await screen.findByRole("button", { name: "Enviar" })).toBeInTheDocument();
     expect(screen.getByText("Começo da resposta")).toBeInTheDocument();
+  });
+});
+
+describe("AssetChat history", () => {
+  const summary = (id: number, ticker: string | null, title: string): AiChatSummary => ({
+    id,
+    ticker,
+    title,
+    message_count: 2,
+    created_at: "2026-11-01T10:00:00Z",
+    updated_at: "2026-11-01T10:00:00Z",
+  });
+  const saved: AiChatSummary[] = [
+    summary(7, "ITSA4", "Vale aumentar ITSA4?"),
+    summary(5, null, "Resuma o desempenho da carteira"),
+  ];
+
+  beforeEach(() => {
+    vi.spyOn(api, "aiChats").mockResolvedValue(saved);
+    vi.spyOn(api, "aiChatDetail").mockImplementation(
+      async (id) =>
+        ({
+          ...(saved.find((chat) => chat.id === id) as AiChatSummary),
+          messages: [
+            { role: "user", content: `Pergunta da conversa ${id}` },
+            { role: "assistant", content: `Resposta da conversa ${id}` },
+          ],
+        }) satisfies AiChatDetail,
+    );
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.getElementById(AI_CHAT_SLOT_ID)?.remove();
+  });
+
+  const openHistory = async () => {
+    await userEvent.click(screen.getByRole("button", { name: "Conversas anteriores" }));
+    return screen.findByText("Sobre a carteira");
+  };
+
+  it("lists this scope's conversations first and reopens one in place", async () => {
+    await openChat();
+    const heading = await openHistory();
+
+    const mine = within(heading.closest("section")!);
+    expect(mine.getByText("Resuma o desempenho da carteira")).toBeInTheDocument();
+    expect(mine.queryByText("Vale aumentar ITSA4?")).not.toBeInTheDocument();
+    expect(screen.getByText("Outras conversas")).toBeInTheDocument();
+
+    // Same words as a suggestion chip in the empty chat: click the one in the list.
+    await userEvent.click(mine.getByText("Resuma o desempenho da carteira"));
+
+    expect(await screen.findByText("Resposta da conversa 5")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/?chat=5");
+    expect(screen.queryByText("Outras conversas")).not.toBeInTheDocument();
+  });
+
+  it("opens another scope's conversation where it belongs", async () => {
+    await openChat();
+    await openHistory();
+
+    await userEvent.click(screen.getByText("Vale aumentar ITSA4?"));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/ativos/ITSA4?chat=7");
+    // The portfolio panel never shows an asset's conversation itself.
+    expect(screen.queryByText("Resposta da conversa 7")).not.toBeInTheDocument();
+  });
+
+  it("says so when nothing is saved yet", async () => {
+    vi.mocked(api.aiChats).mockResolvedValue([]);
+    await openChat("PETR4");
+    await userEvent.click(screen.getByRole("button", { name: "Conversas anteriores" }));
+
+    expect(await screen.findByText("Nenhuma conversa salva ainda.")).toBeInTheDocument();
   });
 });

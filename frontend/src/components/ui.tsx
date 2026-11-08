@@ -361,12 +361,15 @@ export function Modal({
   subtitle,
   onClose,
   centered = false,
+  wide = false,
   children,
 }: {
   open: boolean;
   title: ReactNode;
   subtitle?: ReactNode;
   onClose: () => void;
+  /** Room for long lines — logs, tables — instead of the form width. */
+  wide?: boolean;
   /** Vertically centred, for short fixed-size messages. The default anchors
    *  the top edge instead, so forms and lists that grow don't jump around. */
   centered?: boolean;
@@ -402,7 +405,10 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="relative w-full max-w-lg animate-scale-in overflow-hidden rounded-2xl border border-line-strong bg-surface-raised shadow-raised outline-none"
+        className={clsx(
+          "relative w-full animate-scale-in overflow-hidden rounded-2xl border border-line-strong bg-surface-raised shadow-raised outline-none",
+          wide ? "max-w-3xl" : "max-w-lg",
+        )}
       >
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>

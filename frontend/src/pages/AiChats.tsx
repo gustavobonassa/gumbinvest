@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/components/Toast";
 import { Badge, Card, EmptyState, ErrorState, Modal, Skeleton } from "@/components/ui";
 import { api } from "@/lib/api";
+import { CHATS_QUERY_KEY } from "@/lib/chats";
 import { dateTime } from "@/lib/format";
 
 export default function AiChats() {
@@ -19,13 +20,13 @@ export default function AiChats() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["ai-chats"],
+    queryKey: CHATS_QUERY_KEY,
     queryFn: api.aiChats,
   });
   const remove = useMutation({
     mutationFn: api.deleteAiChat,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ai-chats"] });
+      queryClient.invalidateQueries({ queryKey: CHATS_QUERY_KEY });
       toast.success("Conversa excluída.");
     },
     onError: (error) => toast.error("Não foi possível excluir a conversa.", error),

@@ -6,13 +6,16 @@
  * assembles the context and streams the answer over SSE; this component only
  * keeps the conversation and renders the stream as it arrives.
  */
+import { useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { ArrowDown, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
+import { ArrowDown, History, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { api, API_BASE } from "@/lib/api";
+import ChatHistory from "@/components/ChatHistory";
+import { api, API_BASE, type AiChatSummary } from "@/lib/api";
+import { CHATS_QUERY_KEY, inScope } from "@/lib/chats";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -124,10 +127,7 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
       .then((chat) => {
         // A saved chat only reopens in its own scope: asset chats on their
         // asset's page, portfolio chats in the portfolio panel.
-        const matches = ticker
-          ? chat.ticker?.toUpperCase() === ticker.toUpperCase()
-          : chat.ticker === null;
-        if (cancelled || !matches) return;
+        if (cancelled || !inScope(chat, ticker)) return;
         followRef.current = true;
         setMessages(chat.messages);
         setChatId(chat.id);
@@ -138,6 +138,33 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
       cancelled = true;
     };
   }, [ticker, requested]);
+
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Reopening goes through ?chat= like the Conversas screen does, so a reload
+  // keeps the conversation. In this panel's scope that is just the param;
+  // anywhere else it is a move to where the chat belongs — the asset's page,
+  // or the dashboard for a portfolio chat — whose panel then opens it.
+  const openSaved = (chat: AiChatSummary) => {
+    setHistoryOpen(false);
+    if (chat.id === chatId) return;
+    if (!inScope(chat, ticker)) {
+      navigate(
+        chat.ticker
+          ? `/ativos/${encodeURIComponent(chat.ticker)}?chat=${chat.id}`
+          : `/?chat=${chat.id}`,
+      );
+      return;
+    }
+    abortRef.current?.abort();
+    setError(null);
+    const next = new URLSearchParams(params);
+    next.set("chat", String(chat.id));
+    setParams(next, { replace: true });
+  };
 
   const startNewConversation = () => {
     setMessages([]);
@@ -295,7 +322,11 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
           if (data.error) setError(data.error);
           if (data.done) {
             setStatus(null);
-            if (data.chat_id) setChatId(data.chat_id);
+            if (data.chat_id) {
+              setChatId(data.chat_id);
+              // New or just updated: either way the history list is stale.
+              void queryClient.invalidateQueries({ queryKey: CHATS_QUERY_KEY });
+            }
           }
         }
       }
@@ -384,6 +415,21 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
                     </p>
                   </div>
                   <div className="ml-auto flex items-center gap-1">
+                    <button
+                      ref={historyButtonRef}
+                      type="button"
+                      onClick={() => setHistoryOpen((current) => !current)}
+                      aria-expanded={historyOpen}
+                      aria-haspopup="true"
+                      className={clsx(
+                        "btn-ghost px-2 py-1.5",
+                        historyOpen && "bg-surface-hover text-ink",
+                      )}
+                      aria-label="Conversas anteriores"
+                      title="Conversas anteriores"
+                    >
+                      <History size={15} />
+                    </button>
                     {messages.length ? (
                       <button
                         type="button"
@@ -404,6 +450,19 @@ export default function AssetChat({ ticker }: { ticker: string | null }) {
                     </button>
                   </div>
                 </header>
+                {historyOpen ? (
+                  <ChatHistory
+                    anchor={historyButtonRef.current}
+                    ticker={ticker}
+                    currentId={chatId}
+                    onPick={openSaved}
+                    onSeeAll={() => {
+                      setHistoryOpen(false);
+                      navigate("/conversas");
+                    }}
+                    onClose={() => setHistoryOpen(false)}
+                  />
+                ) : null}
 
                 <div className="relative flex min-h-0 flex-1 flex-col">
                   <div

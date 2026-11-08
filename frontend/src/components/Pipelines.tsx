@@ -11,15 +11,20 @@
  * and whoever has this tab open should get the modal without having started
  * anything.
  *
+ * Every run keeps a timestamped log ("Ver registro", on the card and on each
+ * row of the history): the narration while it works, and — when it dies on
+ * something unexpected — the error and where it happened, which is what the
+ * generic failure message points the user to.
+ *
  * The code modal is the human half of the backend's `request_input`: the run
  * sits on `waiting_input` until the code typed here reaches it. Closing the
  * modal does not cancel the run — the card keeps a "Informar código" button
  * while the wait lasts, and the wait itself times out server-side.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { FlaskConical, KeyRound, Loader2, Play, Workflow, X } from "lucide-react";
+import { Copy, FlaskConical, KeyRound, Loader2, Play, ScrollText, Workflow, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, type PipelineInfo, type PipelineRun } from "@/lib/api";
@@ -164,6 +169,140 @@ function ServiceTabs({
   );
 }
 
+function clock(value: string): string {
+  return new Date(value).toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+const LEVEL_LABEL: Record<PipelineRun["log"][number]["level"], string> = {
+  info: "",
+  warning: "aviso",
+  error: "erro",
+};
+
+/** The log as plain text — what "Copiar registro" puts on the clipboard, for
+ *  pasting into a message when asking for help. */
+function logText(run: PipelineRun, name: string): string {
+  const lines = [
+    `${name} · execução #${run.id}`,
+    `Início: ${when(run.started_at)} · ${RUN_STATE[run.status].label} · ${
+      run.trigger === "scheduled" ? "Agendada" : "Manual"
+    }`,
+  ];
+  if (run.error) lines.push(`Erro: ${run.error}`);
+  lines.push("");
+  for (const entry of run.log) {
+    const level = LEVEL_LABEL[entry.level];
+    lines.push(`${clock(entry.at)}  ${level ? `[${level}] ` : ""}${entry.message}`);
+  }
+  return lines.join("\n");
+}
+
+/** One run's log. Fed the freshest copy of the run on every poll, so a live
+ *  run's narration grows here as it works. */
+function RunLogModal({
+  run,
+  name,
+  onClose,
+}: {
+  run: PipelineRun | null;
+  name: string;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const listRef = useRef<HTMLOListElement>(null);
+  const lines = run?.log.length ?? 0;
+  // A live run's newest line is the interesting one: keep it in view.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el && run?.active) el.scrollTop = el.scrollHeight;
+  }, [lines, run?.active]);
+
+  const copy = async () => {
+    if (!run) return;
+    try {
+      await navigator.clipboard.writeText(logText(run, name));
+      toast.success("Registro copiado.");
+    } catch (error) {
+      toast.error("Não foi possível copiar o registro.", error);
+    }
+  };
+
+  return (
+    <Modal
+      open={Boolean(run)}
+      onClose={onClose}
+      wide
+      title="Registro da execução"
+      subtitle={run ? `${name} · ${when(run.started_at)}` : undefined}
+    >
+      {run ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+            <Badge tone={RUN_STATE[run.status].tone}>{RUN_STATE[run.status].label}</Badge>
+            <span>{run.trigger === "scheduled" ? "Agendada" : "Manual"}</span>
+            {run.options?.preview ? <span>Simulação</span> : null}
+            {run.options?.full_history ? <span>Histórico completo</span> : null}
+            {run.finished_at ? <span>Duração {duration(run)}</span> : null}
+          </div>
+          {run.error ? (
+            <p className="rounded-lg border border-negative/30 bg-negative/10 px-3 py-2 text-sm text-negative">
+              {run.error}
+            </p>
+          ) : null}
+          {lines ? (
+            <ol
+              ref={listRef}
+              aria-label="Linhas do registro"
+              className="max-h-[45vh] space-y-1 overflow-y-auto rounded-lg border border-line bg-canvas p-3 font-mono text-xs leading-relaxed"
+            >
+              {run.log.map((entry, index) => (
+                <li
+                  key={index}
+                  className={clsx(
+                    "flex gap-3",
+                    entry.level === "error"
+                      ? "text-negative"
+                      : entry.level === "warning"
+                        ? "text-warning"
+                        : "text-ink-secondary",
+                  )}
+                >
+                  <time className="shrink-0 text-ink-muted" dateTime={entry.at}>
+                    {clock(entry.at)}
+                  </time>
+                  <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                    {entry.message}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-ink-muted">Esta execução não registrou nenhuma linha.</p>
+          )}
+          {run.active ? (
+            <p className="flex items-center gap-2 text-xs text-ink-muted">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
+              Em andamento — o registro se atualiza sozinho.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={copy}>
+              <Copy size={15} /> Copiar registro
+            </button>
+            <button type="button" className="btn-primary" onClick={onClose}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 function lastLogLine(run: PipelineRun): string {
   const entry = run.log[run.log.length - 1];
   return entry?.message ?? "Trabalhando…";
@@ -172,9 +311,11 @@ function lastLogLine(run: PipelineRun): string {
 function PipelineCard({
   pipeline,
   onAnswer,
+  onShowLog,
 }: {
   pipeline: PipelineInfo;
   onAnswer: (run: PipelineRun) => void;
+  onShowLog: (run: PipelineRun) => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -302,14 +443,32 @@ function PipelineCard({
       </div>
 
       {run ? (
-        <p className="mt-3 flex items-center gap-2 text-sm text-ink-secondary">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" />
-          {lastLogLine(run)}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p className="flex min-w-0 items-center gap-2 text-sm text-ink-secondary">
+            <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-accent" />
+            {lastLogLine(run)}
+          </p>
+          <LogLink run={run} onShowLog={onShowLog} />
+        </div>
       ) : pipeline.last_run?.status === "failed" ? (
-        <p className="mt-3 text-sm text-negative">{pipeline.last_run.error}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p className="text-sm text-negative">{pipeline.last_run.error}</p>
+          <LogLink run={pipeline.last_run} onShowLog={onShowLog} />
+        </div>
       ) : null}
     </Card>
+  );
+}
+
+function LogLink({ run, onShowLog }: { run: PipelineRun; onShowLog: (run: PipelineRun) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onShowLog(run)}
+      className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+    >
+      <ScrollText size={14} aria-hidden /> Ver registro
+    </button>
   );
 }
 
@@ -327,6 +486,9 @@ export default function Pipelines() {
   // `waiting_input` right after the code is sent does not flash it back open,
   // and a genuinely new prompt (a second 2FA during a re-login) still does.
   const handledRequest = useRef<string | null>(null);
+  // The run whose log is open. Only its id matters: the copy shown is looked
+  // up fresh from each poll below, so a live run's log keeps growing.
+  const [logRunId, setLogRunId] = useState<number | null>(null);
 
   const pipelinesQ = useQuery({
     queryKey: ["pipelines"],
@@ -422,6 +584,13 @@ export default function Pipelines() {
 
   const runs = runsQ.data?.runs ?? [];
   const current = pipelines.find((item) => item.key === selected);
+  const logRun =
+    logRunId === null
+      ? null
+      : ([...pipelines.flatMap((item) => [item.active_run, item.last_run]), ...runs].find(
+          (run) => run?.id === logRunId,
+        ) ?? null);
+  const logPipeline = pipelines.find((item) => item.key === logRun?.pipeline);
 
   return (
     <div className="space-y-6">
@@ -433,7 +602,12 @@ export default function Pipelines() {
           id={`service-panel-${current.key}`}
           aria-labelledby={`service-tab-${current.key}`}
         >
-          <PipelineCard key={current.key} pipeline={current} onAnswer={setAnswering} />
+          <PipelineCard
+            key={current.key}
+            pipeline={current}
+            onAnswer={setAnswering}
+            onShowLog={(run) => setLogRunId(run.id)}
+          />
         </div>
       ) : null}
 
@@ -459,6 +633,9 @@ export default function Pipelines() {
                   <th className="hidden px-4 py-2 text-left font-medium sm:table-cell">Origem</th>
                   <th className="px-4 py-2 text-left font-medium">Resultado</th>
                   <th className="hidden px-4 py-2 text-right font-medium md:table-cell">Duração</th>
+                  <th className="w-px px-2 py-2">
+                    <span className="sr-only">Registro</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -478,6 +655,17 @@ export default function Pipelines() {
                       </td>
                       <td className="tnum hidden px-4 py-2 text-right md:table-cell">
                         {duration(run)}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setLogRunId(run.id)}
+                          className="btn-ghost px-2 py-1.5 text-ink-muted hover:text-ink"
+                          title="Ver registro"
+                          aria-label={`Ver registro da coleta de ${when(run.started_at)}`}
+                        >
+                          <ScrollText size={15} />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -507,6 +695,12 @@ export default function Pipelines() {
           />
         </Card>
       )}
+
+      <RunLogModal
+        run={logRun}
+        name={logPipeline?.name ?? logRun?.pipeline ?? ""}
+        onClose={() => setLogRunId(null)}
+      />
 
       <Modal
         open={Boolean(answering)}

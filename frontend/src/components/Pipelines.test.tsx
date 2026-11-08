@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import Pipelines from "@/components/Pipelines";
 import { ToastProvider } from "@/components/Toast";
-import { api, type PipelineInfo } from "@/lib/api";
+import { api, type PipelineInfo, type PipelineRun } from "@/lib/api";
 
 const pipeline = (
   key: string,
@@ -112,5 +112,69 @@ describe("Automações tabs", () => {
     await userEvent.click(screen.getByRole("tab", { name: /Binance/ }));
     await userEvent.click(screen.getByRole("button", { name: /Simular/ }));
     expect(start).toHaveBeenCalledWith("binance", { full_history: false, preview: true });
+  });
+});
+
+describe("Automações run log", () => {
+  const failed: PipelineRun = {
+    id: 27,
+    pipeline: "b3",
+    trigger: "manual",
+    status: "failed",
+    active: false,
+    started_at: "2026-11-08T20:12:00Z",
+    finished_at: "2026-11-08T20:14:09Z",
+    log: [
+      { at: "2026-11-08T20:12:01Z", level: "info", message: "Coleta B3 (build x)." },
+      {
+        at: "2026-11-08T20:14:09Z",
+        level: "error",
+        message: "Erro inesperado — Error: new-line character seen in unquoted field",
+      },
+    ],
+    input_request: null,
+    options: {},
+    result: {},
+    error: "A coleta falhou de forma inesperada. Veja o registro da execução.",
+  };
+
+  beforeEach(() => {
+    vi.spyOn(api, "pipelines").mockResolvedValue({
+      pipelines: [{ ...pipeline("b3", "B3", true), last_run: failed }],
+    });
+    vi.spyOn(api, "pipelineRuns").mockResolvedValue({
+      runs: [failed],
+      total: 1,
+      page: 1,
+      pages: 1,
+      page_size: 10,
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("opens the log from the failure on the card", async () => {
+    renderAt("/importar?aba=automacoes");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Ver registro" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Registro da execução" });
+    const lines = within(dialog).getByRole("list", { name: "Linhas do registro" });
+    expect(within(lines).getAllByRole("listitem")).toHaveLength(2);
+    expect(lines).toHaveTextContent("new-line character seen in unquoted field");
+    expect(dialog).toHaveTextContent("Veja o registro da execução.");
+  });
+
+  it("opens it from a row of the history, and copies it as text", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    renderAt("/importar?aba=automacoes");
+
+    await userEvent.click(await screen.findByRole("button", { name: /Ver registro da coleta de/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Copiar registro/ }));
+
+    const text = writeText.mock.calls[0][0] as string;
+    expect(text).toContain("B3 · execução #27");
+    expect(text).toContain("[erro] Erro inesperado");
+    expect(await screen.findByText("Registro copiado.")).toBeInTheDocument();
   });
 });

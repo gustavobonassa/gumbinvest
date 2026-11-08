@@ -154,7 +154,12 @@ def test_unexpected_exception_becomes_generic_error(db, portfolio, fake):
     row = finished(db, run_id)
 
     assert row.status == "failed"
-    assert row.error == runner.GENERIC_ERROR  # the internals never reach the screen
+    assert row.error == runner.GENERIC_ERROR  # the internals never reach the headline
+    # ...but the message says "veja o registro", so the registro has them.
+    errors = [entry for entry in row.log if entry["level"] == "error"]
+    assert errors[0]["message"] == "Erro inesperado — RuntimeError: selector exploded"
+    assert errors[1]["message"].startswith("Onde: test_pipelines.py:")
+    assert "(body)" in errors[1]["message"]
 
 
 def test_second_start_is_rejected_while_running(db, portfolio, fake):

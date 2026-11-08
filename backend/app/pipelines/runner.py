@@ -16,6 +16,7 @@ telling the user to run it manually.
 """
 from __future__ import annotations
 
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -177,9 +178,37 @@ def _execute(key: str, run_id: int) -> None:
         _finish(run_id, pipeline, "cancelled")
     except PipelineError as exc:
         _finish(run_id, pipeline, "failed", error=str(exc))
-    except Exception:  # noqa: BLE001 — a run must end with a readable error
+    except Exception as exc:  # noqa: BLE001 — a run must end with a readable error
         logger.exception("pipeline %s run %s failed", key, run_id)
+        # The error message points at the run's log, so the detail has to be
+        # there — not only in the server's log file, which a desktop user
+        # never sees. What failed and the last few calls on the way: enough
+        # to tell a site change from a bug without exposing the whole stack.
+        detail = str(exc).strip()
+        if len(detail) > 500:  # a whole HTML page or response body, sometimes
+            detail = detail[:500] + "…"
+        _append_log(run_id, f"Erro inesperado — {type(exc).__name__}: {detail}", "error")
+        where = _call_chain(exc)
+        if where:
+            _append_log(run_id, f"Onde: {where}", "error")
         _finish(run_id, pipeline, "failed", error=GENERIC_ERROR)
+
+
+def _call_chain(exc: BaseException, depth: int = 4) -> str:
+    """The innermost frames of ``exc`` as "file.py:line (function)", innermost first."""
+    frames = traceback.extract_tb(exc.__traceback__)[-depth:]
+    return " ← ".join(
+        f"{Path(frame.filename).name}:{frame.lineno} ({frame.name})" for frame in reversed(frames)
+    )
+
+
+def _append_log(run_id: int, message: str, level: str = "info") -> None:
+    """Add a line to a run's log from outside the run — unlike
+    :meth:`RunContext.log`, never a cancellation checkpoint."""
+    with session_scope() as db:
+        run = db.get(PipelineRun, run_id)
+        if run is not None:
+            run.log = [*(run.log or []), {"at": _now().isoformat(), "level": level, "message": message}]
 
 
 def _finish(run_id: int, pipeline: Pipeline, status: str, *, result: dict | None = None, error: str | None = None) -> None:

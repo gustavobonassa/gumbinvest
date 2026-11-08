@@ -85,7 +85,10 @@ def _read(payload: bytes | str) -> tuple[list[str], list[list[str]]]:
     if not text.strip():
         raise CryptoFormatError("the file is empty")
     reader = csv.reader(io.StringIO(text), delimiter=sniff_delimiter(text))
-    rows = [row for row in reader if any((cell or "").strip() for cell in row)]
+    try:
+        rows = [row for row in reader if any((cell or "").strip() for cell in row)]
+    except csv.Error as exc:  # not delimited text at all — e.g. a binary file
+        raise CryptoFormatError(f"the file is not readable as CSV: {exc}") from exc
     if not rows:
         raise CryptoFormatError("the file has no rows")
     return rows[0], rows[1:]

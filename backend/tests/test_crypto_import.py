@@ -597,3 +597,24 @@ def test_the_balances_hold_when_the_spot_export_is_imported_first(db, portfolio,
     if "DOT" in mismatched:
         expected_dot, actual_dot = mismatched["DOT"]
         assert abs(expected_dot - actual_dot) < Decimal("0.0025"), mismatched
+
+
+# A stray carriage return mid-line: what a binary file decoded as text looks
+# like to the csv module, which raises on it instead of returning rows.
+_UNREADABLE = b"Time,Coin\rjunk,1\nmore\x00,2\n"
+
+
+def test_a_spreadsheet_is_never_taken_for_an_exchange_export():
+    """The B3 automation downloads an .xlsx; sniffing it used to crash the run
+    whenever the zip happened to contain a carriage-return byte."""
+    xlsx_like = b"PK\x03\x04" + _UNREADABLE
+    assert sniff_format(xlsx_like) is None
+
+
+@pytest.mark.parametrize("module", ["binance_api", "binance_ledger", "binance"])
+def test_unreadable_text_is_not_a_match_rather_than_a_crash(module):
+    from importlib import import_module
+
+    parser = import_module(f"app.importer.crypto.{module}")
+    assert parser.matches(_UNREADABLE) is None
+    assert sniff_format(_UNREADABLE) is None

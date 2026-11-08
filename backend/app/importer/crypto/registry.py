@@ -11,6 +11,7 @@ from types import ModuleType
 
 from app.importer.crypto import binance, binance_api, binance_ledger
 from app.importer.crypto.base import CryptoFormatError, ParsedTradeFile
+from app.importer.parser import is_xlsx
 
 #: Most specific first. The pipeline's API file comes first because its header
 #: is a superset of the ledger's (it adds ``Source`` and ``Ref``); the ledger is
@@ -20,7 +21,15 @@ PARSERS: tuple[ModuleType, ...] = (binance_api, binance_ledger, binance)
 
 
 def sniff_format(payload: bytes | str) -> str | None:
-    """The format id of an exchange export, or ``None`` when it is not one."""
+    """The format id of an exchange export, or ``None`` when it is not one.
+
+    A spreadsheet is never one: exchange exports are delimited text, and the
+    B3 movimentação the pipeline downloads is an ``.xlsx``. Asking the CSV
+    readers about a zip archive decodes binary as text, and a stray carriage
+    return in it used to crash the B3 automation outright.
+    """
+    if isinstance(payload, (bytes, bytearray)) and is_xlsx(payload):
+        return None
     for parser in PARSERS:
         fmt = parser.matches(payload)
         if fmt:

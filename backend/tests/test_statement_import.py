@@ -679,6 +679,55 @@ def test_coverage_separates_two_series_of_the_same_broker(db, portfolio):
     assert {a["account_ref"] for a in accounts} == {"6AV-56990-17", "098455499"}
 
 
+def test_coverage_lists_the_closed_months_since_the_last_statement(db, portfolio):
+    statement = _statement([_buy(5, "O", "1", "50")])
+    statement.period_start, statement.period_end = date(2026, 6, 1), date(2026, 6, 30)
+    _import(db, portfolio, statement, "jun.pdf")
+
+    # November in progress: its statement does not exist yet, so not overdue.
+    account = statement_coverage(db, portfolio.id, today=date(2026, 11, 10))[0]
+    assert account["overdue_months"] == ["2026-07", "2026-08", "2026-09", "2026-10"]
+    # A to-do list, not a hole in the archive.
+    assert account["is_complete"] is True
+
+    assert statement_coverage(db, portfolio.id, today=date(2026, 7, 31))[0]["overdue_months"] == []
+    # Across a year boundary.
+    assert statement_coverage(db, portfolio.id, today=date(2027, 1, 5))[0]["overdue_months"] == [
+        "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12",
+    ]
+
+
+def test_coverage_only_asks_the_latest_series_of_a_broker(db, portfolio):
+    """A replaced series (Avenue's Apex numbering) is not late forever."""
+    apex = _statement([_buy(5, "O", "1", "50")])
+    apex.account_ref = "6AV-56990-17"
+    apex.period_start, apex.period_end = date(2024, 12, 1), date(2024, 12, 31)
+    _import(db, portfolio, apex, "apex.pdf")
+
+    avenue = _statement([_buy(6, "O", "1", "50")], fmt="avenue-pt")
+    avenue.account_ref = "098455499"
+    avenue.period_start, avenue.period_end = date(2026, 9, 1), date(2026, 9, 30)
+    _import(db, portfolio, avenue, "avenue.pdf")
+
+    by_ref = {
+        account["account_ref"]: account["overdue_months"]
+        for account in statement_coverage(db, portfolio.id, today=date(2026, 11, 10))
+    }
+    assert by_ref == {"6AV-56990-17": [], "098455499": ["2026-10"]}
+
+
+def test_coverage_asks_every_series_still_being_issued(db, portfolio):
+    """Two series ending the same month are both current: both are late."""
+    for ref, fmt in (("6AV-56990-17", None), ("098455499", "avenue-pt")):
+        statement = _statement([_buy(5, "O", "1", "50")], **({"fmt": fmt} if fmt else {}))
+        statement.account_ref = ref
+        statement.period_start, statement.period_end = date(2026, 9, 1), date(2026, 9, 30)
+        _import(db, portfolio, statement, f"{ref}.pdf")
+
+    overdue = [a["overdue_months"] for a in statement_coverage(db, portfolio.id, today=date(2026, 11, 10))]
+    assert overdue == [["2026-10"], ["2026-10"]]
+
+
 # -- the real archive -------------------------------------------------------
 def _import_archive(db, portfolio) -> None:
     service = ImportService(db, portfolio)

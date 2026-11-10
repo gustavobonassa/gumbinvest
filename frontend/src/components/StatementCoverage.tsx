@@ -6,9 +6,13 @@
  * of dates is not. The two subtler checks — balances that do not carry from one
  * month to the next, and positions that disagree with the broker's own figures
  * — are spelled out underneath, because they need an explanation to act on.
+ *
+ * After the last statement held, the closed months not imported yet continue
+ * the row in yellow (and get a header badge): not a hole in the archive, just
+ * the statements still to download.
  */
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, FileWarning, Scale } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileWarning, Scale } from "lucide-react";
 
 import { Badge, Card, EmptyState, ErrorState, SectionTitle, Skeleton } from "@/components/ui";
 import { api, type CoverageAccount } from "@/lib/api";
@@ -60,23 +64,38 @@ function MonthGrid({ account }: { account: CoverageAccount }) {
           </span>
         );
       })}
+      {account.overdue_months.map((month) => (
+        <span
+          key={month}
+          title={`${periodLabel(month)} · ainda não importado`}
+          className="grid h-7 w-14 place-items-center rounded-md border border-dashed border-warning/60 bg-warning/10 text-[10px] font-medium text-warning"
+        >
+          {periodLabel(month)}
+        </span>
+      ))}
     </div>
   );
 }
 
 function AccountCard({ account }: { account: CoverageAccount }) {
+  const overdue = account.overdue_months.length;
   return (
     <li className="rounded-xl border border-line bg-surface-raised/50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-2 font-medium">
-          {account.is_complete ? (
-            <CheckCircle2 size={15} className="text-positive" aria-hidden />
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+          {account.is_complete && !overdue ? (
+            <CheckCircle2 size={15} className="shrink-0 text-positive" aria-hidden />
           ) : (
-            <AlertTriangle size={15} className="text-warning" aria-hidden />
+            <AlertTriangle size={15} className="shrink-0 text-warning" aria-hidden />
           )}
           {account.broker}
           <Badge>{account.currency}</Badge>
           <span className="text-xs font-normal text-ink-muted">conta {account.account_ref}</span>
+          {overdue ? (
+            <Badge tone="warning" className="whitespace-nowrap">
+              {overdue === 1 ? "1 mês pendente" : `${overdue} meses pendentes`}
+            </Badge>
+          ) : null}
         </span>
         <span className="text-xs text-ink-muted">
           {account.statements} extrato(s) · {periodLabel(account.first_month ?? "")} →{" "}
@@ -93,6 +112,18 @@ function AccountCard({ account }: { account: CoverageAccount }) {
             Faltam {account.missing_months.length} extrato(s):{" "}
             <span className="font-medium">
               {account.missing_months.map(periodLabel).join(", ")}
+            </span>
+          </span>
+        </p>
+      ) : null}
+
+      {overdue ? (
+        <p className="mt-3 flex items-start gap-2 text-sm text-warning">
+          <Clock size={15} className="mt-0.5 shrink-0" aria-hidden />
+          <span>
+            Desde o último extrato ({periodLabel(account.last_month ?? "")}), falta importar:{" "}
+            <span className="font-medium">
+              {account.overdue_months.map(periodLabel).join(", ")}
             </span>
           </span>
         </p>

@@ -19,6 +19,14 @@ Three independent checks, weakest to strongest:
 
 Only the first two can suggest *which file* to fetch, so all three are reported
 separately rather than collapsed into one number.
+
+Separately from those, **overdue months**: the closed months since the last
+statement held, i.e. the ones still to download. Not a defect of the archive
+(``is_complete`` ignores them), just the to-do list. The month in progress is
+never overdue — its statement does not exist yet — and only a broker's most
+recent series is asked (every series tied for that month, since a broker can
+keep issuing two in parallel), because a series a broker replaced stops for
+good and would otherwise read as late forever.
 """
 from __future__ import annotations
 
@@ -30,6 +38,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.dates import local_today
 from app.db.models import Asset, ImportBatch
 from app.domain.enums import ImportStatus
 
@@ -84,6 +93,7 @@ class AccountCoverage:
     missing_months: list[str] = field(default_factory=list)
     balance_breaks: list[dict] = field(default_factory=list)
     position_drift: list[dict] = field(default_factory=list)
+    overdue_months: list[str] = field(default_factory=list)
 
     @property
     def is_complete(self) -> bool:
@@ -112,6 +122,7 @@ class AccountCoverage:
             "missing_months": self.missing_months,
             "balance_breaks": self.balance_breaks,
             "position_drift": self.position_drift,
+            "overdue_months": self.overdue_months,
         }
 
 
@@ -119,8 +130,12 @@ def _str(value: Decimal | None) -> str | None:
     return None if value is None else str(value)
 
 
-def statement_coverage(db: Session, portfolio_id: int) -> list[dict]:
-    """Coverage report for every broker whose history came from statements."""
+def statement_coverage(db: Session, portfolio_id: int, today: date | None = None) -> list[dict]:
+    """Coverage report for every broker whose history came from statements.
+
+    ``today`` (the app timezone's, by default) decides which months are
+    overdue; tests pin it.
+    """
     batches = db.scalars(
         select(ImportBatch)
         .where(
@@ -181,8 +196,26 @@ def statement_coverage(db: Session, portfolio_id: int) -> list[dict]:
             )
         )
 
+    _mark_overdue(report, today or local_today())
+
     report.sort(key=lambda item: (item.broker, item.months[0].month if item.months else ""))
     return [item.to_dict() for item in report]
+
+
+def _mark_overdue(report: list[AccountCoverage], today: date) -> None:
+    """Closed months since each broker's latest statement (see module doc)."""
+    newest: dict[str, str] = {}
+    for item in report:
+        if item.months:
+            newest[item.broker] = max(newest.get(item.broker, ""), item.months[-1].month)
+    previous = date(today.year - 1, 12, 1) if today.month == 1 else date(today.year, today.month - 1, 1)
+    for item in report:
+        if not item.months or item.months[-1].month != newest[item.broker]:
+            continue
+        last = item.months[-1].period_end
+        start = date(last.year + 1, 1, 1) if last.month == 12 else date(last.year, last.month + 1, 1)
+        if start <= previous:
+            item.overdue_months = _months_between(start, previous)
 
 
 def _missing_months(months: list[StatementMonth]) -> list[str]:

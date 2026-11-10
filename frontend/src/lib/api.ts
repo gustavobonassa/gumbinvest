@@ -682,6 +682,9 @@ export interface CoverageAccount {
   }[];
   /** Assets whose replayed quantity disagrees with the broker's own figure. */
   position_drift: { ticker: string; reported: string; computed: string; difference: string }[];
+  /** Closed months since the last statement held: the ones still to import.
+   *  Only on a broker's most recent series; the month in progress never counts. */
+  overdue_months: string[];
 }
 
 export interface FixedIncomeTerms {
@@ -1438,11 +1441,24 @@ export interface PipelineRun {
   error: string | null;
 }
 
+/** When a collector runs on its own. Off by default; the days and time are
+ *  kept while it is off, so turning it back on restores them. */
+export interface PipelineSchedule {
+  enabled: boolean;
+  /** Weekdays, 0 = Monday … 6 = Sunday. */
+  days: number[];
+  /** Wall-clock "HH:MM" in the app timezone. */
+  time: string;
+  /** The next slot, or null while off. A slot missed while the app (or the
+   *  computer) was off runs as soon as it is back. */
+  next_run_at: string | null;
+}
+
 export interface PipelineInfo {
   key: string;
   name: string;
   description: string;
-  schedule: string;
+  schedule: PipelineSchedule;
   /** Offers "Simular": collect everything, save nothing, report what would be added. */
   supports_preview: boolean;
   configured: boolean;
@@ -1473,6 +1489,11 @@ export const api = {
     request<{ run_id: number }>(`/pipelines/${encodeURIComponent(key)}/run`, {
       method: "POST",
       body: JSON.stringify(options ?? {}),
+    }),
+  savePipelineSchedule: (key: string, schedule: Omit<PipelineSchedule, "next_run_at">) =>
+    request<{ schedule: PipelineSchedule }>(`/pipelines/${encodeURIComponent(key)}/schedule`, {
+      method: "PUT",
+      body: JSON.stringify(schedule),
     }),
   answerPipelineRun: (runId: number, value: string) =>
     request<{ accepted: boolean }>(`/pipelines/runs/${runId}/input`, {

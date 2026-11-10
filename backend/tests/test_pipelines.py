@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import UTC, datetime
+from datetime import time as clock_time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +24,7 @@ from app.main import app
 from app.pipelines import base
 from app.pipelines.base import PipelineError
 from app.pipelines import runner
+from app.pipelines import schedule as pipeline_schedule
 from app.services.portfolio_registry import get_default_portfolio
 
 
@@ -31,7 +34,6 @@ class FakePipeline(base.Pipeline):
         name="Fake",
         description="test double",
         credentials=(),
-        schedule="nunca",
     )
 
     def __init__(self, body) -> None:
@@ -328,3 +330,137 @@ def test_runs_history_endpoint(client, db, portfolio, fake):
     assert runs[0]["id"] == run_id
     assert runs[0]["status"] == "success"
     assert runs[0]["active"] is False
+
+
+# ------------------------------------------------------------------- schedule
+
+
+def _store_schedule(db: Session, *, enabled=True, days=(0, 1, 2, 3, 4, 5, 6), at="00:00", since=None):
+    """Write a schedule row directly — the tick reads whatever is stored."""
+    from app.db.models import AppSetting
+
+    db.merge(
+        AppSetting(
+            key=f"{pipeline_schedule.PREFIX}fake",
+            value={
+                "enabled": enabled,
+                "days": list(days),
+                "time": at,
+                "since": (since or datetime(2000, 1, 1, tzinfo=UTC)).isoformat(),
+            },
+        )
+    )
+    db.commit()
+
+
+def _fake_runs(db: Session) -> list[PipelineRun]:
+    db.expire_all()
+    return db.scalars(select(PipelineRun).where(PipelineRun.pipeline == "fake")).all()
+
+
+def test_slots_follow_weekdays_and_time_in_the_app_timezone():
+    # Mondays and Thursdays at 07:30 in São Paulo (UTC-3, no DST since 2019).
+    plan = pipeline_schedule.Schedule(enabled=True, days=(0, 3), at=clock_time(7, 30))
+    wednesday_noon = datetime(2026, 11, 4, 15, 0, tzinfo=UTC)
+    assert plan.last_slot(wednesday_noon) == datetime(2026, 11, 2, 10, 30, tzinfo=UTC)
+    assert plan.next_slot(wednesday_noon) == datetime(2026, 11, 5, 10, 30, tzinfo=UTC)
+    # Exactly on the slot: it is due now, and the next one is next week's.
+    monday = datetime(2026, 11, 9, 10, 30, tzinfo=UTC)
+    assert plan.last_slot(monday) == monday
+    assert plan.next_slot(monday) == datetime(2026, 11, 12, 10, 30, tzinfo=UTC)
+
+    off = pipeline_schedule.Schedule(enabled=False, days=(0, 3), at=clock_time(7, 30))
+    assert off.last_slot(monday) is None and off.next_slot(monday) is None
+
+
+def test_schedule_is_off_by_default(db, portfolio, fake):
+    fake["body"] = lambda ctx: {}
+    plan = pipeline_schedule.load(db, base.get_pipeline("fake"))
+    assert plan.enabled is False
+    assert (plan.days, plan.at) == ((0,), clock_time(7, 30))  # what the modal starts from
+
+    assert runner.run_due() == {}
+    assert _fake_runs(db) == []
+
+
+def test_owed_slot_runs_once_as_a_scheduled_run(db, portfolio, fake):
+    fake["body"] = lambda ctx: {"rows_imported": 0}
+    _store_schedule(db)
+
+    # Every day at 00:00 since 2000: like an app closed for weeks, then opened.
+    assert runner.run_due() == {"fake": "success"}
+    runs = _fake_runs(db)
+    assert [(run.trigger, run.status) for run in runs] == [("scheduled", "success")]
+
+    # The slot is paid: the next tick does nothing until a new one passes.
+    assert runner.run_due() == {}
+    assert len(_fake_runs(db)) == 1
+
+
+def test_a_run_after_the_slot_pays_it_even_if_manual(db, portfolio, fake):
+    fake["body"] = lambda ctx: {}
+    finished(db, runner.start_run("fake"))
+    _store_schedule(db)
+
+    assert runner.run_due() == {}
+    assert len(_fake_runs(db)) == 1
+
+
+def test_a_slot_before_the_schedule_was_saved_is_not_owed(db, portfolio, fake):
+    fake["body"] = lambda ctx: {}
+    _store_schedule(db, since=datetime.now(UTC))
+
+    assert runner.run_due() == {}
+    assert _fake_runs(db) == []
+
+
+def test_a_live_run_holds_the_tick(db, portfolio, fake):
+    fake["body"] = lambda ctx: {}
+    _store_schedule(db)
+    db.add(PipelineRun(pipeline="b3", trigger="manual", status="running", heartbeat_at=datetime.now(UTC), log=[]))
+    db.commit()
+
+    assert runner.run_due() == {}
+    assert _fake_runs(db) == []
+
+
+def test_schedule_endpoint_saves_and_the_payload_reports_it(client, db, fake):
+    fake["body"] = lambda ctx: {}
+    listed = client.get("/api/pipelines").json()["pipelines"]
+    assert next(item for item in listed if item["key"] == "fake")["schedule"] == {
+        "enabled": False,
+        "days": [0],
+        "time": "07:30",
+        "next_run_at": None,
+    }
+
+    saved = client.put("/api/pipelines/fake/schedule", json={"enabled": True, "days": [4, 0, 4], "time": "18:05"})
+    assert saved.status_code == 200
+    schedule = saved.json()["schedule"]
+    assert (schedule["enabled"], schedule["days"], schedule["time"]) == (True, [0, 4], "18:05")
+    assert schedule["next_run_at"] is not None
+
+    # Turning it off keeps the days and time for when it is turned back on.
+    off = client.put("/api/pipelines/fake/schedule", json={"enabled": False, "days": [0, 4], "time": "18:05"})
+    assert off.json()["schedule"] == {"enabled": False, "days": [0, 4], "time": "18:05", "next_run_at": None}
+
+    # Machinery, not a preference: the Settings payload never shows it.
+    assert not any(key.startswith("pipeline_schedule:") for key in client.get("/api/settings").json()["values"])
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"enabled": True, "days": [], "time": "07:30"},
+        {"enabled": True, "days": [7], "time": "07:30"},
+        {"enabled": True, "days": [0], "time": "7:30"},
+        {"enabled": True, "days": [0], "time": "24:00"},
+    ],
+)
+def test_schedule_endpoint_rejects_nonsense(client, fake, body):
+    assert client.put("/api/pipelines/fake/schedule", json=body).status_code == 400
+
+
+def test_schedule_endpoint_unknown_pipeline_is_a_404(client):
+    response = client.put("/api/pipelines/nope/schedule", json={"enabled": False, "days": [], "time": "07:30"})
+    assert response.status_code == 404

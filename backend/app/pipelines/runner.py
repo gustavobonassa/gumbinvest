@@ -16,13 +16,14 @@ telling the user to run it manually.
 """
 from __future__ import annotations
 
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import sleep
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -30,6 +31,7 @@ from app.db.models import AuditLog, PipelineRun
 from app.db.session import session_scope
 from app.importer.crypto import sniff_format
 from app.importer.service import ImportResult, ImportService
+from app.pipelines import schedule as pipeline_schedule
 from app.pipelines.base import (
     Pipeline,
     PipelineCancelled,
@@ -109,17 +111,36 @@ def start_run(key: str, *, trigger: str = "manual", options: dict | None = None)
     return run_id
 
 
-def run_scheduled() -> dict:
-    """The weekly slot: run every configured pipeline, one after the other.
+#: One tick at a time per process: the desktop scheduler may fire the next
+#: minute's tick while this one is still driving a browser.
+_TICK_LOCK = threading.Lock()
+
+
+def run_due(now: datetime | None = None) -> dict:
+    """The scheduler's per-minute tick: run every pipeline that is owed a slot.
+
+    See ``app.pipelines.schedule`` for what "owed" means — in short, a slot
+    passed and no run started since, which is also how a slot missed while
+    the desktop app was closed gets made up on the first tick after it opens.
 
     Sequential on purpose — two browser sessions fighting for the same 2FA
-    inbox would be worse than a few extra minutes. Skips (rather than fails)
-    pipelines that are unconfigured or already running, so scheduling this
-    unconditionally costs nothing on an instance that never set it up.
+    inbox would be worse than a few extra minutes — so a tick that finds any
+    run live does nothing; the owed slot is still owed on the next one.
+    Returns only what it did (``{key: final status}``), empty on the
+    overwhelmingly common nothing-to-do tick, so callers can skip auditing.
     """
+    if not _TICK_LOCK.acquire(blocking=False):
+        return {}
+    try:
+        return _run_due(now)
+    finally:
+        _TICK_LOCK.release()
+
+
+def _run_due(now: datetime | None) -> dict:
     # The Celery worker never runs the FastAPI lifespan, so credentials saved
     # through the UI are not on its settings yet. Without this every pipeline
-    # reads as unconfigured on the weekly slot in Docker.
+    # reads as unconfigured on the tick in Docker.
     with session_scope() as db:
         apply_stored_secrets(db)
 
@@ -127,13 +148,33 @@ def run_scheduled() -> dict:
     for pipeline in all_pipelines():
         key = pipeline.spec.key
         if not pipeline.is_configured():
-            outcome[key] = "not configured"
             continue
+        moment = now or _now()
+        with session_scope() as db:
+            _fail_stale(db)
+            if db.scalar(select(PipelineRun.id).where(PipelineRun.status.in_(ACTIVE_STATUSES)).limit(1)):
+                return outcome
+            plan = pipeline_schedule.load(db, pipeline)
+            if not plan.enabled:
+                continue
+            if plan.since is None:
+                # An enabled schedule that never recorded when it started
+                # counting (written by hand, say): count from here.
+                pipeline_schedule.anchor(db, pipeline, moment)
+                continue
+            slot = plan.last_slot(moment)
+            if slot is None or slot < plan.since:
+                continue
+            latest = _aware(
+                db.scalar(select(func.max(PipelineRun.started_at)).where(PipelineRun.pipeline == key))
+            )
+            if latest is not None and latest >= slot:
+                continue
         try:
             run_id = _claim(key, "scheduled")
         except PipelineBusy:
-            outcome[key] = "already running"
             continue
+        logger.info("pipeline %s: running the slot of %s", key, slot.isoformat())
         _execute(key, run_id)
         with session_scope() as db:
             run = db.get(PipelineRun, run_id)
@@ -433,6 +474,7 @@ def run_payload(run: PipelineRun | None) -> dict | None:
 def pipelines_payload(db) -> list[dict]:
     """Every registered pipeline with its credentials' state and latest runs."""
     _fail_stale(db)
+    now = _now()
     items: list[dict] = []
     for pipeline in all_pipelines():
         spec = pipeline.spec
@@ -453,7 +495,7 @@ def pipelines_payload(db) -> list[dict]:
                 "key": spec.key,
                 "name": spec.name,
                 "description": spec.description,
-                "schedule": spec.schedule,
+                "schedule": pipeline_schedule.payload(pipeline_schedule.load(db, pipeline), now),
                 "supports_preview": spec.supports_preview,
                 "configured": pipeline.is_configured(),
                 "credentials": [

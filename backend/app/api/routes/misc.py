@@ -171,8 +171,9 @@ def get_settings_endpoint(db: DbSession) -> dict:
 
     for key in (*CLOUD_INTERNAL_KEYS, *BELL_INTERNAL_KEYS):
         merged.pop(key, None)
-    # Collectors' own bookkeeping (app/pipelines), e.g. the zone Binance dates in.
-    for key in [key for key in merged if key.startswith("pipeline_state:")]:
+    # Collectors' own bookkeeping (app/pipelines), e.g. the zone Binance dates
+    # in, and their schedules — which have their own endpoint.
+    for key in [key for key in merged if key.startswith(("pipeline_state:", "pipeline_schedule:"))]:
         merged.pop(key, None)
     return {
         "values": merged,

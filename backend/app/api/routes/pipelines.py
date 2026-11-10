@@ -7,12 +7,15 @@ writing the 2FA code into the row the parked worker thread is polling.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Body, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
 from app.db.models import AuditLog, PipelineRun
+from app.pipelines import schedule as pipeline_schedule
 from app.pipelines.base import PipelineError, get_pipeline
 from app.pipelines.runner import (
     ACTIVE_STATUSES,
@@ -91,6 +94,42 @@ def trigger(key: str, db: DbSession, payload: RunOptions | None = Body(default=N
     db.add(AuditLog(action=f"pipeline.{key}.start", detail={"run_id": str(run_id), **options}))
     db.commit()
     return {"run_id": run_id}
+
+
+class SchedulePayload(BaseModel):
+    #: Whether it runs on its own at all; days and time are kept either way.
+    enabled: bool
+    #: Weekdays, 0 = Monday … 6 = Sunday. At least one when enabled.
+    days: list[int] = Field(default_factory=list, max_length=7)
+    #: Wall-clock "HH:MM" (24h) in the app timezone.
+    time: str
+
+
+@router.put("/{key}/schedule", response_model=None, summary="Choose when a collector runs on its own")
+def set_schedule(key: str, payload: SchedulePayload, db: DbSession) -> dict:
+    try:
+        pipeline = get_pipeline(key)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="automação desconhecida") from exc
+    now = datetime.now(UTC)
+    try:
+        saved = pipeline_schedule.save(
+            db, pipeline, enabled=payload.enabled, days=payload.days, at=payload.time, now=now
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="dias ou horário inválidos") from exc
+    db.add(
+        AuditLog(
+            action=f"pipeline.{key}.schedule",
+            detail={
+                "enabled": str(saved.enabled),
+                "days": [str(day) for day in saved.days],
+                "time": payload.time,
+            },
+        )
+    )
+    db.commit()
+    return {"schedule": pipeline_schedule.payload(saved, now)}
 
 
 class InputPayload(BaseModel):

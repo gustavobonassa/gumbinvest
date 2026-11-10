@@ -68,7 +68,6 @@ class B3Pipeline(Pipeline):
             ("b3_cpf", "CPF"),
             ("b3_password", "Senha da Área do Investidor"),
         ),
-        schedule="Semanal, segunda-feira de manhã",
     )
 
     def run(self, ctx) -> dict:

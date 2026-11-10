@@ -800,7 +800,7 @@ so `market/service.py` decides the `.SA` suffix from the asset's *currency*.
 | `backfill_history_task` | on demand | Download full daily closes |
 | `sync_indices_task` | daily 09:20 | CDI/Selic/IPCA from Banco Central |
 | `sync_treasury_task` | daily 11:15 | Tesouro Direto prices from Tesouro Transparente |
-| `run_pipelines_task` | Mondays 07:30 | The automated collectors (§9c) |
+| `run_pipelines_task` | every minute | Runs any collector owed a slot of its user-chosen schedule (§9c) |
 
 Tasks own their session via `session_scope()` and write to `audit_logs`.
 
@@ -921,6 +921,17 @@ newest-first; when the site is redesigned the failing step dumps a screenshot
 and the page HTML into `pipelines-debug/`, which turns "the robot broke" into
 a diff against the new markup.
 
+Each pipeline's schedule is the user's — off until turned on, since a
+collection signs into a broker unattended; then weekdays + a time, stored in
+`app_settings` as `pipeline_schedule:<key>` — and it is not a cron entry: a per-minute tick (`runner.run_due`, from Celery beat or
+the desktop scheduler) asks whether a slot is *owed* — passed, with no run of
+that pipeline started since. That single rule makes the desktop app, which
+only schedules while it is open, catch up on the first tick after launch, and
+makes a missed slot run once however many were missed. A `since` instant,
+reset when the schedule is saved or a pipeline is first seen configured,
+keeps the rule from firing for a slot that predates the user's decision
+(turning the schedule on included).
+
 React 18 + TypeScript + Vite, Tailwind for styling, TanStack Query for server
 state, Recharts for charts, React Router for navigation. No global state library:
 everything on screen is server state, and Query already models that.
@@ -1013,7 +1024,7 @@ they apply to every plotted form:
 **A new automated source** (another broker's export, a data scraper) → one
 module in `app/pipelines/` with a `PipelineSpec` and a `run(ctx)`, plus its
 credential keys in `services/secrets.py` and `core/config.py`. The runner,
-the API, the weekly slot and the Automações tab pick it up from the registry.
+the API, the schedule tick and the Automações tab pick it up from the registry.
 
 **A new broker wording** → one entry in `_RULES` in `importer/classifier.py`.
 Existing transactions pick up the fix on the next import; already-imported rows can

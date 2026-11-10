@@ -36,8 +36,11 @@ class PipelineSpec:
     #: ``(secret_key, label)`` pairs — each becomes a write-only credential
     #: field on the Automações tab. Keys must exist in ``secrets.SECRET_KEYS``.
     credentials: tuple[tuple[str, str], ...] = ()
-    #: Human sentence about the schedule ("Semanal, segunda de manhã").
-    schedule: str = ""
+    #: What the schedule modal starts from (``app.pipelines.schedule``) —
+    #: the schedule itself is off until the user turns it on. Weekdays,
+    #: 0 = Monday, and a wall-clock ``"HH:MM"`` in the app timezone.
+    default_days: tuple[int, ...] = (0,)
+    default_time: str = "07:30"
     #: Whether ``run`` honours ``options["preview"]``: collect everything, save
     #: nothing, and report what an import would add. The UI shows "Simular".
     supports_preview: bool = False

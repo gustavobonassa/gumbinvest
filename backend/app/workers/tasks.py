@@ -221,15 +221,17 @@ def sync_universe_task() -> dict:
 
 @celery_app.task(name="app.workers.tasks.run_pipelines_task")
 def run_pipelines_task() -> dict:
-    """The weekly collection: every configured pipeline, one after the other.
+    """The collectors' per-minute tick: run whichever pipeline is owed a slot.
 
-    ``run_scheduled`` manages its own sessions — a browser automation must
-    never hold a transaction across minutes of page waits — and each run
-    audits and notifies itself, so this wrapper only records the roll-up.
+    ``run_due`` manages its own sessions — a browser automation must never
+    hold a transaction across minutes of page waits — and each run audits and
+    notifies itself, so this wrapper only records the roll-up, and only when
+    the tick actually ran something.
     """
-    from app.pipelines.runner import run_scheduled
+    from app.pipelines.runner import run_due
 
-    result = run_scheduled()
-    with session_scope() as db:
-        db.add(AuditLog(action="pipeline.scheduled", detail={k: str(v) for k, v in result.items()}))
+    result = run_due()
+    if result:
+        with session_scope() as db:
+            db.add(AuditLog(action="pipeline.scheduled", detail={k: str(v) for k, v in result.items()}))
     return result

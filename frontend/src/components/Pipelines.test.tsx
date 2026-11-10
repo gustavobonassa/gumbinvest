@@ -17,7 +17,7 @@ const pipeline = (
   key,
   name,
   description: `${name} description`,
-  schedule: "Semanal",
+  schedule: { enabled: false, days: [0], time: "07:30", next_run_at: null },
   supports_preview: supportsPreview,
   configured,
   credentials: [{ key: `${key}_secret`, label: `${name} secret`, configured }],
@@ -176,5 +176,66 @@ describe("Automações run log", () => {
     expect(text).toContain("B3 · execução #27");
     expect(text).toContain("[erro] Erro inesperado");
     expect(await screen.findByText("Registro copiado.")).toBeInTheDocument();
+  });
+});
+
+describe("Automações schedule", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "pipelines").mockResolvedValue({ pipelines: [pipeline("b3", "B3", true)] });
+    vi.spyOn(api, "pipelineRuns").mockResolvedValue({
+      runs: [],
+      total: 0,
+      page: 1,
+      pages: 1,
+      page_size: 10,
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("is off by default, and the modal turns it on with the chosen days and time", async () => {
+    const save = vi.spyOn(api, "savePipelineSchedule").mockResolvedValue({
+      schedule: {
+        enabled: true,
+        days: [0, 2],
+        time: "18:15",
+        next_run_at: "2026-11-09T21:15:00Z",
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+
+    expect(await screen.findByText("Execução automática desativada")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Alterar agendamento de B3" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Off: the days and time are kept but cannot be edited.
+    const wednesday = within(dialog).getByRole("button", { name: "Qua" });
+    expect(wednesday).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("checkbox", { name: /Executar automaticamente/ }));
+    await user.click(wednesday);
+    const time = within(dialog).getByLabelText("Horário");
+    await user.clear(time);
+    await user.type(time, "18:15");
+    await user.click(within(dialog).getByRole("button", { name: "Salvar" }));
+
+    expect(save).toHaveBeenCalledWith("b3", { enabled: true, days: [0, 2], time: "18:15" });
+    expect(await screen.findByText("Agendamento salvo.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("will not save an enabled schedule with no weekday", async () => {
+    const save = vi.spyOn(api, "savePipelineSchedule");
+    const user = userEvent.setup();
+    renderAt("/");
+
+    await user.click(await screen.findByRole("button", { name: "Alterar agendamento de B3" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("checkbox", { name: /Executar automaticamente/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Seg" }));
+
+    expect(within(dialog).getByText("Escolha pelo menos um dia.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(save).not.toHaveBeenCalled();
   });
 });

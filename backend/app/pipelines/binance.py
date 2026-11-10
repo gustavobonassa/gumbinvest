@@ -263,7 +263,6 @@ class BinancePipeline(Pipeline):
             ("binance_api_key", "API Key"),
             ("binance_api_secret", "Secret Key"),
         ),
-        schedule="Semanal, segunda-feira de manhã",
         supports_preview=True,
     )
 

@@ -12,6 +12,7 @@ separate worker process never could.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -191,19 +192,23 @@ def _sync_universe() -> dict:
 
 
 def _run_pipelines() -> None:
-    """The weekly collectors (B3 extrato…), mirroring the beat's Monday slot.
+    """The collectors' per-minute tick (B3 extrato…), mirroring the beat's.
 
-    Like ``_sync_universe``, it owns its sessions: a run drives a browser for
-    minutes and parks waiting for a 2FA code, and holding SQLite's writer lock
-    through that would freeze the UI. Each run audits and notifies itself;
-    only the roll-up is recorded here.
+    Each pipeline has its own weekdays and time; ``run_due`` decides whether
+    any slot is owed — including one missed while the app was closed, which
+    is why this also fires shortly after boot. Like ``_sync_universe``, it
+    owns its sessions: a run drives a browser for minutes and parks waiting
+    for a 2FA code, and holding SQLite's writer lock through that would
+    freeze the UI. Each run audits and notifies itself; only a tick that did
+    something leaves a roll-up, or the audit log would grow by the minute.
     """
-    from app.pipelines.runner import run_scheduled
+    from app.pipelines.runner import run_due
 
     try:
-        result = run_scheduled()
-        with session_scope() as db:
-            db.add(AuditLog(action="pipeline.scheduled", detail={k: str(v) for k, v in result.items()}))
+        result = run_due()
+        if result:
+            with session_scope() as db:
+                db.add(AuditLog(action="pipeline.scheduled", detail={k: str(v) for k, v in result.items()}))
     except Exception:  # noqa: BLE001 — one failed job must not kill the schedule
         logger.exception("scheduled job pipeline.scheduled failed")
 
@@ -217,6 +222,10 @@ def _hhmm(value: str, fallback: tuple[int, int]) -> tuple[int, int]:
 
 
 def build_scheduler() -> BackgroundScheduler:
+    # Two jobs tick every minute; at INFO each would write "Running job…" and
+    # "executed successfully" to the log file around the clock. Failures are
+    # logged at ERROR and still come through.
+    logging.getLogger("apscheduler.executors.default").setLevel(logging.WARNING)
     scheduler = BackgroundScheduler(timezone=settings.timezone, job_defaults=_JOB_DEFAULTS)
 
     def cron(hour: int, minute: int) -> CronTrigger:
@@ -281,12 +290,18 @@ def build_scheduler() -> BackgroundScheduler:
     # Mirrors the beat schedule's 05:40 slot; no-ops unless the user enabled it.
     scheduler.add_job(_sync_universe, cron(5, 40), id="sync-universe")
 
-    # Mirrors the beat schedule's Monday 07:30 slot; no-ops for pipelines
-    # whose credentials were never filled in.
+    # Mirrors the beat's per-minute pipeline tick. First fire soon after boot,
+    # so a slot missed while the app was closed runs right away — after the
+    # startup auto-import, and late enough not to slow the window appearing.
+    # Two instances allowed: the tick running a collection blocks for
+    # minutes, and the next one should return at once (run_due sees the live
+    # run) instead of APScheduler logging a skipped instance every minute.
     scheduler.add_job(
         _run_pipelines,
-        CronTrigger(day_of_week="mon", hour=7, minute=30, timezone=settings.timezone),
+        IntervalTrigger(minutes=1),
+        next_run_time=datetime.now() + timedelta(seconds=45),
         id="run-pipelines",
+        max_instances=2,
     )
 
     if settings.backup_time:

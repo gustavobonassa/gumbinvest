@@ -89,14 +89,14 @@ And the whole interface is responsive — usable from the phone on your couch
 - Reads the **Binance spot exports** (transaction, trade and order history). A
   trade on an exchange is a swap, so both sides are booked: buying Ether with
   Tether spends the Tether.
-- **Coleta automática (Automações)** — a weekly pipeline signs into the B3
+- **Coleta automática (Automações)** — a scheduled pipeline signs into the B3
   Área do Investidor with your CPF, exports the movimentação and imports it,
   no manual download involved. If B3 asks for a verification code, the app
   asks you for it on screen (Importar → Automações); everything collected
   goes through the same idempotent importer as a manual upload.
 - **Binance pela API** — paste a *read-only* API key in Importar → Automações
   and the app collects spot trades, Convert, crypto deposits and withdrawals,
-  card/PIX purchases, Simple Earn and distributions on the same weekly slot,
+  card/PIX purchases, Simple Earn and distributions on its own schedule,
   then checks every coin against the balances Binance reports and lists any
   that disagree. The first run brings the whole history; an export you
   uploaded before (or after) is reconciled with it, never booked twice.
@@ -225,9 +225,11 @@ And the whole interface is responsive — usable from the phone on your couch
   the rest of your preferences and applied before the first paint, so there is
   no flash on load. In the desktop app the native window buttons follow it too.
 - **Automações** — collectors (B3 through the browser and Binance through its
-  API today, other brokers and data sources as they are added) that run
-  weekly, keep their whole run history, and can be triggered or cancelled from
-  Importar → Automações.
+  API today, other brokers and data sources as they are added) that, once you
+  turn on their schedule, run on the weekdays and time you pick for each,
+  keep their whole run history, and can be triggered or cancelled from
+  Importar → Automações. A slot missed because the computer or the desktop
+  app was off runs as soon as it is back.
 
 ---
 

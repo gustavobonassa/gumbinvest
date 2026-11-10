@@ -49,7 +49,7 @@ export function SectionTitle({
   action,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   action?: ReactNode;
 }) {
   return (

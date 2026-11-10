@@ -11,6 +11,9 @@
  * and whoever has this tab open should get the modal without having started
  * anything.
  *
+ * The schedule line under each name opens the schedule modal ("Alterar"):
+ * off by default, otherwise the weekdays and time it runs on its own.
+ *
  * Every run keeps a timestamped log ("Ver registro", on the card and on each
  * row of the history): the narration while it works, and — when it dies on
  * something unexpected — the error and where it happened, which is what the
@@ -24,7 +27,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { Copy, FlaskConical, KeyRound, Loader2, Play, ScrollText, Workflow, X } from "lucide-react";
+import {
+  CalendarClock,
+  Copy,
+  FlaskConical,
+  KeyRound,
+  Loader2,
+  Play,
+  ScrollText,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, type PipelineInfo, type PipelineRun } from "@/lib/api";
@@ -32,6 +45,8 @@ import { Badge, Card, EmptyState, Modal, Pager, SectionTitle, Skeleton } from "@
 import { useToast } from "@/components/Toast";
 import SecretField from "@/components/SecretField";
 import ServiceLogo from "@/components/ServiceLogo";
+import PipelineScheduleModal from "@/components/PipelineSchedule";
+import { scheduleLabel } from "@/lib/schedule";
 
 const RUN_STATE: Record<
   PipelineRun["status"],
@@ -320,6 +335,7 @@ function PipelineCard({
   const queryClient = useQueryClient();
   const toast = useToast();
   const [fullHistory, setFullHistory] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(false);
   const run = pipeline.active_run;
   const waiting = run?.status === "waiting_input";
 
@@ -354,7 +370,19 @@ function PipelineCard({
     <Card className="p-5">
       <SectionTitle
         title={pipeline.name}
-        subtitle={pipeline.schedule}
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span>{scheduleLabel(pipeline.schedule)}</span>
+            <button
+              type="button"
+              onClick={() => setEditingSchedule(true)}
+              className="inline-flex items-center gap-1 text-accent hover:underline"
+              aria-label={`Alterar agendamento de ${pipeline.name}`}
+            >
+              <CalendarClock size={14} aria-hidden /> Alterar
+            </button>
+          </span>
+        }
         action={
           run ? (
             <Badge tone={RUN_STATE[run.status].tone}>{RUN_STATE[run.status].label}</Badge>
@@ -455,6 +483,10 @@ function PipelineCard({
           <p className="text-sm text-negative">{pipeline.last_run.error}</p>
           <LogLink run={pipeline.last_run} onShowLog={onShowLog} />
         </div>
+      ) : null}
+
+      {editingSchedule ? (
+        <PipelineScheduleModal pipeline={pipeline} onClose={() => setEditingSchedule(false)} />
       ) : null}
     </Card>
   );

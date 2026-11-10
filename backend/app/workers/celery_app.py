@@ -131,14 +131,17 @@ schedule["ai-wallet-snapshot"] = {
     "schedule": crontab(hour=23, minute=30),
 }
 
-# The automated collectors (B3 extrato, later other brokers). Monday morning,
-# after the weekend's corporate events have settled into the broker's records
-# but early enough that a 2FA prompt lands while the user is starting the day.
-# The task no-ops for every pipeline whose credentials were never filled in,
-# so scheduling it unconditionally costs nothing.
+# The automated collectors (B3 extrato, Binance). Each has its own weekdays
+# and time, chosen on the Automações screen (Monday 07:30 by default), so the
+# beat only ticks every minute and ``run_due`` decides whether a slot is owed
+# — which also makes up a slot missed while the worker was down. The tick
+# no-ops for every pipeline whose credentials were never filled in, so
+# scheduling it unconditionally costs nothing. Expiring: a tick queued behind
+# a long collection is pointless by the time a worker frees up.
 schedule["run-pipelines"] = {
     "task": "app.workers.tasks.run_pipelines_task",
-    "schedule": crontab(hour=7, minute=30, day_of_week=1),
+    "schedule": crontab(),
+    "options": {"expires": 50},
 }
 
 # The asset universe, from B3 and CVM bulk files. Early: the CVM republishes

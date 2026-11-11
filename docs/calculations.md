@@ -2,7 +2,7 @@
 
 The replay engine, multi-currency conversion, corporate actions, and how fixed income and Tesouro Direto are valued.
 
-*Part of the [GumbInvest](../README.md) documentation.*
+*Part of the [GumbInvest](../README.en.md) documentation.*
 
 
 ---

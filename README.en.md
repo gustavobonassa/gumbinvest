@@ -1,0 +1,512 @@
+# GumbInvest
+
+[🇧🇷 Português](README.md) · 🇺🇸 English
+
+**Self-hosted portfolio manager for Brazilian investors.** Import the raw
+exports your brokers already give you — the B3 "Movimentação" CSV, Avenue/Nomad
+PDF statements, Binance exports — and GumbInvest reconstructs every position
+with weighted-average cost (*preço médio*), values it with live quotes, accrues
+your fixed income from the official CDI/IPCA series, and serves everything
+through a dark, modern dashboard. With an optional AI analyst on top.
+
+Your data never leaves your machine: it runs entirely on your own computer with
+Docker, or as a plain Windows desktop app with no infrastructure at all.
+
+⬇️⬇️ [**Download for Windows or macOS**](https://github.com/gustavobonassa/gumbinvest/releases/latest) ⬇️⬇️
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+```bash
+cp .env.example .env
+docker compose up -d
+# open http://localhost:3000
+```
+
+Drop your exports into `./data/` before the first start — `data/b3/` for the B3
+CSV, `data/avenue/` and `data/nomad/` for statement PDFs, `data/binance/` for
+exchange exports — and everything is imported automatically. Filenames don't
+matter: each file's type is detected from its contents. You can also upload
+files later from the **Importar** page.
+
+> All screenshots in this README show a **synthetic demo portfolio** — real
+> tickers and live market prices, fictional quantities and dates.
+
+---
+
+## Table of contents
+
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Quick start](#quick-start)
+  - [Desktop app (Windows, no Docker)](#desktop-app-windows-no-docker)
+- [Documentation](#documentation)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Tests](#tests)
+- [Privacy](#privacy)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Screenshots
+
+| | |
+|---|---|
+| **Proventos** — income by month, calendar, matrix and top payers | **Rentabilidade** — cumulative return vs. CDI and Ibovespa |
+| ![Proventos](docs/screenshots/dividends.png) | ![Rentabilidade](docs/screenshots/reports.png) |
+| **Ativos** — every position, sortable, by asset class | **Transações** — the full ledger with filters and CSV export |
+| ![Ativos](docs/screenshots/assets.png) | ![Transações](docs/screenshots/transactions.png) |
+
+**Analista IA** — an AI chat that sees your portfolio and can search the web,
+docked beside the page:
+
+![Analista IA](docs/screenshots/ai-analyst.png)
+
+And the whole interface is responsive — usable from the phone on your couch
+(the desktop app even shows a QR code to open it on your phone over the LAN):
+
+| Dashboard | Proventos |
+|---|---|
+| ![Mobile dashboard](docs/screenshots/mobile-dashboard.png) | ![Mobile proventos](docs/screenshots/mobile-dividends.png) |
+
+---
+
+## Features
+
+**Import**
+- Reads the B3 "Movimentação" CSV as-is: pt-BR numbers (`R$ 1.234,56`), `dd/mm/yyyy`
+  dates, `-` for "not applicable", UTF-8/BOM/latin-1 encodings, `,` or `;` delimiters.
+- Understands 40+ movement types — trades, dividends, JCP, yields, interest,
+  amortisations, splits, reverse splits, bonuses, subscriptions, mergers, fractions,
+  custody transfers, fixed-income maturities, fees and taxes.
+- **Idempotent**: re-uploading the same file adds nothing. Monthly files merge only
+  what is new, and genuinely repeated movements (same asset, day, price and quantity)
+  are still kept.
+- Unknown movements are imported for the audit trail, flagged in the import log,
+  and never silently applied to a position.
+- Reads the monthly **PDF statements** from Avenue and Nomad — all the layouts
+  both brokers have used since 2020 — each one validated against its own
+  printed totals, with a **coverage map** of which months you have and which
+  positions no longer agree with the broker's own figures.
+- Reads the **Binance spot exports** (transaction, trade and order history). A
+  trade on an exchange is a swap, so both sides are booked: buying Ether with
+  Tether spends the Tether.
+- **Coleta automática (Automações)** — a scheduled pipeline signs into the B3
+  Área do Investidor with your CPF, exports the movimentação and imports it,
+  no manual download involved. If B3 asks for a verification code, the app
+  asks you for it on screen (Importar → Automações); everything collected
+  goes through the same idempotent importer as a manual upload.
+- **Binance pela API** — paste a *read-only* API key in Importar → Automações
+  and the app collects spot trades, Convert, crypto deposits and withdrawals,
+  card/PIX purchases, Simple Earn and distributions on its own schedule,
+  then checks every coin against the balances Binance reports and lists any
+  that disagree. The first run brings the whole history; an export you
+  uploaded before (or after) is reconciled with it, never booked twice.
+
+**Portfolio**
+- Weighted-average cost (*preço médio*), the Brazilian convention.
+- **Multi-currency**: US holdings are kept in dollars and shown in dollars on
+  their own page, converted to reais wherever a single total is needed — cost at
+  each purchase's own PTAX rate, market value at today's.
+- Realised and unrealised results, dividend income by type, returned capital,
+  cost basis, allocation, day change, cash flow.
+- Correct handling of partial sales, multiple purchases, splits/reverse splits,
+  bonus shares, subscriptions, mergers, return of capital and broker transfers.
+- Data-quality warnings whenever the export itself is inconsistent.
+
+**Dashboard & analysis**
+- Portfolio value vs. invested capital over time — with press-and-drag to
+  measure any stretch of the series — allocation donut (by asset, class,
+  broker or currency), monthly income, contributions and returns, result per
+  asset, largest positions, day movers.
+- **Rentabilidade**: cumulative return rebased to zero, compared against CDI
+  and Ibovespa, by class or for the whole portfolio; monthly consistency,
+  best/worst months, performance ranking per asset.
+- Asset pages with price history, average-price reference line, fundamentals,
+  dividend history per share, announced dividends, and the complete movement
+  ledger.
+- Transactions with search, filters, sorting, pagination and CSV export.
+- Global search (`Ctrl/⌘ + K`) over tickers, company names, movements and dates.
+
+**Proventos**
+- A page of its own for income: dividends, JCP, fund yields and fixed-income
+  interest, grouped by **month, quarter or year** and stacked by payment type
+  or asset class.
+- A **dividend calendar**: what landed on each day, plus payments already
+  announced on the B3 but not yet credited, estimated against your current
+  position.
+- Ranked payers, **yield on cost** per asset, and a month × year matrix of
+  every payment since the first one, shaded by amount.
+
+**IRPF**
+- A page per calendar year with the blocks the declaration asks for: **Bens e
+  Direitos** at acquisition cost on 31/12 with the previous year beside it,
+  grouped by grupo/código and with the discriminação written out to copy;
+  **rendimentos isentos**, **tributação exclusiva** and income from abroad kept
+  apart, each named by payer and CNPJ; and disposals per month against the
+  exemption each class actually answers to.
+- What it *cannot* answer comes first, above every number it would otherwise
+  corrupt: a payer with no CNPJ on file, units whose cost is unknown, a
+  maturity the statement recorded without its value, a balance that is a CDI
+  projection rather than a bank statement. Nothing is filled with a plausible
+  figure.
+- A worksheet to transcribe, never a filing.
+
+**Impostos (monthly tax on sales)**
+- The month-by-month apuração behind the DARF (code 6015): shares, units,
+  ETFs and BDRs at 15 % with the R$ 20.000 monthly exemption on share sales,
+  FIIs at 20 %, and day trade at 20 % from the result you enter off the
+  broker's report — the B3 export does not mark day trades, so same-day
+  buy-and-sell pairs are flagged instead of guessed.
+- Losses carry forward in their own pools (common operations, FIIs, day
+  trade), the 0,005 % IRRF is estimated and deducted within the year, a DARF
+  under R$ 10 rolls into the next month, and every month shows its due date
+  (last business day of the following month, bank holidays included). Mark a
+  DARF as paid and it stops counting as owed.
+- Assets abroad (yearly under Lei 14.754/2023), crypto and fixed income are
+  listed apart, never folded into the monthly figure. A worksheet to check,
+  like the IRPF page — and the AI analyst reads it too.
+
+**Fixed income & Tesouro Direto**
+- CDB/LCI/LCA/RDB positions are **accrued from the index**, not frozen at cost:
+  Banco Central's CDI, Selic and IPCA series (free, no key) drive the valuation.
+- Per-paper terms: % of CDI/Selic, CDI + spread, prefixed, or IPCA + spread; a
+  redeemed paper's cash flows are solved backwards to reveal the rate it
+  actually paid.
+- Tesouro Direto is marked to market from the Treasury's own daily price file,
+  including the yield each purchase was contracted at.
+- Cash accounts (conta remunerada) with deposits/withdrawals accrued the same way.
+
+**AI (optional, bring your own key — or your Claude subscription)**
+- **Analista IA** — chat about your portfolio or a single asset. The model
+  queries your data through read-only tools — positions, the transaction
+  ledger, income received, allocation, monthly returns and announced
+  dividends — so it can answer "how much JCP did ITSA4 pay me in 2024?" with
+  the same figures the screens show, and it can search the web. Streamed
+  answers with tables and lists, conversations saved to their own page. The
+  tools work with every provider, including the Claude subscription (served to
+  Claude Code over a local, per-answer MCP endpoint).
+- **Carteira IA** — virtual wallets managed end-to-end by an AI model with
+  R$ 10.000 virtuais per category: it screens candidates, justifies each pick,
+  and reviews the wallet over time. Nothing touches your real portfolio.
+- Works with **Anthropic (Claude), OpenAI (GPT), Google (Gemini), xAI (Grok)
+  and Groq** — pick provider and model per feature in Configurações.
+- **Plano Anthropic** — already pay for Claude Pro/Max? Connect the account in
+  one click and run every AI feature on your subscription instead of a metered
+  API key. Desktop only, and requires [Claude Code](https://claude.com/download)
+  installed on the same machine (it holds the login); usage counts against your
+  plan's limits, not API credits.
+
+**Screener & tools**
+- **Universo de ativos** — screen *every* listed B3 paper, not just what you
+  hold, on locally computed fundamentals; see where your holdings sit inside
+  the whole market ("como me comparo", by percentile).
+- **Comparador** — side-by-side indexed price performance and fundamentals for
+  any tickers, held or not; the comparison lives in the URL, so it's shareable.
+- **Carteiras públicas** — the 13F portfolios of famous investors, straight
+  from SEC EDGAR.
+- **Calculadora de juros compostos** — seeded with your actual net worth and
+  average monthly contribution, so the first projection is "my portfolio, if I
+  keep going".
+
+**Operations**
+- Live quotes with pluggable providers; automatic refresh in the background.
+- Historical daily closes so the value chart is real market value, not cost.
+- Nightly snapshots and weekly automatic backups with rotation, plus a
+  one-file `.gumbinvest` export that moves a whole history between installs.
+- Cloud backup to your own Google Drive or Dropbox — weekly and on demand,
+  optionally encrypted with a passphrase — with restore from the cloud on a
+  fresh install (Configurações → Backup).
+- Watchlist, asset notes, manual prices, audit log.
+- **Modo privacidade** — the eye in the top bar hides every amount and quantity
+  behind `••••`, on every page and in the chart axes, for the person standing
+  behind you. Percentages, dates, tickers and market quotes stay, so the screen
+  is still worth looking at. The choice is stored, so it survives a reload.
+- **Tema escuro ou claro** — Configurações → Geral. Dark is the default and the
+  design's home; light is its own set of steps (not an inversion), stored with
+  the rest of your preferences and applied before the first paint, so there is
+  no flash on load. In the desktop app the native window buttons follow it too.
+- **Automações** — collectors (B3 through the browser and Binance through its
+  API today, other brokers and data sources as they are added) that, once you
+  turn on their schedule, run on the weekdays and time you pick for each,
+  keep their whole run history, and can be triggered or cancelled from
+  Importar → Automações. A slot missed because the computer or the desktop
+  app was off runs as soon as it is back.
+
+---
+
+## Quick start
+
+Requirements: Docker and Docker Compose. Nothing else.
+
+```bash
+git clone https://github.com/gustavobonassa/gumbinvest.git && cd gumbinvest
+cp .env.example .env
+
+# optional: auto-import your history on first boot — one folder per source,
+# any filenames (the importer detects each file's type from its contents)
+cp /path/to/your-b3-export.csv   ./data/b3/       # B3 "Movimentação" CSV(s)
+cp /path/to/avenue-statements/*  ./data/avenue/   # Avenue statement PDFs
+cp /path/to/nomad-statements/*   ./data/nomad/    # Nomad statement PDFs
+cp /path/to/binance-exports/*    ./data/binance/  # Binance CSV exports
+
+docker compose up -d
+docker compose logs -f backend      # watch the import
+```
+
+| Service | URL |
+|---|---|
+| Dashboard | http://localhost:3000 |
+| API | http://localhost:8000/api |
+| API docs (Swagger) | http://localhost:8000/api/docs |
+| Postgres | `localhost:5433` |
+
+First run applies migrations, creates the default portfolio, downloads the
+USD/BRL rate history, and imports every CSV *and* statement PDF found under
+`AUTO_IMPORT_DIR` (`./data` by default, searched recursively). The per-source
+folders are just a convention to keep the archive tidy — files at the root work
+too, names are free-form, and re-running never duplicates anything.
+
+Then, from the UI: **Configurações → Baixar histórico de preços** to fetch daily
+closes (a few minutes), which turns the evolution chart into true market value.
+
+To stop: `docker compose down`. To wipe everything including the database:
+`docker compose down -v`.
+
+### Desktop app (Windows, no Docker)
+
+For users who just want to install and use it, there is a packaged Windows
+build: an Electron window (with a dark, app-styled title bar) wrapping the
+whole app running locally — SQLite instead of Postgres, an in-process
+scheduler instead of Celery, the dashboard served by the API itself. No
+Docker, no infrastructure. The window is just a viewer: the same local
+server stays reachable from any browser on the machine and from the phone.
+
+**[⬇ Download the latest installer](https://github.com/gustavobonassa/gumbinvest/releases/latest)**
+— `GumbInvest-Setup-<version>.exe` for Windows, `GumbInvest-<version>-arm64.dmg`
+for macOS (Apple Silicon). Each release is built automatically on GitHub's
+servers from the tagged source
+([`.github/workflows/release.yml`](.github/workflows/release.yml)).
+
+The builds are not notarized with Apple / signed for Windows, so the OS pushes
+back once on first run:
+
+- **Windows** — SmartScreen: "Mais informações" → "Executar assim mesmo".
+- **macOS** — after dragging the app to Applications, clear the download
+  quarantine once: `xattr -d com.apple.quarantine /Applications/GumbInvest.app`
+  (or System Settings → Privacy & Security → "Open Anyway" after the first
+  blocked attempt).
+
+The macOS build shares all the code but is newer and less battle-tested than
+the Windows one; its data lives in `~/Library/Application Support/GumbInvest`.
+
+Or build it yourself:
+
+```powershell
+# needs Node and Python 3.11+
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+# output: desktop-shell\out\GumbInvest-Setup-<version>.exe
+```
+
+What the installed app does:
+
+- Opens its own window with the title bar drawn in the app's own theme, dark or
+  light (Electron Window Controls Overlay); closing it quits the app. A tray icon
+  carries the secondary actions: **Abrir** (bring the window back), **Abrir
+  no celular** (QR code with the LAN address — allow GumbInvest on *private
+  networks* when the Windows Firewall asks, or the phone can't connect),
+  **Abrir pasta de dados**, **Sair**. `http://localhost:8873` also works in
+  any browser on the machine, if you prefer.
+- Data lives in `%LOCALAPPDATA%\GumbInvest` (database, backups, logs, and an
+  `auto-import` folder with the same `b3/`, `avenue/`, `nomad/`, `binance/`
+  layout as `./data` in Docker). Uninstalling keeps it; reinstalling finds it
+  again.
+- The scheduled jobs (quote refresh, FX/index/treasury sync, nightly snapshot
+  and backup) run inside the app — same schedule as the Celery beat.
+- **Updates itself**: Configurações → Geral shows the installed version and
+  checks GitHub Releases for a newer one (also once, quietly, ~15s after
+  launch). Downloading and restarting into the new version are two explicit
+  buttons — nothing is downloaded or installed behind your back, and your
+  data, keys and backups are untouched by the swap. Windows only: an unsigned
+  macOS app cannot self-update, so that build points you at the releases page
+  instead.
+- `DATABASE_URL` still wins if set, so a desktop install can be pointed at an
+  existing Postgres.
+
+Releasing a new version (for maintainers): bump `version` in
+`desktop-shell/package.json`, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+The workflow builds both installers and attaches them — plus `latest.yml`,
+which is the feed installed apps poll — to the GitHub Release. Apps already
+out there see it on their next check.
+
+Desktop and Docker are separate instances with separate data — there is no
+live sync between a desktop SQLite and a server Postgres. To move a history
+once: **Configurações → Backup e migração → Exportar banco de dados** on the
+source, then drag the `.gumbinvest` file onto the **Importar** page of the
+target. The file is a complete clone (every table, IDs preserved, gzipped
+JSON); importing replaces everything and is only accepted by an instance that
+has no transactions yet, so two histories can never be silently merged. Both
+installs must be on the same schema version.
+
+During development, run the exact desktop code path without packaging:
+
+```powershell
+cd backend
+pip install -r requirements-desktop.txt
+python -m app.desktop          # the server: SQLite + scheduler + SPA on :8873
+# optional, in another terminal — the Electron window around it:
+cd ..\desktop-shell && npm install && npm start
+```
+
+---
+
+## Documentation
+
+The details live in `docs/`, one guide per subject:
+
+| Guide | What it covers |
+|---|---|
+| [Importing your data](docs/importing.md) | The B3 CSV pipeline, Avenue/Nomad statement PDFs, Binance exports, de-duplication, known caveats of each source |
+| [How the numbers are computed](docs/calculations.md) | The replay engine and its rules (splits, `Atualização`, fractions…), multi-currency, corporate actions, fixed income and Tesouro Direto valuation |
+| [AI features, screener and tools](docs/features.md) | Analista IA, Carteira IA, the asset-universe screener, Comparador, public 13F portfolios, the calculator |
+| [Reference](docs/reference.md) | Market-data providers, environment variables, API endpoints, tests, backups |
+| [Architecture deep-dive](docs/ARCHITECTURE.md) | The *why* behind each design decision — read before changing the importer or engine |
+
+---
+
+## Architecture
+
+```
+                    ┌──────────────┐
+  browser ────────► │   frontend   │  React + TS + Tailwind + Recharts
+                    │    nginx     │  serves the SPA, proxies /api (same origin)
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐        ┌──────────────┐
+                    │   backend    │◄──────►│  PostgreSQL  │
+                    │   FastAPI    │        └──────────────┘
+                    └──────┬───────┘
+                           │                ┌──────────────┐
+                    ┌──────▼───────┐◄──────►│    Redis     │
+                    │ worker+beat  │        └──────────────┘
+                    │    Celery    │  quotes · history · snapshots · backups
+                    └──────────────┘
+```
+
+The desktop build swaps the edges and keeps the core: SQLite for Postgres, an
+in-process APScheduler for Celery, the SPA served by FastAPI itself — the same
+application code behind a single window (`backend/app/desktop/`,
+`desktop-shell/`).
+
+The invariants the whole codebase is built on: money is `Numeric`, never
+float; transactions are append-only and positions are always derived by
+replaying them; imports are idempotent; the classifier is a table, not logic;
+ambiguity is surfaced, never guessed at silently. The reasoning behind each
+one is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Development
+
+Run the stack with Docker and point the Vite dev server at it:
+
+```bash
+docker compose up -d db redis backend
+
+cd frontend
+npm install
+npm run dev          # http://localhost:5173, proxies /api to :8000
+```
+
+Backend without Docker:
+
+```bash
+cd backend
+python -m venv .venv && . .venv/Scripts/activate    # Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL=postgresql+psycopg2://gumbinvest:gumbinvest@localhost:5433/gumbinvest
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+After changing a model:
+
+```bash
+docker compose exec backend alembic revision --autogenerate -m "what changed"
+docker compose exec backend alembic upgrade head
+```
+
+Migrations must stay SQLite-compatible (the desktop build runs on SQLite) —
+`tests/test_migrations_sqlite.py` enforces this.
+
+**Releasing:** push a version tag and GitHub Actions builds the Windows
+installer and publishes it on the release page automatically:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+---
+
+## Tests
+
+```bash
+cd backend && python -m pytest -q      # SQLite, no infrastructure needed
+cd frontend && npm run check          # typecheck, ESLint, Prettier check, Vitest
+```
+
+Every push and pull request runs both through GitHub Actions
+(`.github/workflows/ci.yml`) before anything reaches a release tag.
+
+The suite covers the CSV dialect, every movement label, the full calculation
+rule set, de-duplication, statement and crypto reconciliation, the universe
+ingest and the HTTP layer. Details — including how parsers are validated
+against the documents' own printed totals — in
+[docs/reference.md](docs/reference.md#tests).
+
+---
+
+## Privacy
+
+- **Everything is local.** Your transactions, statements and balances live in
+  your own Postgres/SQLite. There is no telemetry, no account, no cloud.
+- **Outbound calls are limited to public market data**: quote providers
+  (Yahoo/brapi), Banco Central (PTAX, CDI/Selic/IPCA), Tesouro Transparente,
+  B3/CVM public files and SEC EDGAR. None of them receive your portfolio.
+- **AI features are opt-in** and only work with your own API key. When you use
+  them, the relevant portfolio context is sent to the provider *you* configured
+  — and nowhere else. Keys are stored in the local database and stripped from
+  every export and backup.
+- If you fork or contribute: `data/`, `backups/` and `.env` are gitignored for
+  a reason — never commit real financial history, and use synthetic fixtures
+  in tests.
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. Before changing the importer, engine or
+de-duplication logic, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — it
+explains the *why* behind each design decision. The short version:
+
+- money is `Decimal`, never float;
+- transactions are append-only, positions are always derived;
+- imports must stay idempotent;
+- the classifier is a table, not logic — new broker wordings are data;
+- ambiguity is surfaced, never guessed at silently;
+- statement parsers must validate against the documents' own printed totals.
+
+New broker wordings, statement layouts and exchange exports are the most
+valuable contributions — and usually the smallest: a classifier row plus a test.
+
+```bash
+git config core.hooksPath .githooks   # once per clone: the commit-message checks
+cd backend && python -m pytest -q     # must stay green
+cd frontend && npm run check         # typecheck, lint, format check, tests
+```
+
+## License
+
+[MIT](LICENSE)

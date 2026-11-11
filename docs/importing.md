@@ -2,7 +2,7 @@
 
 How GumbInvest reads the raw exports — the B3 CSV, Avenue/Nomad statement PDFs and Binance exports — and why re-sending anything is always safe.
 
-*Part of the [GumbInvest](../README.md) documentation.*
+*Part of the [GumbInvest](../README.en.md) documentation.*
 
 
 ---

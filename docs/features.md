@@ -2,7 +2,7 @@
 
 The optional AI layer and the analysis tools that ship alongside the portfolio itself.
 
-*Part of the [GumbInvest](../README.md) documentation.*
+*Part of the [GumbInvest](../README.en.md) documentation.*
 
 
 ---
